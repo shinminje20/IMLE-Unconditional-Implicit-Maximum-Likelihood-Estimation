@@ -10,3 +10,19 @@ tqdm==4.62.2
 ```
 
 ### Running Code
+
+
+### TODOs
+
+
+### Questions
+
+**Wednesday 9/15/2021**:
+**Q**: How come loss is divided by two?
+**A:**
+
+**Q**: Replace with CAMNet?
+**A:**
+
+**Q**: What kind of task to actually do? Super-resolution? Coloring? Uncropping? Other?
+**A:**
