@@ -1,0 +1,9 @@
+*.csv
+*.tsv
+*.json
+*.pt
+
+*.pt
+*.pkl
+__pycache__
+
