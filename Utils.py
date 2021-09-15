@@ -2,17 +2,7 @@ import os
 import torch
 from tqdm import tqdm
 
-device = "cpu"
-def _set_device(args):
-    global device
-    if args.device == "cuda" and torch.cuda.is_available():
-        device = "cuda"
-    elif args.device == "cuda" and not torch.cuda.is_available():
-        raise Exception("CUDA not available")
-    elif args.device == "cpu":
-        device = "cpu"
-    else:
-        raise ValueError(f"Get device {args.device} but must be one of 'cuda' or 'cpu'")
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 ################################################################################
 # I/O Utils
