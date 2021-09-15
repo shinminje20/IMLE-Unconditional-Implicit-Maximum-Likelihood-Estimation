@@ -3,7 +3,7 @@ from torch.utils.data import Dataset
 from torchvision.datasets import CIFAR10
 
 dataset2input_dim = {
-    "cifar10": (3, 28, 28)
+    "cifar10": (3, 32, 32)
 }
 
 class IMLEDataset(Dataset):
@@ -11,20 +11,17 @@ class IMLEDataset(Dataset):
     random on [-1, 1] vector to the result of [data.__getitem__()].
     """
 
-    def __init__(self, data, transform):
+    def __init__(self, data, z_dim):
         """
         Args:
         data        -- the wrapped dataset, should return tuples wherein the
                         first element is an image
         z_dim       -- the dimensionality of the random vector to add
-        transform   -- transform to apply to output data, eg. ToTensor()
-
         """
         super(IMLEDataset, self).__init__()
         self.data = data
-        self.transform = transform
+        self.z_dim = z_dim
 
     def __len__(self): return len(self.data)
 
-    def __getitem__(self, idx):
-        return self.transform(self.data[idx][0]), torch.rand(self.z_dim)
+    def __getitem__(self, idx): return self.data[idx][0], torch.rand(self.z_dim)

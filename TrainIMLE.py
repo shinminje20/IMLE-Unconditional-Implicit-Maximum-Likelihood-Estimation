@@ -1,10 +1,12 @@
 import argparse
-import tqdm
+import sys
+from tqdm import tqdm
 
 import torch
 from torch.optim import Adam, SGD
 from torch.optim.lr_scheduler import StepLR
 import torch.nn as nn
+from torch.utils.data import DataLoader, Subset
 
 from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
@@ -38,7 +40,7 @@ class CondConvImplicitModel(nn.Module):
         self.relu = nn.ReLU(True)
 
     def forward(self, input_data, z):
-        z = torch.cat((input_data, z), 1)
+        z = torch.cat((input_data, z), 0) # changed from 1 to 0
         z = self.relu(self.bn1(self.tconv1(z)))
         z = self.relu(self.bn2(self.tconv2(z)))
         z = self.relu(self.bn3(self.tconv3(z)))
@@ -60,14 +62,13 @@ def one_epoch(model, optimizer, loader, args):
     loss_total, loss_intermediate = 0, 0
     print_interval = len(loader) % args.prints_per_epoch
 
-    for i,((x,y),z) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout):
+    for i,(x,z) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, leave=False):
         x = x.to(device, non_blocking=True)
-        y = y.to(device, non_blocking=True)
         z = z.to(device, non_blocking=True)
 
         model.zero_grad()
         fx = model(x, z)
-        loss = loss_fn(fx, y)
+        loss = loss_fn(fx, x)
         loss.backward()
         optimizer.step()
 
@@ -85,9 +86,13 @@ if __name__ == "__main__":
     P = argparse.ArgumentParser(description="IMLE training")
     P.add_argument("--resume", default=None, type=str,
         help="file to resume from")
+    P.add_argument("--prints_per_epoch", default=5, type=int,
+        help="intermediate loss prints per epoch")
 
     P.add_argument("--data", choices=["cifar10"], default="cifar10", type=str,
         help="dataset to load images from")
+    P.add_argument("--n_workers", default=6, type=int,
+        help="Number of workers for data loading")
 
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs")
@@ -138,14 +143,14 @@ if __name__ == "__main__":
     # are cut off and used for the visual validation dataset.
     ############################################################################
     if args.data == "cifar10":
-        data = CIFAR10(root="../Datasets", train=True, download=True,\
+        data = CIFAR10(root="../Datasets", train=True, download=True,
             transform=transforms.ToTensor())
         dataset_tr = Subset(data, range(len(data) - 100))
         dataset_val = Subset(data, range(len(data) - 100, len(data)))
     else:
         raise ValueError(f"--data was {args.data} but must be one of 'cifar10'")
 
-    dataset = IMLEDataset(dataset_tr)
+    dataset = IMLEDataset(dataset_tr, args.z_dim)
     loader = DataLoader(dataset, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
 

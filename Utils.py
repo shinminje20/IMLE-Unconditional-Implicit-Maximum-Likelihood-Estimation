@@ -1,6 +1,6 @@
 import os
 import torch
-import tqdm
+from tqdm import tqdm
 
 device = "cpu"
 def _set_device(args):

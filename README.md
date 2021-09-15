@@ -3,8 +3,10 @@
 
 ### Environment
 ```
-python==3.9
+python==3.9.6
 pytorch==1.9
 torchvision==0.10.0
-tqdm==4.62
+tqdm==4.62.2
 ```
+
+### Running Code
