@@ -16,6 +16,7 @@ tqdm==4.62.2
 
 
 ### Questions
+<<<<<<< HEAD
 
 **Wednesday 9/15/2021**:
 **Q**: How come loss is divided by two?
@@ -34,3 +35,5 @@ tqdm==4.62.2
 **Q**: Standardizing data... When we do contrastive learning with real data, we can precompute its mean and STD. Here, we have to generate it. Options:
  - train the generator to output pre-standardized samples
  - assume its output will approximate the mean/std of the input dataset
+=======
+>>>>>>> 69518584858a95ae7acd8680fcbee63f300cedae
