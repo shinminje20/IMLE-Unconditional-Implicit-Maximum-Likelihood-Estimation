@@ -11,11 +11,11 @@ from torch.utils.tensorboard import SummaryWriter
 from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
 
-from Data import ImagesFromTransformsDataset, dataset2n_classes
+from Data import *
 from ModelsContrastive import get_resnet, ContrastiveLoss
 from Utils import *
 
-def one_epoch(model, optimizer, loader, args):
+def one_epoch_contrastive(model, optimizer, loader, args):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch according to [args].
 
@@ -24,10 +24,11 @@ def one_epoch(model, optimizer, loader, args):
     model       -- a CondConvImplicitModel
     optimizer   -- the optimizer for model
     loader      -- a DataLoader over the data to train on
-    args        -- an Argparse object parameterizing the run
+    args        -- an Argparse object parameterizing the run, with --temp and
+                    --prints_per_epoch set
     """
     model.train()
-    loss_fn = nn.MSELoss(reduction="mean").to(device)
+    loss_fn = ContrastiveLoss(args.temp)
 
     loss_total, loss_intermediate = 0, 0
     print_interval = len(loader) % args.prints_per_epoch
@@ -62,6 +63,10 @@ if __name__ == "__main__":
         help="Number of workers for data loading")
     P.add_argument("--suffix", default="", type=str,
         help="suffix")
+    P.add_argument("--eval_iter", default=10, type=int,
+        help="number of epochs between linear evaluations")
+    P.add_argument("--val_frac", default=.1, type=float,
+        help="amount of data to use for validation")
 
     P.add_argument("--data", choices=["cifar10"], default="cifar10", type=str,
         help="dataset to load images from")
@@ -75,8 +80,7 @@ if __name__ == "__main__":
         help="number of epochs")
     P.add_argument("--bs", default=64, type=int,
         help="batch size")
-    P.add_argument("--opt", choices=["adam", "sgd"], default="adam",
-        type=str,
+    P.add_argument("--opt", choices=["adam", "sgd"], default="adam", type=str,
         help="optimizer")
     P.add_argument("--lr", default=1e-3, type=float,
         help="base learning rate")
@@ -84,6 +88,8 @@ if __name__ == "__main__":
         help="Number of linear ramp epochs at start of training")
     P.add_argument("--mm", nargs="+", default=.01, type=float,
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
+    P.add_argument("--temp", default=.5, type=float,
+        help="contrastive loss temperature")
     args = P.parse_args()
 
     args.options = sorted([
@@ -94,7 +100,17 @@ if __name__ == "__main__":
         f"n_ramp{args.n_ramp}",
         f"opt_{args.opt}",
         f"seed{args.seed}",
+        f"temp{args.temp}",
+        f"val_frac{args.val_frac}"
     ])
+
+    ############################################################################
+    # Check arguments
+    ############################################################################
+    if args.val_frac > 0 and args.eval_iter <= 0:
+        tqdm.write("WARNING: since --val_frac is nonzero, some data will be split into a validation dataset, however, since --eval_iter is negative, no validation will be performed.")
+    if args.val_frac > 0 and not args.data in no_val_split_datasets:
+        tqdm.write("WARNING: since --data has a validation split, --val_frac is ignored and the given validation split used instead.")
 
     ############################################################################
     # Load prior state if it exists, otherwise instantiate a new training run.
@@ -103,8 +119,6 @@ if __name__ == "__main__":
         model, optimizer, last_epoch, old_args, writer = load(args.resume)
         model = model.to(device)
     else:
-        # Construct the model and optimizer.
-        input_dim = dataset2input_dim[args.data]
         model = get_resnet(args.backbone, head_type="projection").to(device)
         if args.opt == "adam":
             optimizer = Adam(model.parameters(), lr=args.lr, betas=args.mm,
@@ -116,7 +130,7 @@ if __name__ == "__main__":
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
 
         last_epoch = -1
-        writer = SummaryWriter()
+        writer = SummaryWriter(resnet_folder(args))
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
 
@@ -124,14 +138,8 @@ if __name__ == "__main__":
     # Construct the dataset and dataloader. For each dataset, the last k indices
     # are cut off and used for the visual validation dataset.
     ############################################################################
-    if args.data == "cifar10":
-        data = CIFAR10(root="../Datasets", train=True, download=True,
-            transform=transforms.ToTensor())
-        data_tr = Subset(data, range(len(data) - 1000))
-        data_val = Subset(data, range(len(data) - 1000, len(data)))
-    else:
-        raise ValueError(f"--data was {args.data} but must be one of 'cifar10'")
-
+    data_tr, data_val, _ = get_data_splits(args.data, val_frac=args.val_frac,
+        seed=args.seed)
     dataset = ImagesFromTransformsDataset(data_tr, cifar_augs_tr, cifar_augs_tr)
     loader = DataLoader(dataset, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
@@ -143,11 +151,12 @@ if __name__ == "__main__":
 
         # Run one epoch
         tqdm.write(f"=== STARTING EPOCH {e} | lr {scheduler.get_last_lr()}")
-        model, optimizer, loss_tr = one_epoch(model, optimizer, loader, args)
+        model, optimizer, loss_tr = one_epoch_contrastive(model, optimizer,
+            loader, args)
 
         # Perform a classification cross validation if desired, and otherwise
         # print/log results or merely that the epoch happened.
-        if e % args.eval_iter == 0 and not e == 0:
+        if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
             val_acc_avg, val_acc_std = cv_classification_eval(model.backbone,
                 data_val, dataset2n_classes[args.data], cv_folds=5)
             writer.add_scalar("Loss/train", loss_tr / len(loader), e)

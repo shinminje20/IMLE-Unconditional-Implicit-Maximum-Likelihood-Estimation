@@ -6,13 +6,38 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
 from torchvision.datasets import CIFAR10
 from torchvision import transforms
 
+no_val_split_datasets = ["cifar10"]
+
 dataset2input_dim = {
-    "cifar10": (3, 32, 32)
+    "cifar10": (3, 32, 32),
+    "imagenet": None,
 }
 
 dataset2n_classes = {
     "cifar10": 10,
+    "imagenet": None,
 }
+
+def get_data_splits(data_str, val_frac=.1, seed=0):
+    """Returns a base dataset based only [data_str].
+
+    Args:
+    data_str    -- a string specifying the dataset to return
+    val_frac    -- if there are only training and testing splits
+    seed        -- the seed to use for selecting the validation data
+    """
+    if data_str == "cifar10":
+        train = CIFAR10(root="../Datasets", split="train")
+        val_idxs = random.sample(range(len(train)), int(len(train) * val_frac))
+        train_idxs = [idx for idx in range(len(train)) if not idx in val_idxs]
+
+        train = Subset(train, train_idxs)
+        val = Subset(train, val_idxs)
+        test = CIFAR10(root="../Datasets", split="test")
+    else:
+        raise ValueError("Unknown inputs")
+
+    return train, val, test
 
 grayscale_transform = transforms.Compose([
     transforms.Grayscale(num_output_channels=1),
