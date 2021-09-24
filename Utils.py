@@ -9,7 +9,15 @@ device = "cuda:0" if torch.cuda.is_available() else "cpu"
 ################################################################################
 state_sep_str = "=" * 40
 
-def load_generator(file):
+def opts_str(args):
+    """Returns the options string of [args]."""
+    return f"-{'-'.join(args.options)}-" if len(args.options) > 0 else "-"
+
+def suffix_str(args):
+    """Returns the suffix string of [args]."""
+    return f"-{args.suffix}" if not args.suffix == "" else ""
+
+def load_experiment(file):
     """Returns a (model, optimizer, last_epoch, args, results) tuple from
     [file].
     """
@@ -21,63 +29,24 @@ def load_generator(file):
     results = data["results"]
     return model, optimizer, last_epoch, args, results
 
-def save_generator(model, optimizer, last_epoch, args, results):
-    """Returns the folder to save a generator trained with [args] to."""
-    folder = f"Models/generator-{args.data}-{args.suffix}"
-    if not os.path.exists(folder): os.makedirs(folder)
-    file = f"{folder}/{file}.pt"
-
+def save_model(model, optimizer, last_epoch, args, results, folder):
+    """Saves input experiment objects to the [last_epoch].pt file [folder]."""
     torch.save({
         "model": model.cpu(),
         "optimizer": optimizer,
         "last_epoch": last_epoch,
         "args": args,
         "results": results,
-    }, file)
+    }, f"{folder}/{last_epoch}.pt")
 
-################################################################################
-#
-################################################################################
-save_now = False
-plot_now = False
-def signal_handler_menu(sig, frame):
-    global save_now
-    global plot_now
+def generator_folder(model, optimizer, last_epoch, args, results):
+    """Returns the folder to save a generator trained with [args] to."""
+    folder = f"Models/generator-{args.data}-{opts_str(args)}{suffix_str(args)}"
+    if not os.path.exists(folder): os.makedirs(folder)
+    return folder
 
-    tqdm.write("======== Script Control ========")
-    tqdm.write(f"Current script: {os.path.abspath(__file__)}")
-
-    while True:
-        try:
-            option = raw_input("(Q)uit, (S)ave, (P)lot or (C)ontinue? ")
-        except NameError:   # Python 3
-            option = input("(Q)uit, (S)ave, (P)lot or (C)ontinue? ")
-
-        valid_option = False
-        if "s" in option.lower():
-            save_now = True
-            valid_option = True
-        if "p" in option.lower():
-            plot_now = True
-            valid_option = True
-        if "c" in option.lower():
-            valid_option = True
-        if option.lower() == "q":
-            raise KeyboardInterrupt
-        if valid_option:
-            break
-        else:
-            tqdm.write("Invalid option.")
-
-def _user_confirm():
-    while True:
-        try:
-            option = raw_input("(Y)es or (N)o? ")
-        except NameError:
-             option = input("(Y)es or (N)o? ")
-        if option.lower() == "y":
-            break
-        elif option.lower() == "n":
-            raise KeyboardInterrupt
-        else:
-            print("Invalid option.")
+def resnet_folder(model, optimizer, last_epoch, args, results):
+    """Returns the folder to save a resnet trained with [args] to."""
+    folder = f"Models/resnets-{args.backbone}-{args.data}{opts_str(args)}{suffix_str(args)}"
+    if not os.path.exists(folder): os.makedirs(folder)
+    return folder

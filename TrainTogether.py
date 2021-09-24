@@ -15,38 +15,6 @@ from Data import *
 from VisualEval import *
 from Utils import *
 
-class CondConvImplicitModel(nn.Module):
-    """Image-conditional model for image synthesis.
-
-    [Unchanged from the default model but for added documentation]
-    """
-
-    def __init__(self, input_dim, z_dim):
-        """
-        Args:
-        input_dim   --
-        z_dim       --
-        """
-        super(CondConvImplicitModel, self).__init__()
-        self.input_dim = input_dim
-        self.z_dim = z_dim
-        self.tconv1 = nn.Conv2d(input_dim[0] + z_dim[0], 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.tconv2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.tconv3 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(64)
-        self.tconv4 = nn.Conv2d(64, 3, kernel_size=3, stride=1, padding=1, bias=False)
-        self.relu = nn.ReLU(True)
-
-    def forward(self, input_data, z):
-        z = torch.cat((input_data, z), 0) # changed from 1 to 0
-        z = self.relu(self.bn1(self.tconv1(z)))
-        z = self.relu(self.bn2(self.tconv2(z)))
-        z = self.relu(self.bn3(self.tconv3(z)))
-        z = torch.sigmoid(self.tconv4(z))
-        return z
-
 def one_epoch(model, optimizer, loader, args):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch according to [args].
@@ -136,7 +104,7 @@ if __name__ == "__main__":
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
     if args.resume is not None:
-        model, optimizer, last_epoch, old_args, _ = load(args.resume)
+        model, optimizer, last_epoch, old_args, _ = load_generator(args.resume)
         model = model.to(device)
     else:
         # Construct the model and optimizer.
