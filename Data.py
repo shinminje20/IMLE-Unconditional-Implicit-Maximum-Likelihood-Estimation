@@ -1,3 +1,4 @@
+import random
 from tqdm import tqdm
 
 import torch
@@ -27,13 +28,13 @@ def get_data_splits(data_str, val_frac=.1, seed=0):
     seed        -- the seed to use for selecting the validation data
     """
     if data_str == "cifar10":
-        train = CIFAR10(root="../Datasets", split="train")
+        train = CIFAR10(root="../Datasets", train=True, download=True)
         val_idxs = random.sample(range(len(train)), int(len(train) * val_frac))
         train_idxs = [idx for idx in range(len(train)) if not idx in val_idxs]
 
         train = Subset(train, train_idxs)
         val = Subset(train, val_idxs)
-        test = CIFAR10(root="../Datasets", split="test")
+        test = CIFAR10(root="../Datasets", train=False, download=True)
     else:
         raise ValueError("Unknown inputs")
 

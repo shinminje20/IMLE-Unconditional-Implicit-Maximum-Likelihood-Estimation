@@ -85,14 +85,13 @@ def cv_classification_eval(F, data, n_classes, cv_folds=5, , mode="linear"):
 
             # Get DataLoaders over the training and testing data for the current
             # cross validation fold
-            data_te = Subset(cv_data, range(start_idx, stop_idx))
-            data_tr = ConcatDataset([
-                Subset(cv_data, range(0, start_idx)),
-                Subset(cv_data, range(stop_idx, len(data)))])
-            loader_tr = DataLoader(data_tr, batch_size=bs, shuffle=True,
-                pin_memory=True, drop_last=False)
-            loader_te = DataLoader(data_te, batch_size=min(f_size, 128),
-                shuffle=True, pin_memory=True, drop_last=False)
+            loader_tr = DataLoader(Subset(cv_data, range(start_idx, stop_idx)),
+                batch_size=bs, shuffle=True, pin_memory=True, drop_last=False)
+            loader_te = DataLoader(ConcatDataset([
+                    Subset(cv_data, range(0, start_idx)),
+                    Subset(cv_data, range(stop_idx, len(data)))]),
+                batch_size=min(f_size, 128), shuffle=True, pin_memory=True,
+                drop_last=False)
 
             # Train a model on [loader_tr] and test it on [loader_te]
             model = nn.Linear(F.out_dim, n_classes).to(device)

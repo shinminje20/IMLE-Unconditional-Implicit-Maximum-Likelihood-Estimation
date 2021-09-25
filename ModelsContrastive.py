@@ -6,7 +6,7 @@ import torch.nn.functional as F
 
 from torchvision import models
 
-def get_resnet(backbone, head_type="none", out_dim):
+def get_resnet_with_head(backbone, head_dim, head_type="none"):
     """Returns a resnet of [backbone] with a head of [head_type] attached."""
     if backbone == "resnet18":
         R = HeadlessResNet18()
@@ -18,13 +18,13 @@ def get_resnet(backbone, head_type="none", out_dim):
     if head_type == "none":
         return nn.Sequential(OrderedDict([("backbone", R)]))
     elif head_type == "projection":
-        H = ProjectionHead(R.out_dim, out_dim)
+        H = ProjectionHead(R.out_dim, head_dim)
     elif head_type == "linear":
-        H = nn.Linear(R.out_dim, out_dim)
+        H = nn.Linear(R.out_dim, head_dim)
     else:
         raise ValueError(f"Unknown head_type '{head_type}'")
 
-    return nn.Sequential(OrderedDict([("backbone", R), ("head": H)]))
+    return nn.Sequential(OrderedDict([("backbone", R), ("head", H)]))
 
 
 class HeadlessResNet18(nn.Module):
@@ -94,7 +94,7 @@ class LinearHead(nn.Module):
 class ContrastiveLoss:
 
     def __init__(self, temp):
-        self.temp = params.temp
+        self.temp = temp
 
     def __call__(self, fx1, fx2):
         """Returns the loss on [fx1] and [fx2].

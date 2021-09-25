@@ -12,7 +12,7 @@ from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
 
 from Data import *
-from ModelsContrastive import get_resnet, ContrastiveLoss
+from ModelsContrastive import get_resnet_with_head, ContrastiveLoss
 from Utils import *
 
 def one_epoch_contrastive(model, optimizer, loader, args):
@@ -55,48 +55,52 @@ def one_epoch_contrastive(model, optimizer, loader, args):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="IMLE training")
-    P.add_argument("--resume", default=None, type=str,
-        help="file to resume from")
-    P.add_argument("--prints_per_epoch", default=5, type=int,
-        help="intermediate loss prints per epoch")
-    P.add_argument("--n_workers", default=6, type=int,
-        help="Number of workers for data loading")
-    P.add_argument("--suffix", default="", type=str,
-        help="suffix")
-    P.add_argument("--eval_iter", default=10, type=int,
-        help="number of epochs between linear evaluations")
-    P.add_argument("--val_frac", default=.1, type=float,
-        help="amount of data to use for validation")
-
     P.add_argument("--data", choices=["cifar10"], default="cifar10", type=str,
         help="dataset to load images from")
     P.add_argument("--backbone", default="resnet18",
         choices=["resnet18", "resnet50"],
         help="Resnet backbone to use")
-    P.add_argument("--seed", default=0, type=int,
-        help="random seed")
 
-    P.add_argument("--epochs", default=20, type=int,
+    # Non-hyperparameter arguments
+    P.add_argument("--resume", default=None, type=str,
+        help="file to resume from")
+    P.add_argument("--suffix", default="", type=str,
+        help="suffix")
+    P.add_argument("--prints_per_epoch", default=5, type=int,
+        help="intermediate loss prints per epoch")
+    P.add_argument("--n_workers", default=4, type=int,
+        help="Number of workers for data loading")
+    P.add_argument("--eval_iter", default=10, type=int,
+        help="number of epochs between linear evaluations")
+
+    # Hyperparameter arguments
+    P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
+    P.add_argument("--n_ramp", default=10, type=int,
+        help="Number of linear ramp epochs at start of training")
     P.add_argument("--bs", default=64, type=int,
         help="batch size")
     P.add_argument("--opt", choices=["adam", "sgd"], default="adam", type=str,
         help="optimizer")
     P.add_argument("--lr", default=1e-3, type=float,
         help="base learning rate")
-    P.add_argument("--n_ramp", default=10, type=int,
-        help="Number of linear ramp epochs at start of training")
-    P.add_argument("--mm", nargs="+", default=.01, type=float,
+    P.add_argument("--mm", nargs="+", default=(.9, .99), type=float,
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
     P.add_argument("--temp", default=.5, type=float,
         help="contrastive loss temperature")
+    P.add_argument("--proj_dim", default=128, type=int,
+        help="dimension of projection space")
+    P.add_argument("--val_frac", default=.1, type=float,
+        help="amount of data to use for validation")
+    P.add_argument("--seed", default=0, type=int,
+        help="random seed")
     args = P.parse_args()
 
     args.options = sorted([
         f"bs{args.bs}",
         f"epochs{args.epochs}",
         f"lr{args.lr}",
-        f"mm{'_'.join([str(b) for b in args.mm])}"
+        f"mm{'_'.join([str(b) for b in flatten([args.mm])])}"
         f"n_ramp{args.n_ramp}",
         f"opt_{args.opt}",
         f"seed{args.seed}",
@@ -111,6 +115,8 @@ if __name__ == "__main__":
         tqdm.write("WARNING: since --val_frac is nonzero, some data will be split into a validation dataset, however, since --eval_iter is negative, no validation will be performed.")
     if args.val_frac > 0 and not args.data in no_val_split_datasets:
         tqdm.write("WARNING: since --data has a validation split, --val_frac is ignored and the given validation split used instead.")
+    if not args.opt in ["adam"] and isinstance(args.mm, tuple):
+        raise ValueError("--mm must be a single momentum parameter unless --opt is one of 'adam'")
 
     ############################################################################
     # Load prior state if it exists, otherwise instantiate a new training run.
@@ -119,18 +125,20 @@ if __name__ == "__main__":
         model, optimizer, last_epoch, old_args, writer = load(args.resume)
         model = model.to(device)
     else:
-        model = get_resnet(args.backbone, head_type="projection").to(device)
+        model = get_resnet_with_head(args.backbone, args.proj_dim,
+                                     head_type="projection").to(device)
         if args.opt == "adam":
-            optimizer = Adam(model.parameters(), lr=args.lr, betas=args.mm,
-                weight_decay=5e-4)
+            optimizer = LARSWrapper(Adam(model.parameters(), lr=args.lr,
+                                              betas=args.mm, weight_decay=5e-4))
         elif args.opt == "sgd":
-            optimizer = SGD(model.parameters(), lr=args.lr, momentum=args.mm,
-                weight_decay=5e-4)
+            optimizer = LARSWrapper(SGD(model.parameters(), lr=args.lr,
+                                 momentum=args.mm, weight_decay=5e-4))
         else:
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
 
         last_epoch = -1
         writer = SummaryWriter(resnet_folder(args))
+
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
 
