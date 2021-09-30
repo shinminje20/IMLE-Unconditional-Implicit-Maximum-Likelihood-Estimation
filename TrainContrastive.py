@@ -12,6 +12,7 @@ from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
 
 from Data import *
+from Evaluation import cv_classification_eval
 from ModelsContrastive import get_resnet_with_head, ContrastiveLoss
 from Utils import *
 
@@ -31,9 +32,9 @@ def one_epoch_contrastive(model, optimizer, loader, args):
     loss_fn = ContrastiveLoss(args.temp)
 
     loss_total, loss_intermediate = 0, 0
-    print_interval = len(loader) % args.prints_per_epoch
+    print_interval = len(loader) // args.prints_per_epoch
 
-    for i,(x1,x2) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, leave=False):
+    for i,(x1,x2) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
         x1 = x1.float().to(device, non_blocking=True)
         x2 = x2.float().to(device, non_blocking=True)
 
@@ -72,13 +73,15 @@ if __name__ == "__main__":
         help="Number of workers for data loading")
     P.add_argument("--eval_iter", default=10, type=int,
         help="number of epochs between linear evaluations")
+    P.add_argument("--save_iter", default=100, type=int,
+        help="save a model every --save_iter epochs")
 
     # Hyperparameter arguments
     P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
     P.add_argument("--n_ramp", default=10, type=int,
         help="Number of linear ramp epochs at start of training")
-    P.add_argument("--bs", default=64, type=int,
+    P.add_argument("--bs", default=1024, type=int,
         help="batch size")
     P.add_argument("--opt", choices=["adam", "sgd"], default="adam", type=str,
         help="optimizer")
@@ -111,6 +114,8 @@ if __name__ == "__main__":
     ############################################################################
     # Check arguments
     ############################################################################
+    if not args.save_iter % args.eval_iter == 0:
+        tqdm.write("WARNING: training will save a checkpoint without direct evaluation. Ensure --save_iter % --eval_iter is zero to avoid this.")
     if args.val_frac > 0 and args.eval_iter <= 0:
         tqdm.write("WARNING: since --val_frac is nonzero, some data will be split into a validation dataset, however, since --eval_iter is negative, no validation will be performed.")
     if args.val_frac > 0 and not args.data in no_val_split_datasets:
@@ -155,10 +160,10 @@ if __name__ == "__main__":
     ############################################################################
     # Begin training!
     ############################################################################
-    for e in tqdm(range(last_epoch + 1, args.epochs), desc="Epochs", file=sys.stdout):
+    for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
 
         # Run one epoch
-        tqdm.write(f"=== STARTING EPOCH {e} | lr {scheduler.get_last_lr()}")
+        tqdm.write(f"=== STARTING EPOCH {e} | lr {scheduler.get_last_lr()[0]}")
         model, optimizer, loss_tr = one_epoch_contrastive(model, optimizer,
             loader, args)
 
@@ -169,11 +174,11 @@ if __name__ == "__main__":
                 data_val, dataset2n_classes[args.data], cv_folds=5)
             writer.add_scalar("Loss/train", loss_tr / len(loader), e)
             writer.add_scalar("Accuracy/val", val_acc_avg, e)
-            writer.add_scalar("Learning rate", scheduler.get_last_lr(), e)
+            writer.add_scalar("Learning rate", scheduler.get_last_lr()[0], e)
             tqdm.write(f"=== END OF EPOCH {e} | loss {loss_tr / len(loader)} | val acc {val_acc_avg:f5} ± val acc {val_acc_std:f5}")
         else:
             writer.add_scalar("Loss/train", loss_tr / len(loader), e)
-            writer.add_scalar("Learning rate", scheduler.get_last_lr(), e)
+            writer.add_scalar("Learning rate", scheduler.get_last_lr()[0], e)
             tqdm.write(f"=== END OF EPOCH {e} | loss {loss_tr / len(loader)}")
 
         # Saved the model and any visual validation results if they exist

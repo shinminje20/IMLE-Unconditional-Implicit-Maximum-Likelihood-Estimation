@@ -1,4 +1,5 @@
 import random
+import sys
 from tqdm import tqdm
 
 import torch
@@ -6,6 +7,8 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
 
 from torchvision.datasets import CIFAR10
 from torchvision import transforms
+
+from Utils import *
 
 no_val_split_datasets = ["cifar10"]
 
@@ -130,11 +133,11 @@ class FeatureDataset(Dataset):
         super(FeatureDataset, self).__init__()
         loader = DataLoader(data, batch_size=64)
 
-        data_x, data_y
+        data_x, data_y = [], []
         F = F.to(device)
         F.eval()
         with torch.no_grad():
-            for x,y in tqmd(loader, desc="Building validation dataset", leave=False, file=sys.stdout):
+            for x,y in tqdm(loader, desc="Building validation dataset", leave=False, file=sys.stdout):
                 data_x.append(F(x.to(device).cpu()))
                 data_y.append(y)
 

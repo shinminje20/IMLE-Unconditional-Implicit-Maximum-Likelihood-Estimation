@@ -60,7 +60,7 @@ def accuracy(model, data):
 
     return correct / total
 
-def cv_classification_eval(F, data, n_classes, cv_folds=5, , mode="linear"):
+def cv_classification_eval(F, data, n_classes, cv_folds=5, mode="linear"):
     """Returns classification statistics using feature extractor [F] on Dataset
     [data] with [cv_folds] cross-validation folds.
     """
