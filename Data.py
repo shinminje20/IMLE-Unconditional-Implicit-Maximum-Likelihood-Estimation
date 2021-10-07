@@ -3,7 +3,7 @@ import sys
 from tqdm import tqdm
 
 import torch
-from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset
+from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset, random_split
 
 from torchvision.datasets import CIFAR10
 from torchvision import transforms
@@ -32,11 +32,10 @@ def get_data_splits(data_str, val_frac=.1, seed=0):
     """
     if data_str == "cifar10":
         train = CIFAR10(root="../Datasets", train=True, download=True)
-        val_idxs = random.sample(range(len(train)), int(len(train) * val_frac))
-        train_idxs = [idx for idx in range(len(train)) if not idx in val_idxs]
-
-        train = Subset(train, train_idxs)
-        val = Subset(train, val_idxs)
+        amt_tr = int(len(train) * (1 - val_frac))
+        amt_val = int(len(train) * (val_frac))
+        train, val = random_split(train, [amt_tr, amt_val],
+            generator=torch.Generator().manual_seed(seed))
         test = CIFAR10(root="../Datasets", train=False, download=True)
     else:
         raise ValueError("Unknown inputs")
@@ -68,6 +67,22 @@ cifar10_augs_te = transforms.Compose([
 ################################################################################
 # Datasets
 ################################################################################
+class ImageLabelDataset(Dataset):
+
+    def __init__(self, data, transform):
+        super(ImageLabelDataset, self).__init__()
+
+        # Re-index the input data because it may have been passed in as a subset
+        # that'd need to be indexed like it were a part of the original dataset
+        self.data = [(x,y) for x,y in data]
+        self.transform = transform
+
+    def __len__(self): return len(self.data)
+
+    def __getitem__(self, idx):
+        image, label = self.data[idx]
+        return self.transform(image), label
+
 class ImagesFromTransformsDataset(Dataset):
     """Wraps an internal dataset for which queries produce a tuple in which an
     image is the first result. This dataset computes transformations [x] and
@@ -125,23 +140,26 @@ class WithZDataset(Dataset):
 class FeatureDataset(Dataset):
     """A dataset of model features."""
 
-    def __init__(self, F, data):
+    def __init__(self, F, data, bs=128):
         """Args:
         F       -- a feature extractor
         data    -- a dataset of XY pairs
+        bs      -- the batch size to use for feature extraction
         """
         super(FeatureDataset, self).__init__()
-        loader = DataLoader(data, batch_size=64)
+        loader = DataLoader(data, batch_size=bs, drop_last=False)
 
         data_x, data_y = [], []
         F = F.to(device)
         F.eval()
         with torch.no_grad():
             for x,y in tqdm(loader, desc="Building validation dataset", leave=False, file=sys.stdout):
-                data_x.append(F(x.to(device).cpu()))
+                data_x.append(F(x.to(device)).cpu())
                 data_y.append(y)
 
-        self.data = zip(torch.cat(data_x, 0), torch.cat(data_y), 0)
+        data_x = [x for x_batch in data_x for x in x_batch]
+        data_y = [y for y_batch in data_y for y in y_batch]
+        self.data = list(zip(data_x, data_y))
 
     def __len__(self): return len(self.data)
 

@@ -5,12 +5,12 @@ from tqdm import tqdm
 import torch
 from torch.optim import Adam
 import torch.nn as nn
-from torch.utils.data import Subset, ConcatDataset
+from torch.utils.data import Subset, ConcatDataset, DataLoader
 
 from Data import FeatureDataset
 from Utils import *
 
-def one_epoch_classification(model, optimizer, loader, args):
+def one_epoch_classification(model, optimizer, loader):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch according to [args].
 
@@ -19,17 +19,10 @@ def one_epoch_classification(model, optimizer, loader, args):
     model       -- a CondConvImplicitModel
     optimizer   -- the optimizer for model
     loader      -- a DataLoader over the data to train on
-    args        -- an Argparse object parameterizing the run, or None
     """
     model.train()
-    loss_fn = nn.CrossEntropyLoss().to(device)
-
-    loss_total, loss_intermediate = 0, 0
-
-    if args is None:
-        print_interval = float("inf")
-    else:
-        print_interval = len(loader) % args.prints_per_epoch
+    loss_fn = nn.CrossEntropyLoss(reduction="mean").to(device)
+    loss_total = 0
 
     for i,(x,y) in enumerate(loader):
         model.zero_grad()
@@ -38,15 +31,9 @@ def one_epoch_classification(model, optimizer, loader, args):
         loss.backward()
         optimizer.step()
 
-        loss_intermediate += loss.item()
+        loss_total += loss.item()
 
-        if i % print_interval == 0 and not i == 0:
-            tqdm.write(f"   intermediate loss: {loss_intermediate}")
-            loss_total += loss_intermediate
-            loss_intermediate = 0
-
-    loss_total += loss_intermediate
-    return model, optimizer, loss_total
+    return model, optimizer, loss_total / len(loader)
 
 def accuracy(model, data):
     """Returns the accuracy of [model] on [data]."""
@@ -81,7 +68,7 @@ def cv_classification_eval(F, data, n_classes, cv_folds=5, mode="linear"):
     if mode == "linear":
         # Set the batch size using a heuristic
         bs = min(64, max(4, len(cv_data) // 16))
-        for start_idx, stop_idx in tqdm(folds_idxs, desc="Validating", file=sys.stdout):
+        for start_idx, stop_idx in tqdm(folds_idxs, desc="Validating", leave=False, file=sys.stdout):
 
             # Get DataLoaders over the training and testing data for the current
             # cross validation fold
@@ -95,10 +82,10 @@ def cv_classification_eval(F, data, n_classes, cv_folds=5, mode="linear"):
 
             # Train a model on [loader_tr] and test it on [loader_te]
             model = nn.Linear(F.out_dim, n_classes).to(device)
-            optimizer = Adam(lin_head.parameters(), lr=1e-3)
+            optimizer = Adam(model.parameters(), lr=1e-3)
             for e in range(100):
                 model, optimizer, _ = one_epoch_classification(model, optimizer,
-                    loader_tr, None)
+                    loader_tr)
             accuracies.append(accuracy(model, loader_te))
     else:
         raise NotImplementedError()

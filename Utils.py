@@ -5,7 +5,10 @@ import torch
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 
+# Set up CUDA usage
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
+if "cuda" in device:
+    torch.backends.cudnn.benchmark = True
 
 ################################################################################
 # I/O Utils
@@ -138,85 +141,98 @@ class CosineAnnealingLinearRampLR(_LRScheduler):
 
         self._last_lr = [group["lr"] for group in self.optimizer.param_groups]
 
-class LARSWrapper(object):
-    def __init__(self, optimizer, eta=0.02, clip=True, eps=1e-8):
+
+
+
+
+from torch.optim import Adam, SGD
+from torch.autograd import Variable
+from torch.nn.parameter import Parameter
+class LARS(Optimizer):
+    """Code slightly modified from
+
+    https://github.com/AndrewAtanov/simclr-pytorch/blob/master/utils/lars_optimizer.py
+
+    which modified it from
+
+    https://github.com/NVIDIA/apex/blob/d74fda260c403f775817470d87f810f816f3d615/apex/parallel/LARC.py
+    """
+
+    def __init__(self, model, lr, momentum, weight_decay=1e-6,
+        trust_coefficient=0.001):
         """
-        Wrapper that adds LARS scheduling to any optimizer. This helps stability
-        with huge batch sizes. Modified from
-        https://github.com/PyTorchLightning/lightning-bolts/blob/0.2.1/pl_bolts/optimizers/lars_scheduling.py#L11-L88
         Args:
-        optimizer   -- torch optimizer
-        eta         -- LARS coefficient (trust)
-        clip        -- True to clip LR
-        eps         -- adaptive_lr stability coefficient
+        model               -- the model to optimize
+        lr                  -- learning rate of wrapped SGD
+        momentum            -- momentum of wrapped SGD
+        weight_decay        -- weight_decay of wrapped SGD
+        trust_coefficient   -- the trust coefficient
         """
+        param_groups = [
+            {"params": [p for n,p in model.named_parameters() if "bn" in n],
+                "weight_decay": weight_decay,
+                "layer_adaption": False
+            },
+            {"params": [p for n,p in model.named_parameters() if not "bn" in n],
+                "weight_decay": weight_decay,
+                "layer_adaption": True
+            }
+        ]
+        optimizer = SGD(param_groups, lr=lr, momentum=momentum,
+            weight_decay=weight_decay)
+        self.param_groups = optimizer.param_groups
         self.optim = optimizer
-        self.eta = eta
-        self.eps = eps
-        self.clip = clip
+        self.trust_coefficient = trust_coefficient
 
-        # transfer optim methods
-        self.state_dict = self.optim.state_dict
-        self.load_state_dict = self.optim.load_state_dict
-        self.zero_grad = self.optim.zero_grad
-        self.add_param_group = self.optim.add_param_group
-        self.__setstate__ = self.optim.__setstate__
-        self.__getstate__ = self.optim.__getstate__
-        self.__repr__ = self.optim.__repr__
+    def __getstate__(self):
+        return self.optim.__getstate__()
 
-    @property
-    def __class__(self):
-        return Optimizer
+    def __setstate__(self, state):
+        self.optim.__setstate__(state)
 
-    @property
-    def state(self):
-        return self.optim.state
+    def __repr__(self):
+        return self.optim.__repr__()
 
-    @property
-    def param_groups(self):
-        return self.optim.param_groups
+    def state_dict(self):
+        return self.optim.state_dict()
 
-    @param_groups.setter
-    def param_groups(self, value):
-        self.optim.param_groups = value
+    def load_state_dict(self, state_dict):
+        self.optim.load_state_dict(state_dict)
 
-    @torch.no_grad()
+    def zero_grad(self):
+        self.optim.zero_grad()
+
+    def add_param_group(self, param_group):
+        self.optim.add_param_group(param_group)
+
     def step(self):
-        weight_decays = []
+        with torch.no_grad():
+            weight_decays = []
+            for group in self.optim.param_groups:
+                # absorb weight decay control from optimizer
+                weight_decay = group['weight_decay'] if 'weight_decay' in group else 0
+                weight_decays.append(weight_decay)
+                group['weight_decay'] = 0
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
 
-        for group in self.optim.param_groups:
-            weight_decay = group.get('weight_decay', 0)
-            weight_decays.append(weight_decay)
+                    if weight_decay != 0:
+                        p.grad.data += weight_decay * p.data
 
-            # reset weight decay
-            group['weight_decay'] = 0
+                    param_norm = torch.norm(p.data)
+                    grad_norm = torch.norm(p.grad.data)
+                    adaptive_lr = 1.
 
-            # update the parameters
-            [self.update_p(p, group, weight_decay) for p in group['params'] if p.grad is not None]
+                    if param_norm != 0 and grad_norm != 0 and group["layer_adaption"]:
+                        adaptive_lr = self.trust_coefficient * param_norm / grad_norm
 
-        # update the optimizer
+                    p.grad.data *= adaptive_lr
+
         self.optim.step()
-
         # return weight decay control to optimizer
-        for group_idx, group in enumerate(self.optim.param_groups):
-            group['weight_decay'] = weight_decays[group_idx]
-
-    def update_p(self, p, group, weight_decay):
-        # calculate new norms
-        p_norm = torch.norm(p.data)
-        g_norm = torch.norm(p.grad.data)
-
-        if p_norm != 0 and g_norm != 0:
-            # calculate new lr
-            new_lr = (self.eta * p_norm) / (g_norm + p_norm * weight_decay + self.eps)
-
-            # clip lr
-            if self.clip:
-                new_lr = min(new_lr / group['lr'], 1)
-
-            # update params with clipped lr
-            p.grad.data += weight_decay * p.data
-            p.grad.data *= new_lr
+        for i, group in enumerate(self.optim.param_groups):
+            group['weight_decay'] = weight_decays[i]
 
 ################################################################################
 # Miscellaneous

@@ -53,7 +53,7 @@ class HeadlessResNet50(nn.Module):
     Code partially derived from https://github.com/leftthomas/SimCLR.
     """
     def __init__(self):
-        super(HeadlessResNet18, self).__init__()
+        super(HeadlessResNet50, self).__init__()
         architecture = models.resnet50(pretrained=False)
         layers = [l for n,l in architecture.named_children() if not n == "fc"]
         self.model = nn.Sequential(*layers)
@@ -70,11 +70,15 @@ class ProjectionHead(nn.Module):
         out_dim -- the output dimensionality
         """
         super(ProjectionHead, self).__init__()
-        self.model = nn.Sequential(*[
-            nn.Linear(in_dim, in_dim),
-            nn.BatchNorm1d(in_dim),
-            nn.ReLU(inplace=True),
-            nn.Linear(in_dim, out_dim, bias=False)])
+        self.model = nn.Sequential(OrderedDict([
+            ("fc1", nn.Linear(in_dim, in_dim, bias=False)),
+            ("bn1", nn.BatchNorm1d(in_dim)),
+            ("relu1", nn.ReLU(inplace=True)),
+            ("fc2", nn.Linear(in_dim, out_dim, bias=False)),
+            ("bn2", nn.BatchNorm1d(out_dim))]))
+
+        # Turn off the bias for the bias term on this gradient
+        self.model.bn2.bias.requires_grad = False
 
     def forward(self, x): return F.normalize(self.model(x), dim=1)
 
