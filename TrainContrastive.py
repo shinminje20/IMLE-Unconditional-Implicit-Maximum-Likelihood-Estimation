@@ -16,23 +16,23 @@ from Evaluation import cv_classification_eval
 from ModelsContrastive import get_resnet_with_head, ContrastiveLoss
 from Utils import *
 
-def one_epoch_contrastive(model, optimizer, loader, args):
+def one_epoch_contrastive(model, optimizer, loader, temp, epoch_prints):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch according to [args].
 
     Ther returned loss is averaged over batches.
 
-    model       -- a CondConvImplicitModel
-    optimizer   -- the optimizer for model
-    loader      -- a DataLoader over the data to train on
-    args        -- an Argparse object parameterizing the run, with --temp and
-                    --prints_per_epoch set
+    model           -- a CondConvImplicitModel
+    optimizer       -- the optimizer for model
+    loader          -- a DataLoader over the data to train on
+    temp            -- contrastive loss temperature
+    epoch_prints    -- prints per epoch
     """
     model.train()
-    loss_fn = ContrastiveLoss(args.temp)
+    loss_fn = ContrastiveLoss(temp)
 
     loss_total, loss_intermediate = 0, 0
-    print_interval = len(loader) // args.prints_per_epoch
+    print_interval = (len(loader) // epoch_prints) if epoch_prints > 0 else float("inf")
 
     for i,(x1,x2) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
         x1 = x1.float().to(device, non_blocking=True)
@@ -67,7 +67,7 @@ if __name__ == "__main__":
         help="file to resume from")
     P.add_argument("--suffix", default="", type=str,
         help="suffix")
-    P.add_argument("--prints_per_epoch", default=5, type=int,
+    P.add_argument("--epoch_prints", default=5, type=int,
         help="intermediate loss prints per epoch")
     P.add_argument("--n_workers", default=4, type=int,
         help="Number of workers for data loading")
@@ -120,6 +120,9 @@ if __name__ == "__main__":
         tqdm.write("WARNING: since --val_frac is nonzero, some data will be split into a validation dataset, however, since --eval_iter is negative, no validation will be performed.")
     if args.val_frac > 0 and not args.data in no_val_split_datasets:
         tqdm.write("WARNING: since --data has a validation split, --val_frac is ignored and the given validation split used instead.")
+    if args.val_frac == 0 and args.data in no_val_split_datasets:
+        tqdm.write("Since --val_frac is zero and the given dataset has no validation split, setting --eval_iter to -1")
+        args.eval_iter = -1
     if not args.opt in ["adam"] and isinstance(args.mm, tuple):
         raise ValueError("--mm must be a single momentum parameter unless --opt is one of 'adam'")
 
@@ -151,10 +154,11 @@ if __name__ == "__main__":
     # Construct the dataset and dataloader. For each dataset, the last k indices
     # are cut off and used for the visual validation dataset.
     ############################################################################
-    data_tr, data_val, _ = get_data_splits(args.data, val_frac=args.val_frac,
+    data_tr, data_val, data_te = get_data_splits(args.data, val_frac=args.val_frac,
         seed=args.seed)
-    dataset = ImagesFromTransformsDataset(data_tr, cifar_augs_tr, cifar_augs_tr)
-    loader = DataLoader(dataset, shuffle=True, batch_size=args.bs,
+    data_tr = ImagesFromTransformsDataset(data_te, cifar_augs_tr, cifar_augs_tr)
+    data_val = ImagesLabelsDataset(data_val, cifar10_augs_te)
+    loader = DataLoader(data_tr, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
 
     ############################################################################
@@ -162,10 +166,8 @@ if __name__ == "__main__":
     ############################################################################
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
 
-        # Run one epoch
-        tqdm.write(f"=== STARTING EPOCH {e} | lr {scheduler.get_last_lr()[0]}")
         model, optimizer, loss_tr = one_epoch_contrastive(model, optimizer,
-            loader, args)
+            loader, args.temp, args.epoch_prints)
 
         # Perform a classification cross validation if desired, and otherwise
         # print/log results or merely that the epoch happened.
@@ -175,11 +177,11 @@ if __name__ == "__main__":
             writer.add_scalar("Loss/train", loss_tr / len(loader), e)
             writer.add_scalar("Accuracy/val", val_acc_avg, e)
             writer.add_scalar("Learning rate", scheduler.get_last_lr()[0], e)
-            tqdm.write(f"=== END OF EPOCH {e} | loss {loss_tr / len(loader)} | val acc {val_acc_avg:f5} ± val acc {val_acc_std:f5}")
+            tqdm.write(f"=== END OF EPOCH {e} | lr {scheduler.get_last_lr()[0]} | loss {loss_tr / len(loader)} | val acc {val_acc_avg:.5f} ± val acc {val_acc_std:.5f}")
         else:
             writer.add_scalar("Loss/train", loss_tr / len(loader), e)
             writer.add_scalar("Learning rate", scheduler.get_last_lr()[0], e)
-            tqdm.write(f"=== END OF EPOCH {e} | loss {loss_tr / len(loader)}")
+            tqdm.write(f"=== END OF EPOCH {e} | lr {scheduler.get_last_lr()[0]} | loss {loss_tr / len(loader):.5f}")
 
         # Saved the model and any visual validation results if they exist
         if e % args.save_iter == 0 and not e == 0:
