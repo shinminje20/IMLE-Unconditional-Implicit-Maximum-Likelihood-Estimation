@@ -5,7 +5,7 @@ from tqdm import tqdm
 import torch
 from torch.optim import Adam
 import torch.nn as nn
-from torch.utils.data import Subset, ConcatDataset
+from torch.utils.data import Subset, ConcatDataset, DataLoader
 
 from Data import FeatureDataset
 from Utils import *
@@ -95,7 +95,7 @@ def cv_classification_eval(F, data, n_classes, cv_folds=5, mode="linear"):
 
             # Train a model on [loader_tr] and test it on [loader_te]
             model = nn.Linear(F.out_dim, n_classes).to(device)
-            optimizer = Adam(lin_head.parameters(), lr=1e-3)
+            optimizer = Adam(model.parameters(), lr=1e-3)
             for e in range(100):
                 model, optimizer, _ = one_epoch_classification(model, optimizer,
                     loader_tr, None)
