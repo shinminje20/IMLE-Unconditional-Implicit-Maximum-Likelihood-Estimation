@@ -95,7 +95,7 @@ if __name__ == "__main__":
         f"bs{args.bs}",
         f"epochs{args.epochs}",
         f"lr{args.lr}",
-        f"mm{'_'.join([str(b) for b in flatten([args.mm])])}"
+        f"mm{'_'.join([str(b) for b in flatten([args.mm])])}",
         f"n_ramp{args.n_ramp}",
         f"opt_{args.opt}",
         f"seed{args.seed}",
@@ -127,11 +127,15 @@ if __name__ == "__main__":
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
     if args.resume is not None:
-        model, optimizer, last_epoch, old_args, writer = load(args.resume)
+        model, optimizer, last_epoch, old_args, tb_results = load_(args.resume)
         model = model.to(device)
+        last_epoch -= 1
     else:
+        # Get the model
         model = get_resnet_with_head(args.backbone, args.proj_dim,
             head_type="projection").to(device)
+
+        # Get the optimizer for the model
         if args.opt == "adam":
             optimizer = Adam(model.parameters(), lr=args.lr, betas=args.mm,
                 weight_decay=1e-6)
@@ -144,9 +148,15 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam', 'lars', or 'sgd'")
 
-        last_epoch = -1
-        writer = SummaryWriter(resnet_folder(args))
+        # Get a SummaryWriter to record results
+        tb_results = SummaryWriter(resnet_folder(args), flush_secs=1, max_queue=0)
 
+        # Set the last epoch to -1. If we're resuming, this else block won't be
+        # run and last epoch will be something else. Here we set it in the
+        # default case so it can be provided to the learning rate scheduler.
+        last_epoch = -1
+
+    # Get the scheduler.
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
 
@@ -157,11 +167,11 @@ if __name__ == "__main__":
     # Negative arguments to --val_frac have meaning, but should be considered
     # zero when computing the lengths of the training and validation splits.
     ############################################################################
-    data_tr, data_val, data_te = get_data_splits(args.data,
-        val_frac=max(0, args.val_frac), seed=args.seed)
+    data_tr, data_val, data_te = get_data_splits(args.data, seed=args.seed,
+        val_frac=max(0, args.val_frac))
     data_tr = ImagesFromTransformsDataset(data_tr, cifar_augs_tr, cifar_augs_tr)
     data_val = ImageLabelDataset((data_te if args.val_frac == -1 else data_val),
-        cifar10_augs_te)
+        cifar10_augs_val)
     loader = DataLoader(data_tr, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
 
@@ -178,18 +188,18 @@ if __name__ == "__main__":
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
             val_acc_avg, val_acc_std = cv_classification_eval(model.backbone,
                 data_val, dataset2n_classes[args.data], cv_folds=5)
-            writer.add_scalar("Loss/train", loss_tr / len(loader), e)
-            writer.add_scalar("Accuracy/val", val_acc_avg, e)
-            writer.add_scalar("Learning rate", scheduler.get_last_lr()[0], e)
+            tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
+            tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
+            tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
             tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f} | val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
         else:
-            writer.add_scalar("Loss/train", loss_tr / len(loader), e)
-            writer.add_scalar("Learning rate", scheduler.get_last_lr()[0], e)
+            tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
+            tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
             tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f}")
 
         # Saved the model and any visual validation results if they exist
         if e % args.save_iter == 0 and not e == 0:
-            save_model(model, optimizer, e, args, writer, resnet_folder(args))
+            save_(model, optimizer, e, args, tb_results, resnet_folder(args))
             tqdm.write("Saved training state")
 
         scheduler.step()

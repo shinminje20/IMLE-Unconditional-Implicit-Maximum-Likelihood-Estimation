@@ -42,13 +42,6 @@ def get_data_splits(data_str, val_frac=.1, seed=0):
 
     return train, val, test
 
-grayscale_transform = transforms.Compose([
-    transforms.Grayscale(num_output_channels=1),
-    transforms.ToTensor()])
-
-no_transform = transforms.Compose([
-    transforms.ToTensor()])
-
 ################################################################################
 # Non-realistic augmentations. These represent an important baseline to beat.
 ################################################################################
@@ -57,6 +50,12 @@ cifar_augs_tr = transforms.Compose([
     transforms.RandomHorizontalFlip(p=0.5),
     transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
     transforms.RandomGrayscale(p=0.2),
+    transforms.ToTensor(),
+    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261])])
+
+cifar10_augs_val = transforms.Compose([
+    transforms.RandomResizedCrop(32),
+    transforms.RandomHorizontalFlip(p=0.5),
     transforms.ToTensor(),
     transforms.Normalize([0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261])])
 

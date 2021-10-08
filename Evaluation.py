@@ -10,23 +10,37 @@ from torch.utils.data import Subset, ConcatDataset, DataLoader
 from Data import FeatureDataset
 from Utils import *
 
-def one_epoch_classification(model, optimizer, loader):
+def one_epoch_classification(model, optimizer, loader, feature_extractor=None):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch according to [args].
 
     Ther returned loss is averaged over batches.
 
-    model       -- a CondConvImplicitModel
-    optimizer   -- the optimizer for model
-    loader      -- a DataLoader over the data to train on
+    model               -- a CondConvImplicitModel
+    optimizer           -- the optimizer for model
+    loader              -- a DataLoader over the data to train on
+    feature_extractor   -- a feature extractor (make sure there's no head)
     """
+    # Set model and the possible feature extractor to the right modes
     model.train()
+    if feature_extractor is not None:
+        feature_extractor.eval()
+
     loss_fn = nn.CrossEntropyLoss(reduction="mean").to(device)
     loss_total = 0
 
     for i,(x,y) in enumerate(loader):
+
+        # If [feature_extractor] isn't None, convert [x] into its features and
+        # on the right device, otherwise, just move [x] onto the correct device.
+        if feature_extractor is not None:
+            with torch.no_grad():
+                x = feature_extractor(x.to(device, non_blocking=True))
+        else:
+            x = x.to(device, non_blocking=True)
+
         model.zero_grad()
-        fx = model(x.to(device, non_blocking=True))
+        fx = model(x)
         loss = loss_fn(fx, y.to(device, non_blocking=True))
         loss.backward()
         optimizer.step()
@@ -62,13 +76,15 @@ def cv_classification_eval(F, data, n_classes, cv_folds=5, mode="linear"):
     if not len(data) == len(cv_data):
         tqdm.write(f"Validation dataset length is {len(data)} and not divisible by the {cv_folds} CV folds. The dataset has been truncated to {len(cv_data)} with a fold size of {f_size}.")
 
-    cv_data = FeatureDataset(F, cv_data)
-
+    ############################################################################
+    # For each fold of the data, train linear(F(x)) and record the result.
+    ############################################################################
+    F = F.to(device)
     accuracies = []
     if mode == "linear":
         # Set the batch size using a heuristic
         bs = min(64, max(4, len(cv_data) // 16))
-        for start_idx, stop_idx in tqdm(folds_idxs, desc="Validating", leave=False, file=sys.stdout):
+        for start_idx, stop_idx in tqdm(folds_idxs, desc="Validation: folds", leave=False, file=sys.stdout):
 
             # Get DataLoaders over the training and testing data for the current
             # cross validation fold
@@ -83,10 +99,12 @@ def cv_classification_eval(F, data, n_classes, cv_folds=5, mode="linear"):
             # Train a model on [loader_tr] and test it on [loader_te]
             model = nn.Linear(F.out_dim, n_classes).to(device)
             optimizer = Adam(model.parameters(), lr=1e-3)
-            for e in range(100):
+            for e in tqdm(range(100), desc="Validation: epochs", leave=False, file=sys.stdout):
                 model, optimizer, _ = one_epoch_classification(model, optimizer,
-                    loader_tr)
-            accuracies.append(accuracy(model, loader_te))
+                    loader_tr, feature_extractor=F)
+
+            # Compute the accuracy of the function model(F(x))
+            accuracies.append(accuracy(nn.Sequential(F, model), loader_te))
     else:
         raise NotImplementedError()
 

@@ -17,13 +17,13 @@ state_sep_str = "=" * 40
 
 def opts_str(args):
     """Returns the options string of [args]."""
-    return f"-{'-'.join(args.options)}-" if len(args.options) > 0 else "-"
+    return f"-{'-'.join(args.options)}" if len(args.options) > 0 else "-"
 
 def suffix_str(args):
     """Returns the suffix string of [args]."""
     return f"-{args.suffix}" if not args.suffix == "" else ""
 
-def load_experiment(file):
+def load_(file):
     """Returns a (model, optimizer, last_epoch, args, results) tuple from
     [file].
     """
@@ -32,18 +32,21 @@ def load_experiment(file):
     last_epoch = data["last_epoch"]
     optimizer = data["optimizer"]
     args = data["args"]
-    results = data["results"]
-    return model, optimizer, last_epoch, args, results
+    tb_results = data["tb_results"]
+    return model, optimizer, last_epoch, args, tb_results
 
-def save_model(model, optimizer, last_epoch, args, results, folder):
+def save_(model, optimizer, last_epoch, args, tb_results, folder):
     """Saves input experiment objects to the [last_epoch].pt file [folder]."""
+    tb_results.flush()
+    tb_results.close()
     torch.save({
         "model": model.cpu(),
         "optimizer": optimizer,
         "last_epoch": last_epoch,
         "args": args,
-        "results": results,
+        "tb_results": tb_results,
     }, f"{folder}/{last_epoch}.pt")
+    model.to(device)
 
 def generator_folder(args):
     """Returns the folder to save a generator trained with [args] to."""
@@ -60,6 +63,8 @@ def resnet_folder(args):
 ################################################################################
 # Training utilities
 ################################################################################
+import math
+
 
 class CosineAnnealingLinearRampLR(_LRScheduler):
 
@@ -140,10 +145,6 @@ class CosineAnnealingLinearRampLR(_LRScheduler):
                 self.print_lr(self.verbose, i, lr, max(0, self.last_epoch))
 
         self._last_lr = [group["lr"] for group in self.optimizer.param_groups]
-
-
-
-
 
 from torch.optim import Adam, SGD
 from torch.autograd import Variable

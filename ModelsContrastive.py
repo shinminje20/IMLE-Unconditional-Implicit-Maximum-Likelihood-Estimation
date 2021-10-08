@@ -34,14 +34,13 @@ class HeadlessResNet18(nn.Module):
     """
     def __init__(self):
         super(HeadlessResNet18, self).__init__()
-        architecture = models.resnet18(pretrained=False)
+        arch = models.resnet18(pretrained=False)
 
         # Modification made in the SimCLR paper
-        architecture.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1,
-                                padding=3, bias=False)
-
-        layers = [l for n,l in architecture.named_children() if not n == "fc"]
-        self.model = nn.Sequential(*layers)
+        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=3,
+            bias=False)
+        self.model = nn.Sequential(*[l for n,l in arch.named_children()
+            if not n in ["fc", "maxpool"]])
         self.out_dim = 512
 
     def forward(self, x): return torch.flatten(self.model(x), 1)
@@ -54,9 +53,12 @@ class HeadlessResNet50(nn.Module):
     """
     def __init__(self):
         super(HeadlessResNet50, self).__init__()
-        architecture = models.resnet50(pretrained=False)
-        layers = [l for n,l in architecture.named_children() if not n == "fc"]
-        self.model = nn.Sequential(*layers)
+        arch = models.resnet50(pretrained=False)
+        # Modification made in the SimCLR paper
+        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=3,
+            bias=False)
+        self.model = nn.Sequential(*[l for n,l in arch.named_children()
+            if not n in ["fc", "maxpool"]])
         self.out_dim = 2048
 
     def forward(self, x): return torch.flatten(self.model(x), 1)
