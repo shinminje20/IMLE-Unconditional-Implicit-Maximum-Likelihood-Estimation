@@ -37,7 +37,7 @@ class HeadlessResNet18(nn.Module):
         arch = models.resnet18(pretrained=False)
 
         # Modification made in the SimCLR paper
-        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=3,
+        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1,
             bias=False)
         self.model = nn.Sequential(*[l for n,l in arch.named_children()
             if not n in ["fc", "maxpool"]])
@@ -55,7 +55,7 @@ class HeadlessResNet50(nn.Module):
         super(HeadlessResNet50, self).__init__()
         arch = models.resnet50(pretrained=False)
         # Modification made in the SimCLR paper
-        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=3,
+        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1,
             bias=False)
         self.model = nn.Sequential(*[l for n,l in arch.named_children()
             if not n in ["fc", "maxpool"]])

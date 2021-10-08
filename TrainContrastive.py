@@ -16,11 +16,7 @@ from Evaluation import cv_classification_eval
 from ModelsContrastive import get_resnet_with_head, ContrastiveLoss
 from Utils import *
 
-<<<<<<< HEAD
 def one_epoch_contrastive(model, optimizer, loader, temp):
-=======
-def one_epoch_contrastive(model, optimizer, loader, temp, epoch_prints):
->>>>>>> a396659fb9c8479cf3e91ab302fd089c1f786f8b
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch according to [args].
 
@@ -30,20 +26,10 @@ def one_epoch_contrastive(model, optimizer, loader, temp, epoch_prints):
     optimizer       -- the optimizer for model
     loader          -- a DataLoader over the data to train on
     temp            -- contrastive loss temperature
-<<<<<<< HEAD
     """
     model.train()
     loss_fn = ContrastiveLoss(temp)
     loss_total = 0
-=======
-    epoch_prints    -- prints per epoch
-    """
-    model.train()
-    loss_fn = ContrastiveLoss(temp)
-
-    loss_total, loss_intermediate = 0, 0
-    print_interval = (len(loader) // epoch_prints) if epoch_prints > 0 else float("inf")
->>>>>>> a396659fb9c8479cf3e91ab302fd089c1f786f8b
 
     for i,(x1,x2) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
         x1 = x1.float().to(device, non_blocking=True)
@@ -72,11 +58,6 @@ if __name__ == "__main__":
         help="file to resume from")
     P.add_argument("--suffix", default="", type=str,
         help="suffix")
-<<<<<<< HEAD
-=======
-    P.add_argument("--epoch_prints", default=5, type=int,
-        help="intermediate loss prints per epoch")
->>>>>>> a396659fb9c8479cf3e91ab302fd089c1f786f8b
     P.add_argument("--n_workers", default=4, type=int,
         help="Number of workers for data loading")
     P.add_argument("--eval_iter", default=10, type=int,
@@ -135,11 +116,8 @@ if __name__ == "__main__":
     if args.val_frac == 0 and args.data in no_val_split_datasets:
         tqdm.write("Since --val_frac is zero and the given dataset has no validation split, setting --eval_iter to -1")
         args.eval_iter = -1
-<<<<<<< HEAD
     if args.val_frac == -1 and args.data in no_val_split_datasets:
         tqdm.write("Since --val_frac is -1, validating on test data (this is to ensure that the model behaves like others)")
-=======
->>>>>>> a396659fb9c8479cf3e91ab302fd089c1f786f8b
     if not args.opt in ["adam"] and isinstance(args.mm, tuple):
         raise ValueError("--mm must be a single momentum parameter unless --opt is one of 'adam'")
 
