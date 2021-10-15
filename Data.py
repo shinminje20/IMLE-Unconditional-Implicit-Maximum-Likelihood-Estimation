@@ -33,10 +33,7 @@ def get_data_splits(data_str, val_frac=.1, seed=0):
     """
     if data_str == "cifar10":
         train = CIFAR10(root="../Datasets", train=True, download=True)
-        amt_tr = int(len(train) * (1 - val_frac))
-        amt_val = int(len(train) * (val_frac))
-        train, val = random_split(train, [amt_tr, amt_val],
-            generator=torch.Generator().manual_seed(seed))
+        val = None
         test = CIFAR10(root="../Datasets", train=False, download=True)
     else:
         raise ValueError("Unknown inputs")
@@ -46,36 +43,47 @@ def get_data_splits(data_str, val_frac=.1, seed=0):
 ################################################################################
 # Non-realistic augmentations. These represent an important baseline to beat.
 ################################################################################
-cifar_augs_tr = transforms.Compose([
-    transforms.RandomResizedCrop(32, interpolation=PIL.Image.BICUBIC),
-    transforms.RandomHorizontalFlip(p=0.5),
-    transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-    transforms.RandomGrayscale(p=0.2),
-    transforms.ToTensor(),])
-    # transforms.Normalize([0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261])])
+def get_data_augs(data_str):
+    """Returns a (SSL transforms, finetuning transforms, testing transforms)
+    tuple based on [data_str].
+    """
+    if "cifar" in data_str:
+        augs_tr = transforms.Compose([
+            transforms.RandomResizedCrop(32, interpolation=PIL.Image.BICUBIC),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.ToTensor()])
 
-cifar10_augs_val = transforms.Compose([
-    transforms.RandomResizedCrop(32, interpolation=PIL.Image.BICUBIC),
-    transforms.RandomHorizontalFlip(p=0.5),
-    transforms.ToTensor(),])
-    # transforms.Normalize([0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261])])
+        augs_finetune = transforms.Compose([
+            transforms.RandomResizedCrop(32, interpolation=PIL.Image.BICUBIC),
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.ToTensor()])
 
-cifar10_augs_te = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize([0.4914, 0.4822, 0.4465], [0.247, 0.243, 0.261])])
+        augs_te = transforms.Compose([
+            transforms.ToTensor(),])
+    else:
+        raise ValueError("Unknown augmenta")
+
+    return augs_tr, augs_finetune, augs_te
 
 ################################################################################
 # Datasets
 ################################################################################
-class ImageLabelDataset(Dataset):
+class XYDataset(Dataset):
+    """A simple dataset returning examples of the form (transform(x), y)."""
 
-    def __init__(self, data, transform):
-        super(ImageLabelDataset, self).__init__()
+    def __init__(self, data, transform=transforms.ToTensor()):
+        """Args:
+        data        -- a sequence of (x,y) pairs
+        transform   -- the transform to apply to each returned x-value
+        """
+        super(XYDataset, self).__init__()
+        self.transform = transform
 
         # Re-index the input data because it may have been passed in as a subset
         # that'd need to be indexed like it were a part of the original dataset
         self.data = [(x,y) for x,y in data]
-        self.transform = transform
 
     def __len__(self): return len(self.data)
 
@@ -112,30 +120,6 @@ class ImagesFromTransformsDataset(Dataset):
     def __getitem__(self, idx):
         image = self.data[idx][0]
         return self.x_transform(image), self.y_transform(image)
-
-class WithZDataset(Dataset):
-    """A dataset where data returned from the __getitem__() method has a random
-    vector [z] included at the end.
-    """
-
-    def __init__(self, data):
-        """
-        Args:
-        data    -- the wrapped dataset
-        z_dim   -- the dimensionality of the random vector to return
-        """
-        super(ImageImageZDataset, self).__init__()
-        self.data = data
-        self.z_dim = z_dim
-
-    def __len__(self): return len(self.data)
-
-    def __getitem__(self, idx):
-        data = self.data[idx]
-        if isinstance(data, tuple):
-            return data + torch.rand(self.z_dim)
-        else:
-            return (data, torch.rand(self.z_dim))
 
 class FeatureDataset(Dataset):
     """A dataset of model features."""

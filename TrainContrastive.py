@@ -12,23 +12,44 @@ from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
 
 from Data import *
-from Evaluation import cv_classification_eval
+from Evaluation import classification_eval
 from ModelsContrastive import get_resnet_with_head, ContrastiveLoss
 from Utils import *
 
-def one_epoch_contrastive(model, optimizer, loader, temp):
+class NTXEntLoss:
+    """NT-XEnt loss, modified from PyTorch Lightning."""
+
+    def __init__(self, temp=.5):
+        """Args:
+        temp    -- contrastive loss temperature
+        """
+        self.temp = temp
+
+    def __call__(self, fx1, fx2):
+        """Returns the loss from pre-normalized projections [fx1] and [fx2]."""
+        out = torch.cat([fx1, fx2], dim=0)
+        n_samples = len(out)
+        cov = torch.mm(out, out.t().contiguous())
+        sim = torch.exp(cov / self.temp)
+        mask = ~torch.eye(n_samples, device=sim.device).bool()
+        neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
+        pos = torch.exp(torch.sum(fx1 * fx2, dim=-1) / self.temp)
+        pos = torch.cat([pos, pos], dim=0)
+        return -torch.log(pos / neg).mean()
+
+def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     """Returns a (model, optimizer, loss) tuple after training [model] on
-    [loader] for one epoch according to [args].
+    [loader] for one epoch.
 
-    Ther returned loss is averaged over batches.
+    The returned loss is averaged over batches.
 
-    model           -- a CondConvImplicitModel
-    optimizer       -- the optimizer for model
+    model           -- a model of the form projection_head(feature_extractor())
+    optimizer       -- the optimizer for [model]
     loader          -- a DataLoader over the data to train on
     temp            -- contrastive loss temperature
     """
     model.train()
-    loss_fn = ContrastiveLoss(temp)
+    loss_fn = NTXEntLoss(temp)
     loss_total = 0
 
     for i,(x1,x2) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
@@ -49,16 +70,15 @@ if __name__ == "__main__":
     P = argparse.ArgumentParser(description="IMLE training")
     P.add_argument("--data", choices=["cifar10"], default="cifar10", type=str,
         help="dataset to load images from")
-    P.add_argument("--backbone", default="resnet18",
-        choices=["resnet18", "resnet50"],
-        help="Resnet backbone to use")
+    P.add_argument("--eval_data", default="val", choices=["val", "cv", "test"],
+        help="The data to evaluate linear finetunings on")
 
     # Non-hyperparameter arguments
     P.add_argument("--resume", default=None, type=str,
         help="file to resume from")
     P.add_argument("--suffix", default="", type=str,
         help="suffix")
-    P.add_argument("--n_workers", default=4, type=int,
+    P.add_argument("--n_workers", default=6, type=int,
         help="Number of workers for data loading")
     P.add_argument("--eval_iter", default=10, type=int,
         help="number of epochs between linear evaluations")
@@ -66,27 +86,29 @@ if __name__ == "__main__":
         help="save a model every --save_iter epochs")
 
     # Hyperparameter arguments
+    P.add_argument("--backbone", default="resnet18",
+        choices=["resnet18", "resnet50"],
+        help="Resnet backbone to use")
+    P.add_argument("--bs", default=1000, type=int,
+        help="batch size")
     P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
-    P.add_argument("--n_ramp", default=10, type=int,
-        help="Number of linear ramp epochs at start of training")
-    P.add_argument("--bs", default=2500, type=int,
-        help="batch size")
-    P.add_argument("--opt", choices=["adam", "sgd", "lars"], default="adam",
-        type=str,
-        help="optimizer")
+    P.add_argument("--lars", default=1, choices=[0, 1],
+        help="whether or not to use LARS")
     P.add_argument("--lr", default=1e-3, type=float,
         help="base learning rate")
     P.add_argument("--mm", nargs="+", default=(.9, .99), type=float,
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
+    P.add_argument("--n_ramp", default=10, type=int,
+        help="Number of linear ramp epochs at start of training")
+    P.add_argument("--opt", choices=["adam", "sgd"], default="adam",
+        help="optimizer")
+    P.add_argument("--proj_dim", default=128, type=int,
+        help="dimension of projection space")
     P.add_argument("--temp", default=.5, type=float,
         help="contrastive loss temperature")
     P.add_argument("--trust", default=.001, type=float,
         help="LARS trust coefficient")
-    P.add_argument("--proj_dim", default=128, type=int,
-        help="dimension of projection space")
-    P.add_argument("--val_frac", default=.1, type=float,
-        help="amount of data to use for validation")
     P.add_argument("--seed", default=0, type=int,
         help="random seed")
     args = P.parse_args()
@@ -94,6 +116,8 @@ if __name__ == "__main__":
     args.options = sorted([
         f"bs{args.bs}",
         f"epochs{args.epochs}",
+        f"eval_data_{args.eval_data}",
+        f"lars{args.lars}",
         f"lr{args.lr}",
         f"mm{'_'.join([str(b) for b in flatten([args.mm])])}",
         f"n_ramp{args.n_ramp}",
@@ -101,25 +125,17 @@ if __name__ == "__main__":
         f"seed{args.seed}",
         f"temp{args.temp}",
         f"trust{args.trust}",
-        f"val_frac{args.val_frac}"
     ])
-
     ############################################################################
     # Check arguments
     ############################################################################
     if not args.save_iter % args.eval_iter == 0:
         tqdm.write("WARNING: training will save a checkpoint without direct evaluation. Ensure --save_iter % --eval_iter is zero to avoid this.")
-    if args.val_frac > 0 and args.eval_iter <= 0:
-        tqdm.write("WARNING: since --val_frac is nonzero, some data will be split into a validation dataset, however, since --eval_iter is negative, no validation will be performed.")
-    if args.val_frac > 0 and not args.data in no_val_split_datasets:
-        tqdm.write("WARNING: since --data has a validation split, --val_frac is ignored and the given validation split used instead.")
-    if args.val_frac == 0 and args.data in no_val_split_datasets:
-        tqdm.write("Since --val_frac is zero and the given dataset has no validation split, setting --eval_iter to -1")
-        args.eval_iter = -1
-    if args.val_frac == -1 and args.data in no_val_split_datasets:
-        tqdm.write("Since --val_frac is -1, validating on test data (this is to ensure that the model behaves like others)")
-    if not args.opt in ["adam"] and isinstance(args.mm, tuple):
-        raise ValueError("--mm must be a single momentum parameter unless --opt is one of 'adam'")
+    if args.opt == "sgd" and len(args.mm) == 2:
+        raise ValueError("--mm must be a single momentum parameter if --opt is 'sgd'.")
+    if args.data in no_val_split_datasets and args.eval_data == "val":
+        args.eval_data = "cv"
+        tqdm.write(f"--eval_data is set to 'val' but no validation split exists for {args.data}. Falling back to cross-validation.")
 
     args.mm = args.mm[0] if len(args.mm) == 1 else args.mm
 
@@ -131,25 +147,25 @@ if __name__ == "__main__":
         model = model.to(device)
         last_epoch -= 1
     else:
-        # Get the model
+        # Get the model and optimizer. [get_param_groups()] ensures that the
+        # correct param groups are fed to the optimizer so that if the otimizer
+        # is wrapped in LARS, LARS will see the right param groups.
         model = get_resnet_with_head(args.backbone, args.proj_dim,
-            head_type="projection").to(device)
+            head_type="projection", is_cifar=("cifar" in args.data)).to(device)
 
-        # Get the optimizer for the model
         if args.opt == "adam":
-            optimizer = Adam(model.parameters(), lr=args.lr, betas=args.mm,
-                weight_decay=1e-6)
-        elif args.opt == "lars":
-            optimizer = LARS(model, args.lr, args.mm,
-                trust_coefficient=args.trust)
+            optimizer = Adam(get_param_groups(model, args.lars), lr=args.lr,
+                betas=args.mm, weight_decay=1e-6)
         elif args.opt == "sgd":
-            optimizer = SGD(model.parameters(), lr=args.lr, momentum=args.mm,
-                weight_decay=1e-6)
+            optimizer = SGD(get_param_groups(model, args.lars), lr=args.lr,
+                momentum=args.mm, weight_decay=1e-6, nesterov=True)
         else:
-            raise ValueError(f"--opt was {args.opt} but must be one of 'adam', 'lars', or 'sgd'")
+            raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
+
+        optimizer = LARS(optimizer, args.trust) if args.lars else optimizer
 
         # Get a SummaryWriter to record results
-        tb_results = SummaryWriter(resnet_folder(args), flush_secs=1, max_queue=0)
+        tb_results = SummaryWriter(resnet_folder(args), flush_secs=1 max_queue=0)
 
         # Set the last epoch to -1. If we're resuming, this else block won't be
         # run and last epoch will be something else. Here we set it in the
@@ -160,19 +176,14 @@ if __name__ == "__main__":
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
 
-    ############################################################################
-    # Construct the dataset and dataloader. For each dataset, the last k indices
-    # are cut off and used for the visual validation dataset.
-    #
-    # Negative arguments to --val_frac have meaning, but should be considered
-    # zero when computing the lengths of the training and validation splits.
-    ############################################################################
-    data_tr, data_val, data_te = get_data_splits(args.data, seed=args.seed,
-        val_frac=max(0, args.val_frac))
-    data_tr = ImagesFromTransformsDataset(data_tr, cifar_augs_tr, cifar_augs_tr)
-    data_val = ImageLabelDataset((data_te if args.val_frac == -1 else data_val),
-        cifar10_augs_val)
-    loader = DataLoader(data_tr, shuffle=True, batch_size=args.bs,
+    # Construct the dataset and dataloader. Some datasets don't have an
+    # associated validation split. If this is the case, [data_val] will be None.
+    data_tr, data_val, data_te = get_data_splits(args.data)
+    augs_tr, augs_finetune, augs_te = get_data_augs(args.data)
+    data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
+    data_val = XYDataset(data_te if args.eval_data == "test" else (
+        data_tr if args.eval_data == "cv" else data_val))
+    loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
 
     ############################################################################
@@ -186,8 +197,8 @@ if __name__ == "__main__":
         # Perform a classification cross validation if desired, and otherwise
         # print/log results or merely that the epoch happened.
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
-            val_acc_avg, val_acc_std = cv_classification_eval(model.backbone,
-                data_val, dataset2n_classes[args.data], cv_folds=5)
+            val_acc_avg, val_acc_std = classification_eval(model.backbone,
+                data_tr, data_val, augs_finetune, augs_te)
             tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
             tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
             tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)

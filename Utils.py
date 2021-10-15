@@ -1,3 +1,5 @@
+"""File containing utilities."""
+import math
 import os
 from tqdm import tqdm
 
@@ -16,21 +18,21 @@ if "cuda" in device:
 state_sep_str = "=" * 40
 
 def opts_str(args):
-    """Returns the options string of [args]."""
+    """Returns the options string for [args]."""
     return f"-{'-'.join(args.options)}" if len(args.options) > 0 else "-"
 
 def suffix_str(args):
-    """Returns the suffix string of [args]."""
+    """Returns the suffix string for [args]."""
     return f"-{args.suffix}" if not args.suffix == "" else ""
 
 def load_(file):
-    """Returns a (model, optimizer, last_epoch, args, results) tuple from
-    [file].
+    """Returns a (model, optimizer, last_epoch, args, tensorboard results) tuple
+    from [file].
     """
     data = torch.load(file)
     model = data["model"].to(device)
-    last_epoch = data["last_epoch"]
     optimizer = data["optimizer"]
+    last_epoch = data["last_epoch"]
     args = data["args"]
     tb_results = data["tb_results"]
     return model, optimizer, last_epoch, args, tb_results
@@ -39,13 +41,9 @@ def save_(model, optimizer, last_epoch, args, tb_results, folder):
     """Saves input experiment objects to the [last_epoch].pt file [folder]."""
     tb_results.flush()
     tb_results.close()
-    torch.save({
-        "model": model.cpu(),
-        "optimizer": optimizer,
-        "last_epoch": last_epoch,
-        "args": args,
-        "tb_results": tb_results,
-    }, f"{folder}/{last_epoch}.pt")
+    torch.save({"model": model.cpu(), "optimizer": optimizer,
+        "last_epoch": last_epoch, "args": args, "tb_results": tb_results},
+        f"{folder}/{last_epoch}.pt")
     model.to(device)
 
 def generator_folder(args):
@@ -55,18 +53,34 @@ def generator_folder(args):
     return folder
 
 def resnet_folder(args):
-    """Returns the folder to save a resnet trained with [args] to."""
+    """Returns the folder to to which to save a resnet trained with [args]."""
     folder = f"Models/resnets-{args.backbone}-{args.data}{opts_str(args)}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
 ################################################################################
-# Training utilities
+# SimCLR utilities
 ################################################################################
-import math
+
+def get_param_groups(model, lars_param_groups):
+    """Returns the param_groups for [model] based on whether [lars_param_groups]
+    should be used or not. The result of this function can be used as a drop-in
+    replacement for 'model.parameters()' when constructing an optimizer that
+    will be wrapped in LARS.
+    """
+    if lars_param_groups:
+        return [
+            {"params": [p for n,p in model.named_parameters() if "bn" in n],
+            "weight_decay": weight_decay, "layer_adaption": False
+            },
+            {"params": [p for n,p in model.named_parameters() if not "bn" in n],
+            "weight_decay": weight_decay, "layer_adaption": True}]
+    else:
+        return model.parameters()
 
 
 class CosineAnnealingLinearRampLR(_LRScheduler):
+    """Cosine Annealing scheduler with a linear ramp."""
 
     def __init__(self, optimizer, T_0, n_ramp, T_mult=1, eta_min=0,
         last_epoch=-1, verbose=False):
@@ -75,7 +89,7 @@ class CosineAnnealingLinearRampLR(_LRScheduler):
         optimizer   -- the wrapped optimizer
         T_0         -- base COSINE period
         n_ramp      -- number of linear ramp epochs
-        T_mult      -- multiplicative period change ()
+        T_mult      -- multiplicative period change
         eta_min     -- minumum learning rate
         last_epoch  -- index of the last epoch run
         verbose     -- whether to have verbose output or not
@@ -94,8 +108,8 @@ class CosineAnnealingLinearRampLR(_LRScheduler):
         self.ramped = (last_epoch >= self.n_ramp)
         self.T_cur = last_epoch
 
-        super(CosineAnnealingLinearRampLR, self).__init__(optimizer, last_epoch, verbose)
-
+        super(CosineAnnealingLinearRampLR, self).__init__(optimizer, last_epoch,
+            verbose)
 
     def get_lr(self):
         if not self._get_lr_called_within_step:
@@ -105,11 +119,10 @@ class CosineAnnealingLinearRampLR(_LRScheduler):
         if not self.ramped:
             return [b * ((self.T_cur + 1) / self.n_ramp) for b in self.base_lrs]
         else:
-            return [self.eta_min + (b - self.eta_min) * (1 + math.cos(math.pi * self.T_cur / self.T_i)) / 2
-                for b in self.base_lrs]
+            cos = (1 + math.cos(math.pi * self.T_cur / self.T_i)) / 2
+            return [self.eta_min + (b - self.eta_min) * cos for b in self.base_lrs]
 
     def step(self):
-        # Behave like linear ramp in this case
         if not self.ramped and self.last_epoch + 1 < self.n_ramp:
             self.T_cur += 1
             self.last_epoch += 1
@@ -146,9 +159,6 @@ class CosineAnnealingLinearRampLR(_LRScheduler):
 
         self._last_lr = [group["lr"] for group in self.optimizer.param_groups]
 
-from torch.optim import Adam, SGD
-from torch.autograd import Variable
-from torch.nn.parameter import Parameter
 class LARS(Optimizer):
     """Code slightly modified from
 
@@ -159,28 +169,12 @@ class LARS(Optimizer):
     https://github.com/NVIDIA/apex/blob/d74fda260c403f775817470d87f810f816f3d615/apex/parallel/LARC.py
     """
 
-    def __init__(self, model, lr, momentum, weight_decay=1e-6,
-        trust_coefficient=0.001):
+    def __init__(self, optimizer, trust_coefficient=0.001):
         """
         Args:
-        model               -- the model to optimize
-        lr                  -- learning rate of wrapped SGD
-        momentum            -- momentum of wrapped SGD
-        weight_decay        -- weight_decay of wrapped SGD
+        optimizer           -- the wrapped optimizer
         trust_coefficient   -- the trust coefficient
         """
-        param_groups = [
-            {"params": [p for n,p in model.named_parameters() if "bn" in n],
-                "weight_decay": weight_decay,
-                "layer_adaption": False
-            },
-            {"params": [p for n,p in model.named_parameters() if not "bn" in n],
-                "weight_decay": weight_decay,
-                "layer_adaption": True
-            }
-        ]
-        optimizer = SGD(param_groups, lr=lr, momentum=momentum,
-            weight_decay=weight_decay)
         self.param_groups = optimizer.param_groups
         self.optim = optimizer
         self.trust_coefficient = trust_coefficient

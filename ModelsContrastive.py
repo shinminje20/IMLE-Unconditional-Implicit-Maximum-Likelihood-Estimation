@@ -6,12 +6,12 @@ import torch.nn.functional as F
 
 from torchvision import models
 
-def get_resnet_with_head(backbone, head_dim, head_type="none"):
+def get_resnet_with_head(backbone, head_dim, is_cifar=False, head_type="none"):
     """Returns a resnet of [backbone] with a head of [head_type] attached."""
     if backbone == "resnet18":
-        R = HeadlessResNet18()
+        R = HeadlessResNet18(is_cifar=is_cifar)
     elif backbone == "resnet50":
-        R = HeadlessResNet50()
+        R = HeadlessResNet50(is_cifar=is_cifar)
     else:
         raise ValueError(f"Unknown backbone '{backbone}'")
 
@@ -27,20 +27,28 @@ def get_resnet_with_head(backbone, head_dim, head_type="none"):
     return nn.Sequential(OrderedDict([("backbone", R), ("head", H)]))
 
 
+
+
 class HeadlessResNet18(nn.Module):
     """A class representing a ResNet18 with its head cut off.
 
     Code partially derived from https://github.com/leftthomas/SimCLR.
     """
-    def __init__(self):
+    def __init__(self, is_cifar=False):
         super(HeadlessResNet18, self).__init__()
-        arch = models.resnet18(pretrained=False)
 
-        # Modification made in the SimCLR paper
-        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1,
-            bias=False)
-        self.model = nn.Sequential(*[l for n,l in arch.named_children()
-            if not n in ["fc", "maxpool"]])
+        ########################################################################
+        # Construct the model architecture
+        ########################################################################
+        arch = models.resnet18(pretrained=False)
+        if is_cifar:
+            arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1,
+                bias=False)
+            self.model = nn.Sequential(*[l for n,l in arch.named_children()
+                if not n in ["fc", "maxpool"]])
+        else:
+            self.model = nn.Sequential(*[l for n,l in arch.named_children()])
+
         self.out_dim = 512
 
     def forward(self, x): return torch.flatten(self.model(x), 1)
@@ -51,14 +59,21 @@ class HeadlessResNet50(nn.Module):
 
     Code partially derived from https://github.com/leftthomas/SimCLR.
     """
-    def __init__(self):
+    def __init__(self, is_cifar=False):
         super(HeadlessResNet50, self).__init__()
+
+        ########################################################################
+        # Construct the model architecture
+        ########################################################################
         arch = models.resnet50(pretrained=False)
-        # Modification made in the SimCLR paper
-        arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1,
-            bias=False)
-        self.model = nn.Sequential(*[l for n,l in arch.named_children()
-            if not n in ["fc", "maxpool"]])
+        if is_cifar:
+            arch.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1,
+                bias=False)
+            self.model = nn.Sequential(*[l for n,l in arch.named_children()
+                if not n in ["fc", "maxpool"]])
+        else:
+            self.model = nn.Sequential(*[l for n,l in arch.named_children()])
+
         self.out_dim = 2048
 
     def forward(self, x): return torch.flatten(self.model(x), 1)
@@ -73,10 +88,10 @@ class ProjectionHead(nn.Module):
         """
         super(ProjectionHead, self).__init__()
         self.model = nn.Sequential(OrderedDict([
-            ("fc1", nn.Linear(in_dim, in_dim, bias=False)),
-            ("bn1", nn.BatchNorm1d(in_dim)),
+            ("fc1", nn.Linear(in_dim, 2048, bias=False)),
+            ("bn1", nn.BatchNorm1d(2048)),
             ("relu1", nn.ReLU(inplace=True)),
-            ("fc2", nn.Linear(in_dim, out_dim, bias=False)),
+            ("fc2", nn.Linear(2048, out_dim, bias=False)),
             ("bn2", nn.BatchNorm1d(out_dim))]))
 
         # Turn off the bias for the bias term on this gradient
@@ -120,6 +135,6 @@ class ContrastiveLoss:
         # Positive similarity :
         pos = torch.exp(torch.sum(fx1 * fx2, dim=-1) / self.temp)
         pos = torch.cat([pos, pos], dim=0)
-        loss = -torch.log(pos / neg).mean()
+        loss = -torch.log(pos / neg).sum()
 
         return loss
