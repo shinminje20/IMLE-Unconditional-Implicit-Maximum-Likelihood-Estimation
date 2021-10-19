@@ -62,7 +62,7 @@ def resnet_folder(args):
 # SimCLR utilities
 ################################################################################
 
-def get_param_groups(model, lars_param_groups):
+def get_param_groups(model, lars_param_groups, weight_decay=1e-6):
     """Returns the param_groups for [model] based on whether [lars_param_groups]
     should be used or not. The result of this function can be used as a drop-in
     replacement for 'model.parameters()' when constructing an optimizer that
@@ -233,7 +233,7 @@ class LARS(Optimizer):
 # Miscellaneous
 ################################################################################
 def flatten(xs):
-    """Returns set, list, or tuple [xs] after recursively flattening."""
+    """Returns collection [xs] after recursively flattening into a list."""
     result = []
     for x in xs:
         if isinstance(x, list) or isinstance(x, set) or isinstance(x, tuple):

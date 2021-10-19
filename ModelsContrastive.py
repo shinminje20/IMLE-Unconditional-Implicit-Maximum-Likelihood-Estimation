@@ -26,9 +26,6 @@ def get_resnet_with_head(backbone, head_dim, is_cifar=False, head_type="none"):
 
     return nn.Sequential(OrderedDict([("backbone", R), ("head", H)]))
 
-
-
-
 class HeadlessResNet18(nn.Module):
     """A class representing a ResNet18 with its head cut off.
 
@@ -99,42 +96,9 @@ class ProjectionHead(nn.Module):
 
     def forward(self, x): return F.normalize(self.model(x), dim=1)
 
-class LinearHead(nn.Module):
-    """A class implementing a linear head for classification."""
+class DimensionedIdentity(nn.Identity):
+    """nn.Identity() but with dimensions."""
 
-    def __init__(self, in_dim, out_dim):
-        """Args:
-        in_dim  -- the input dimensionality
-        out_dim -- the output dimensionality
-        """
-        super(ProjectionHead, self).__init__()
-        self.model = nn.Linear(in_dim, out_dim)
-
-    def forward(self, x): self.model(x)
-
-class ContrastiveLoss:
-
-    def __init__(self, temp):
-        self.temp = temp
-
-    def __call__(self, fx1, fx2):
-        """Returns the loss on [fx1] and [fx2].
-        Code from https://github.com/PyTorchLightning/pytorch-lightning-bolts/blob/master/pl_bolts/losses/self_supervised_learning.py.
-        """
-        out = torch.cat([fx1, fx2], dim=0)
-        n_samples = len(out)
-
-        # Full similarity matrix
-        cov = torch.mm(out, out.t().contiguous())
-        sim = torch.exp(cov / self.temp)
-
-        # Negative similarity
-        mask = ~torch.eye(n_samples, device=sim.device).bool()
-        neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
-
-        # Positive similarity :
-        pos = torch.exp(torch.sum(fx1 * fx2, dim=-1) / self.temp)
-        pos = torch.cat([pos, pos], dim=0)
-        loss = -torch.log(pos / neg).sum()
-
-        return loss
+    def __init__(self, out_dim):
+        super(DimensionedIdentity, self).__init__()
+        self.out_dim = out_dim

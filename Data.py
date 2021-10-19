@@ -23,22 +23,39 @@ dataset2n_classes = {
     "imagenet": None,
 }
 
-def get_data_splits(data_str, val_frac=.1, seed=0):
-    """Returns a base dataset based only [data_str].
+def get_data_splits(data_str, eval_str):
+    """Returns training and evaluation data given [data_str] and [eval_str].
 
     Args:
     data_str    -- a string specifying the dataset to return
-    val_frac    -- if there are only training and testing splits
-    seed        -- the seed to use for selecting the validation data
+    eval_str    -- the kind of validation to do. 'cv' for cross validation,
+                    'val' for using a validation split (only if it exists), and
+                    'test' for using the test split
     """
+    # Get train, validation, and test splits of the data
     if data_str == "cifar10":
-        train = CIFAR10(root="../Datasets", train=True, download=True)
-        val = None
-        test = CIFAR10(root="../Datasets", train=False, download=True)
+        data_tr = CIFAR10(root="../Datasets", train=True, download=True)
+        data_val = None
+        data_te = CIFAR10(root="../Datasets", train=False, download=True)
     else:
-        raise ValueError("Unknown inputs")
+        raise ValueError(f"Unknown dataset {data_str}")
 
-    return train, val, test
+    # Set the testing data---what may in fact be validation---correctly
+    if eval_str == "test":
+        tqdm.write("Validation on test split data (WARNING)")
+        data_te = data_te
+    elif eval_str == "val" and not data_val is None:
+        tqdm.write("Validation on validation split data")
+        data_te = data_val
+    elif eval == "cv":
+        tqdm.write("Validation via cross-validation")
+        data_te = "cv"
+    elif eval_str == "val" and data_val is None:
+        raise ValueError("Trying to validate on validation split, but no such split exists")
+    else:
+        raise ValueError(f"No validation type for --eval {eval}")
+
+    return data_tr, data_te
 
 ################################################################################
 # Non-realistic augmentations. These represent an important baseline to beat.
@@ -49,19 +66,23 @@ def get_data_augs(data_str):
     """
     if "cifar" in data_str:
         augs_tr = transforms.Compose([
-            transforms.RandomResizedCrop(32, interpolation=PIL.Image.BICUBIC),
+            transforms.RandomResizedCrop(32),
             transforms.RandomHorizontalFlip(p=0.5),
             transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
             transforms.RandomGrayscale(p=0.2),
             transforms.ToTensor()])
 
+        # Validate using the same augmentations as for training, in line with
+        # https://github.com/leftthomas/SimCLR
         augs_finetune = transforms.Compose([
-            transforms.RandomResizedCrop(32, interpolation=PIL.Image.BICUBIC),
+            transforms.RandomResizedCrop(32),
             transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
             transforms.ToTensor()])
 
         augs_te = transforms.Compose([
-            transforms.ToTensor(),])
+            transforms.ToTensor()])
     else:
         raise ValueError("Unknown augmenta")
 
@@ -124,7 +145,7 @@ class ImagesFromTransformsDataset(Dataset):
 class FeatureDataset(Dataset):
     """A dataset of model features."""
 
-    def __init__(self, F, data, bs=128):
+    def __init__(self, data, F, bs=128):
         """Args:
         F       -- a feature extractor
         data    -- a dataset of XY pairs

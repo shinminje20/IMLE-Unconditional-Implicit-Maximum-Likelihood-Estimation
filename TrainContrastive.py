@@ -13,7 +13,7 @@ import torchvision.transforms as transforms
 
 from Data import *
 from Evaluation import classification_eval
-from ModelsContrastive import get_resnet_with_head, ContrastiveLoss
+from ModelsContrastive import get_resnet_with_head
 from Utils import *
 
 class NTXEntLoss:
@@ -70,7 +70,7 @@ if __name__ == "__main__":
     P = argparse.ArgumentParser(description="IMLE training")
     P.add_argument("--data", choices=["cifar10"], default="cifar10", type=str,
         help="dataset to load images from")
-    P.add_argument("--eval_data", default="val", choices=["val", "cv", "test"],
+    P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
         help="The data to evaluate linear finetunings on")
 
     # Non-hyperparameter arguments
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         help="whether or not to use LARS")
     P.add_argument("--lr", default=1e-3, type=float,
         help="base learning rate")
-    P.add_argument("--mm", nargs="+", default=(.9, .99), type=float,
+    P.add_argument("--mm", nargs="+", default=(.9, .999), type=float,
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
     P.add_argument("--n_ramp", default=10, type=int,
         help="Number of linear ramp epochs at start of training")
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     args.options = sorted([
         f"bs{args.bs}",
         f"epochs{args.epochs}",
-        f"eval_data_{args.eval_data}",
+        f"eval_{args.eval}",
         f"lars{args.lars}",
         f"lr{args.lr}",
         f"mm{'_'.join([str(b) for b in flatten([args.mm])])}",
@@ -133,9 +133,9 @@ if __name__ == "__main__":
         tqdm.write("WARNING: training will save a checkpoint without direct evaluation. Ensure --save_iter % --eval_iter is zero to avoid this.")
     if args.opt == "sgd" and len(args.mm) == 2:
         raise ValueError("--mm must be a single momentum parameter if --opt is 'sgd'.")
-    if args.data in no_val_split_datasets and args.eval_data == "val":
-        args.eval_data = "cv"
-        tqdm.write(f"--eval_data is set to 'val' but no validation split exists for {args.data}. Falling back to cross-validation.")
+    if args.data in no_val_split_datasets and args.eval == "val":
+        args.eval = "cv"
+        tqdm.write(f"--eval is set to 'val' but no validation split exists for {args.data}. Falling back to cross-validation.")
 
     args.mm = args.mm[0] if len(args.mm) == 1 else args.mm
 
@@ -164,25 +164,15 @@ if __name__ == "__main__":
 
         optimizer = LARS(optimizer, args.trust) if args.lars else optimizer
 
-        # Get a SummaryWriter to record results
-        tb_results = SummaryWriter(resnet_folder(args), flush_secs=1 max_queue=0)
-
-        # Set the last epoch to -1. If we're resuming, this else block won't be
-        # run and last epoch will be something else. Here we set it in the
-        # default case so it can be provided to the learning rate scheduler.
+        tb_results = SummaryWriter(resnet_folder(args), max_queue=0)
         last_epoch = -1
 
-    # Get the scheduler.
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
 
-    # Construct the dataset and dataloader. Some datasets don't have an
-    # associated validation split. If this is the case, [data_val] will be None.
-    data_tr, data_val, data_te = get_data_splits(args.data)
+    data_tr, data_val = get_data_splits(args.data, args.eval)
     augs_tr, augs_finetune, augs_te = get_data_augs(args.data)
     data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
-    data_val = XYDataset(data_te if args.eval_data == "test" else (
-        data_tr if args.eval_data == "cv" else data_val))
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
 
