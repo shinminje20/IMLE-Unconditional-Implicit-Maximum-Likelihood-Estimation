@@ -47,13 +47,13 @@ def get_data_splits(data_str, eval_str):
     elif eval_str == "val" and not data_val is None:
         tqdm.write("Validation on validation split data")
         data_te = data_val
-    elif eval == "cv":
+    elif eval_str == "cv":
         tqdm.write("Validation via cross-validation")
         data_te = "cv"
     elif eval_str == "val" and data_val is None:
         raise ValueError("Trying to validate on validation split, but no such split exists")
     else:
-        raise ValueError(f"No validation type for --eval {eval}")
+        raise ValueError(f"No validation type for --eval {eval_str}")
 
     return data_tr, data_te
 
