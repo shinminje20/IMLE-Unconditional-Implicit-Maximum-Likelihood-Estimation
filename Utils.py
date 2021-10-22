@@ -182,8 +182,8 @@ class LARS(Optimizer):
     def __getstate__(self):
         return self.optim.__getstate__()
 
-    def __setstate__(self, state):
-        self.optim.__setstate__(state)
+    def __setstate__(self, state): pass
+        # self.optim.__setstate__(state)
 
     def __repr__(self):
         return self.optim.__repr__()
