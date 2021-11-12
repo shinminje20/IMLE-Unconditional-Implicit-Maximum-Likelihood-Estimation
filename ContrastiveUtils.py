@@ -4,7 +4,7 @@ from collections import OrderedDict
 
 import torch
 import torch.nn as nn
-import torch.optim.lr_scheduler import _LRScheduler
+from torch.optim.lr_scheduler import _LRScheduler
 import torch.nn.functional as F
 
 from torchvision import models
