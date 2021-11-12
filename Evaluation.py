@@ -10,7 +10,7 @@ import torch.nn as nn
 from torch.utils.data import Subset, ConcatDataset, DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from Data import *
-from ModelsContrastive import *
+from ContrastiveUtils import *
 from Utils import *
 
 label2idx = None
