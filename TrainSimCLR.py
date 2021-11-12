@@ -13,29 +13,8 @@ import torchvision.transforms as transforms
 
 from Data import *
 from Evaluation import classification_eval
-from ModelsContrastive import get_resnet_with_head
+from ContrastiveUtils import *
 from Utils import *
-
-class NTXEntLoss:
-    """NT-XEnt loss, modified from PyTorch Lightning."""
-
-    def __init__(self, temp=.5):
-        """Args:
-        temp    -- contrastive loss temperature
-        """
-        self.temp = temp
-
-    def __call__(self, fx1, fx2):
-        """Returns the loss from pre-normalized projections [fx1] and [fx2]."""
-        out = torch.cat([fx1, fx2], dim=0)
-        n_samples = len(out)
-        cov = torch.mm(out, out.t().contiguous())
-        sim = torch.exp(cov / self.temp)
-        mask = ~torch.eye(n_samples, device=sim.device).bool()
-        neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
-        pos = torch.exp(torch.sum(fx1 * fx2, dim=-1) / self.temp)
-        pos = torch.cat([pos, pos], dim=0)
-        return -torch.log(pos / neg).mean()
 
 def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     """Returns a (model, optimizer, loss) tuple after training [model] on

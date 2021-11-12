@@ -3,10 +3,11 @@
 
 ### Environment
 ```
-python==3.9.6
-pytorch==1.9
-tensorboard==2.6.0
-torchvision==0.10.0
+lpips==0.1.4
+python==3.9.7
+pytorch==1.10.0
+tensorboard==2.7.0
+torchvision==0.11.1
 tqdm==4.62.2
 ```
 
