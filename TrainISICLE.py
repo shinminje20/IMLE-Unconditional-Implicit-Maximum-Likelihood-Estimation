@@ -57,7 +57,6 @@ class CPSRLoss:
         out = torch.cat([fx1, fx2], dim=0)
         n_samples = len(out)
 
-
         # Compute the positive samples loss. At a high level, this is regression
         # on normalized LPIPs distances.
         percept_dists = torch.min(self.lpips(x1, x2) / self.max_lpips_dist, 1)
