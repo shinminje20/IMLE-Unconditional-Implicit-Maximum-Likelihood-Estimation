@@ -34,9 +34,9 @@ def get_data_splits(data_str, eval_str):
     """
     # Get train, validation, and test splits of the data
     if data_str == "cifar10":
-        data_tr = CIFAR10(root="../Datasets", train=True, download=True)
+        data_tr = CIFAR10(root=f"{project_dir}/Data", train=True, download=True)
         data_val = None
-        data_te = CIFAR10(root="../Datasets", train=False, download=True)
+        data_te = CIFAR10(root=f"{project_dir}/Data", train=False, download=True)
     else:
         raise ValueError(f"Unknown dataset {data_str}")
 

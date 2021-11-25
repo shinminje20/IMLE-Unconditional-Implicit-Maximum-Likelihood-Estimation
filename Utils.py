@@ -17,6 +17,8 @@ if "cuda" in device:
 ################################################################################
 state_sep_str = "=" * 40
 
+project_dir = os.path.dirname(os.path.abspath(__file__))
+
 def opts_str(args):
     """Returns the options string for [args]."""
     return f"-{'-'.join(args.options)}" if len(args.options) > 0 else "-"
@@ -48,13 +50,13 @@ def save_(model, optimizer, last_epoch, args, tb_results, folder):
 
 def generator_folder(args):
     """Returns the folder to save a generator trained with [args] to."""
-    folder = f"Models/generator-{args.data}-{opts_str(args)}{suffix_str(args)}"
+    folder = f"{project_dir}/Models/generator-{args.data}-{opts_str(args)}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
 def resnet_folder(args):
     """Returns the folder to to which to save a resnet trained with [args]."""
-    folder = f"Models/resnets-{args.backbone}-{args.data}{opts_str(args)}{suffix_str(args)}"
+    folder = f"{project_dir}/Models/resnets-{args.backbone}-{args.data}{opts_str(args)}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
