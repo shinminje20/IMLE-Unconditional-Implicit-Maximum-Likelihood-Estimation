@@ -36,8 +36,7 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
         x2 = x2.float().to(device, non_blocking=True)
 
         model.zero_grad()
-        fx1, fx2 = model(x1), model(x2)
-        loss = loss_fn(fx1, fx2)
+        loss = loss_fn(model(x1), model(x2))
         loss.backward()
         optimizer.step()
 
@@ -46,8 +45,9 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     return model, optimizer, loss_total / len(loader)
 
 if __name__ == "__main__":
-    P = argparse.ArgumentParser(description="IMLE training")
-    P.add_argument("--data", choices=["cifar10"], default="cifar10", type=str,
+    P = argparse.ArgumentParser(description="SimCLR training")
+    P.add_argument("--data", choices=["cifar10", "miniImagenet"],
+        default="cifar10",
         help="dataset to load images from")
     P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
         help="The data to evaluate linear finetunings on")
@@ -70,6 +70,8 @@ if __name__ == "__main__":
         help="Resnet backbone to use")
     P.add_argument("--bs", default=1000, type=int,
         help="batch size")
+    P.add_argument("--color_s", default=1, type=float,
+        help="color distortion strength")
     P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
     P.add_argument("--lars", default=1, choices=[0, 1],
@@ -95,6 +97,7 @@ if __name__ == "__main__":
     args.options = sorted([
         f"bs{args.bs}",
         f"epochs{args.epochs}",
+        f"color_s{args.color_s}",
         f"eval_{args.eval}",
         f"lars{args.lars}",
         f"lr{args.lr}",
@@ -113,8 +116,7 @@ if __name__ == "__main__":
     if args.opt == "sgd" and len(args.mm) == 2:
         raise ValueError("--mm must be a single momentum parameter if --opt is 'sgd'.")
     if args.data in no_val_split_datasets and args.eval == "val":
-        args.eval = "cv"
-        tqdm.write(f"--eval is set to 'val' but no validation split exists for {args.data}. Falling back to cross-validation.")
+        raise ValueError("The requested dataset has no validation split. Run with --eval test or cv instead.")
 
     args.mm = args.mm[0] if len(args.mm) == 1 else args.mm
 
@@ -130,8 +132,8 @@ if __name__ == "__main__":
         # correct param groups are fed to the optimizer so that if the otimizer
         # is wrapped in LARS, LARS will see the right param groups.
         model = get_resnet_with_head(args.backbone, args.proj_dim,
-            head_type="projection", is_cifar=("cifar" in args.data)).to(device)
-
+            head_type="projection",
+            small_image=(args.data in small_image_datasets)).to(device)
         if args.opt == "adam":
             optimizer = Adam(get_param_groups(model, args.lars), lr=args.lr,
                 betas=args.mm, weight_decay=1e-6)
@@ -140,17 +142,17 @@ if __name__ == "__main__":
                 momentum=args.mm, weight_decay=1e-6, nesterov=True)
         else:
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
-
         optimizer = LARS(optimizer, args.trust) if args.lars else optimizer
 
+        # Get the TensorBoard logger and set last_epoch to -1
         tb_results = SummaryWriter(resnet_folder(args), max_queue=0)
         last_epoch = -1
 
+    # Instantiate the scheduler and get the data
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
-
-    data_tr, data_val = get_data_splits(args.data, args.eval)
-    augs_tr, augs_finetune, augs_te = get_data_augs(args.data)
+    data_tr, data_eval = get_data_splits(args.data, args.eval)
+    augs_tr, augs_fn, augs_te = get_ssl_data_augs(args.data, args.color_s)
     data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
@@ -167,7 +169,8 @@ if __name__ == "__main__":
         # print/log results or merely that the epoch happened.
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
             val_acc_avg, val_acc_std = classification_eval(model.backbone,
-                data_tr, data_val, augs_finetune, augs_te)
+                data_tr, data_eval, augs_fn, augs_te, data_name=args.data,
+                data_split=args.eval)
             tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
             tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
             tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)

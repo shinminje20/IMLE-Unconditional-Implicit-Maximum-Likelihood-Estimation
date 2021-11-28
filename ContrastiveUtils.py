@@ -14,9 +14,16 @@ from Utils import *
 ################################################################################
 # Model utilties
 ################################################################################
-def get_resnet_with_head(backbone, head_dim, is_cifar=False, head_type="none"):
-    """Returns a resnet of [backbone] with a head of [head_type] attached."""
-    R = HeadlessResNet(backbone=backbone, is_cifar=is_cifar)
+def get_resnet_with_head(backbone, head_dim, small_image=False,
+    head_type="none"):
+    """Returns a resnet of [backbone] with a head of [head_type] attached.
+
+    Args:
+    backone     -- backbone to use
+    head_dim    -- output dimensionality of projection head
+    small_image -- whether to modify the backbone to better work on small images
+    """
+    R = HeadlessResNet(backbone=backbone, small_image=small_image)
 
     if head_type == "none":
         return nn.Sequential(OrderedDict([("backbone", R)]))
@@ -31,7 +38,7 @@ def get_resnet_with_head(backbone, head_dim, is_cifar=False, head_type="none"):
 
 class HeadlessResNet(nn.Module):
     """A class representing a ResNet with its head cut off."""
-    def __init__(self, is_cifar=False):
+    def __init__(self, backbone, small_image=False):
         super(HeadlessResNet, self).__init__()
 
         if backbone == "resnet18":
@@ -40,14 +47,19 @@ class HeadlessResNet(nn.Module):
         elif backbone == "resnet50":
             arch = models.resnet50(pretrained=False)
             self.out_dim = 2048
+        else:
+            raise ValueError(f"Unknown backbone '{backbone}'")
 
         # As per SimCLR, for the CIFAR datasets we change the first Conv2D layer
-        # to avoid downsampling out most of the information.
-        small_conv1 = nn.Conv2d(3, 64, 3, 1, 1, bias=False)
-        arch.conv1 = small_conv1 if is_cifar else arch.conv1
-
-        self.model = nn.Sequential(*[l for n,l in arch.named_children()
-            if not n in ["fc", "maxpool"]])
+        # and ommit the MaxPooling layer to avoid losing too much information.
+        # Really, we should do this for any dataset with small images.
+        if small_image:
+            arch.conv1 = nn.Conv2d(3, 64, 3, 1, 1, bias=False)
+            self.model = nn.Sequential(*[l for n,l in arch.named_children()
+                if not n in ["fc", "maxpool"]])
+        else:
+            self.model = nn.Sequential(*[l for n,l in arch.named_children()
+                if not n in ["fc"]])
 
     def forward(self, x): return torch.flatten(self.model(x), 1)
 

@@ -63,6 +63,7 @@ def resnet_folder(args):
 ################################################################################
 # Miscellaneous
 ################################################################################
+
 def flatten(xs):
     """Returns collection [xs] after recursively flattening into a list."""
     result = []

@@ -1,14 +1,23 @@
 # ISICLE
 **I**mage **S**ynthes**i**s for **C**ontrastive **Le**arning
 
-### Environment
+### Setup
+
+**Python Environment**
 ```
+gdown==4.2.0
 lpips==0.1.4
 python==3.9.7
 pytorch==1.10.0
 tensorboard==2.7.0
 torchvision==0.11.1
 tqdm==4.62.2
+```
+
+**Datasets**
+Download the data we'll be using:
+```
+python Data/SetupMiniImagenet.py
 ```
 
 ### Running Code

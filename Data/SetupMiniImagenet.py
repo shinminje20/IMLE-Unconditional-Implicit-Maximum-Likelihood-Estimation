@@ -8,15 +8,15 @@ import shutil
 
 # Create directory for MiniImagenet
 data_dir = os.path.dirname(os.path.abspath(__file__))
-miniImagenet_dir = f"{data_dir}/MiniImagenet"
+miniImagenet_dir = f"{data_dir}/miniImagenet"
 
 # Download the data and splits
-# url = "https://drive.google.com/u/1/uc?id=1PYNmmi3d2YldGlJvC0uEo_RnYDSJy0G-&export=download"
-# zip_path = f"{data_dir}/miniImagenet_data.zip"
-# gdown.download(url, zip_path, quiet=False)
-# with zipfile.ZipFile(zip_path) as z:
-#     z.extractall(path=data_dir)
-# os.remove(zip_path)
+url = "https://drive.google.com/u/1/uc?id=1PYNmmi3d2YldGlJvC0uEo_RnYDSJy0G-&export=download"
+zip_path = f"{data_dir}/miniImagenet_data.zip"
+gdown.download(url, zip_path, quiet=False)
+with zipfile.ZipFile(zip_path) as z:
+    z.extractall(path=data_dir)
+os.remove(zip_path)
 
 # Create splits so we can use an ImageFolder-based dataset. I'm using fewshot
 # learning terminology because it'd be cool to investigate out-of-distribution

@@ -2,7 +2,7 @@
 *.tsv
 *.json
 *.pt
-
+*.jpg
 *.pt
 *.pkl
 __pycache__
@@ -10,3 +10,4 @@ __pycache__
 Models
 Results
 .DS_Store
+Data/cifar-10*

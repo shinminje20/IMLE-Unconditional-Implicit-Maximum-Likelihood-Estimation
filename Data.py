@@ -6,13 +6,13 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset, random_split
 
-from torchvision.datasets import CIFAR10
+from torchvision.datasets import CIFAR10, ImageFolder
 from torchvision import transforms
 
 from Utils import *
 
 no_val_split_datasets = ["cifar10"]
-
+small_image_datasets = ["cifar10"]
 dataset2input_dim = {
     "cifar10": (3, 32, 32),
     "imagenet": None,
@@ -37,56 +37,80 @@ def get_data_splits(data_str, eval_str):
         data_tr = CIFAR10(root=f"{project_dir}/Data", train=True, download=True)
         data_val = None
         data_te = CIFAR10(root=f"{project_dir}/Data", train=False, download=True)
+    elif data_str == "miniImagenet":
+        data_tr = ImageFolder(root=f"{project_dir}/Data/miniImagenet/base")
+        data_val = ImageFolder(root=f"{project_dir}/Data/miniImagenet/novel")
+        data_te = ImageFolder(root=f"{project_dir}/Data/miniImagenet/test")
     else:
         raise ValueError(f"Unknown dataset {data_str}")
 
-    # Set the testing data---what may in fact be validation---correctly
-    if eval_str == "test":
-        tqdm.write("Validation on test split data (WARNING)")
-        data_te = data_te
-    elif eval_str == "val" and not data_val is None:
-        tqdm.write("Validation on validation split data")
-        data_te = data_val
-    elif eval_str == "cv":
-        tqdm.write("Validation via cross-validation")
-        data_te = "cv"
-    elif eval_str == "val" and data_val is None:
-        raise ValueError("Trying to validate on validation split, but no such split exists")
-    else:
-        raise ValueError(f"No validation type for --eval {eval_str}")
+    if eval_str == "cv":
+        eval_data = "cv"
+    elif eval_str == "val":
+        eval_data = data_val
+    elif eval_str == "test":
+        eval_data = data_te
 
-    return data_tr, data_te
+    return data_tr, eval_data
 
 ################################################################################
 # Non-realistic augmentations. These represent an important baseline to beat.
 ################################################################################
-def get_data_augs(data_str):
+def get_ssl_data_augs(data_str, color_s=.5):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
+
+    Args:
+    data_str        -- a string specifying the dataset to get transforms for
+    color_distorr   -- the strength of color distortion
     """
+    color_jitter = transforms.ColorJitter(0.8 * color_s,
+         0.8 * color_s, 0.8 * color_s, 0.2 * color_s)
+    color_distortion = transforms.Compose([
+        transforms.RandomApply([color_jitter], p=0.8),
+        transforms.RandomGrayscale(p=0.2)])
+
     if "cifar" in data_str:
         augs_tr = transforms.Compose([
             transforms.RandomResizedCrop(32),
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
+            color_distortion,
             transforms.ToTensor()])
 
         # Validate using the same augmentations as for training, in line with
         # https://github.com/leftthomas/SimCLR
-        augs_finetune = transforms.Compose([
+        augs_fn = transforms.Compose([
             transforms.RandomResizedCrop(32),
             transforms.RandomHorizontalFlip(p=0.5),
-            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
-            transforms.RandomGrayscale(p=0.2),
+            color_distortion,
             transforms.ToTensor()])
 
         augs_te = transforms.Compose([
             transforms.ToTensor()])
+    elif "miniImagenet" in data_str:
+        augs_tr = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(p=0.5),
+            color_distortion,
+            transforms.GaussianBlur(23, sigma=(.1, 2)),
+            transforms.ToTensor()])
+
+        # Validate using the same augmentations as for training, in line with
+        # https://github.com/leftthomas/SimCLR
+        augs_fn = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(p=0.5),
+            color_distortion,
+            transforms.GaussianBlur(23, sigma=(.1, 2)),
+            transforms.ToTensor()])
+
+        augs_te = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.ToTensor()])
     else:
         raise ValueError("Unknown augmenta")
 
-    return augs_tr, augs_finetune, augs_te
+    return augs_tr, augs_fn, augs_te
 
 ################################################################################
 # Datasets
@@ -94,17 +118,14 @@ def get_data_augs(data_str):
 class XYDataset(Dataset):
     """A simple dataset returning examples of the form (transform(x), y)."""
 
-    def __init__(self, data, transform=transforms.ToTensor()):
+    def __init__(self, data, transform=transforms.ToTensor(), memoize=False):
         """Args:
         data        -- a sequence of (x,y) pairs
         transform   -- the transform to apply to each returned x-value
         """
         super(XYDataset, self).__init__()
         self.transform = transform
-
-        # Re-index the input data because it may have been passed in as a subset
-        # that'd need to be indexed like it were a part of the original dataset
-        self.data = [(x,y) for x,y in data]
+        self.data = data
 
     def __len__(self): return len(self.data)
 
@@ -122,7 +143,6 @@ class ImagesFromTransformsDataset(Dataset):
     might be a random crop. This trains a generator to simulteneously do
     super-resolution, colorization, and cropping.
     """
-
     def __init__(self, data, x_transform, y_transform):
         """
         Args:
@@ -145,7 +165,7 @@ class ImagesFromTransformsDataset(Dataset):
 class FeatureDataset(Dataset):
     """A dataset of model features."""
 
-    def __init__(self, data, F, bs=128):
+    def __init__(self, data, F, bs=500):
         """Args:
         F       -- a feature extractor
         data    -- a dataset of XY pairs
@@ -158,7 +178,7 @@ class FeatureDataset(Dataset):
         F = F.to(device)
         F.eval()
         with torch.no_grad():
-            for x,y in tqdm(loader, desc="Building validation dataset", leave=False, file=sys.stdout):
+            for x,y in tqdm(loader, desc="Building FeatureDataset", leave=False, file=sys.stdout):
                 data_x.append(F(x.to(device)).cpu())
                 data_y.append(y)
 

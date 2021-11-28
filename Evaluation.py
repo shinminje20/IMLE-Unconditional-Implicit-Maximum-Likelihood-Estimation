@@ -1,5 +1,6 @@
 import argparse
 from collections import defaultdict
+import json
 import numpy as np
 import random
 from tqdm import tqdm
@@ -13,62 +14,30 @@ from Data import *
 from ContrastiveUtils import *
 from Utils import *
 
-label2idx = None
+def get_label2idxs(data_tr, data_name=None, data_split=None):
+    """Returns a label to indices mapping for [data_tr]."""
+    data_split = "train" if data_split == "cv" else data_split
 
-def get_eval_data(data_tr, data_te, augs_finetune, augs_te, F=None, precompute_feats=True):
-    """Returns datasets with correct augmentations and potential feature
-    extraction.
+    if data_name is not None and data_split is not None:
+        save_path = f"{project_dir}/Data/{data_name}/{data_split}_label2idx.json"
+        if os.path.exists(save_path):
+            with open(save_path, "r") as f:
+                return json.load(f)
 
-    Args:
-    data_tr -- training data
-    data_te -- testing data
-    F       -- a HeadlessResNet for constructing features only once or None for
-                doing it on the fly with different augmentations
-    """
-    data_tr = XYDataset(data_tr, augs_finetune)
-    data_te = XYDataset(data_te, augs_te) if not data_te == "cv" else "cv"
+    label2idxs = defaultdict(lambda: [])
+    for idx,(_,y) in tqdm(enumerate(data_tr), desc="Building label2idxs", total=len(data_tr)):
+        label2idxs[y].append(idx)
 
-    if precompute_feats:
-        return (FeatureDataset(data_tr, F),
-            (FeatureDataset(data_te, F) if not data_te == "cv" else "cv"))
-    else:
-        return data_tr, data_te
+    if data_name is not None and data_split is not None:
+        save_dir_path = f"{project_dir}/Data/{data_name}"
+        if not os.path.exists(save_dir_path):
+            os.makedirs(save_dir_path)
 
-def get_eval_splits(data_tr, data_te, augs_finetune, augs_te, label_frac=1):
-    """Returns and training and testing data for a validation trial.
+        if not os.path.exists(f"{save_dir_path}/{data_split}_label2idx.json"):
+            with open(f"{save_dir_path}/{data_split}_label2idx.json", "w+") as f:
+                json.dump(label2idxs, f)
 
-    Args:
-    data_tr         -- a dataset to get data from for supervised training
-    data_te         -- a dataset for testing, or 'cv' to use cross validation
-    augs_finetune   -- data augmentation for finetuning
-    label_frac      -- the fraction of labels to use for training in each trial
-    """
-    enough_test_data = lambda: (1 - label_frac) * len(data_tr) > len(label2idx)
-
-    global label2idx
-    if label2idx is None:
-        label2idx = defaultdict(lambda: [])
-        for idx,(_,y) in tqdm(enumerate(data_tr), desc="Building label2idx", total=len(data_tr)):
-            if isinstance(y, int):
-                label2idx[y].append(idx)
-            elif isinstance(y, torch.Tensor):
-                label2idx[y.item()].append(idx)
-
-    idxs_tr = set()
-    for l in label2idx:
-        n_idxs = int(len(label2idx[l]) * label_frac)
-        idxs_tr |= set(random.sample(label2idx[l], k=n_idxs))
-
-    data_tr_split = Subset(data_tr, list(idxs_tr))
-    if data_te == "cv" and enough_test_data():
-        idxs_te = [idx for idx in range(len(data_tr)) if not idx in idxs_tr]
-        data_te_split = Subset(data_tr, idxs_te)
-    elif data_te == "cv" and not enough_test_data():
-        raise ValueError("Not enough data for testing. Set --label_frac lower.")
-    else:
-        data_te_split = data_te
-
-    return data_tr_split, data_te_split
+    return label2idxs
 
 def accuracy(model, loader):
     """Returns the accuracy of [model] on [loader]."""
@@ -77,41 +46,31 @@ def accuracy(model, loader):
     with torch.no_grad():
         for x,y in loader:
             preds = torch.argmax(model(x.to(device)), dim=1)
-            total += len(preds)
             correct += torch.sum((preds == y.to(device))).item()
+            total += len(preds)
 
     return correct / total
 
-def one_epoch_supervised(model, optimizer, loader, F=None):
-    """Returns a (model, optimizer, loss) tuple after training [model] on
-    [loader] for one epoch according to [args].
-    Ther returned loss is averaged over batches.
-    model       -- a CondConvImplicitModel
-    optimizer   -- the optimizer for model
-    loader      -- a DataLoader over the data to train on
-    F           -- a feature extractor (make sure there's no head)
+def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True):
+    """Returns validation training and testing datasets. The testing dataset may
+    be a string 'cv' to indicate cross validation if [data_te] is 'cv'.
+
+    Args:
+    data_tr -- training data
+    data_te -- testing data
+    augs_fn -- training augmentations
+    augs_te -- testing augmentations
+    F       -- a HeadlessResNet for constructing features only once or None for
+                doing it on the fly with different augmentations
+    precompute_feats    -- whether to precompute features.
     """
-    # Set the feature extractor and model to the right modes on the right device
-    F = nn.Identity() if F is None else F
-    F, model = F.to(device), model.to(device)
-    model.train()
-    F.eval()
+    if precompute_feats:
+        return (FeatureDataset(XYDataset(data_tr, augs_fn), F),
+                FeatureDataset(XYDataset(data_te, augs_te), F))
+    else:
+        return XYDataset(data_tr, augs_fn), XYDataset(data_te, augs_te)
 
-    loss_fn, loss_total = nn.CrossEntropyLoss().to(device), 0
-
-    for x,y in loader:
-        with torch.no_grad():
-            x = F(x.to(device, non_blocking=True))
-        model.zero_grad()
-        loss = loss_fn(model(x), y.to(device, non_blocking=True))
-        loss.backward()
-        optimizer.step()
-        loss_total += loss.item()
-
-    return model, optimizer
-
-
-def get_eval_accuracy(data_tr, data_te, F, epochs=100, bs=256, verbose=False):
+def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, epochs=100, bs=16):
     """Returns the accuracy of a linear model trained on features from [F] of
     [data_tr] on [data_te].
 
@@ -124,59 +83,111 @@ def get_eval_accuracy(data_tr, data_te, F, epochs=100, bs=256, verbose=False):
     bs          -- the batch size to use
     """
     loader_tr = DataLoader(data_tr, shuffle=True, pin_memory=True,
-        batch_size=min(int(len(data_tr) / 4), bs), drop_last=False,
+        batch_size=bs, drop_last=False,
         num_workers=6)
-    loader_te = DataLoader(data_te, shuffle=False, pin_memory=True,
-        batch_size=1024, drop_last=False, num_workers=6)
+    loader_te = DataLoader(data_te, pin_memory=True, batch_size=1024,
+        drop_last=False, num_workers=6)
 
-    model = nn.Linear(F.out_dim, len(label2idx)).to(device)
-    optimizer = SGD(model.parameters(), lr=.1, nesterov=True, momentum=.9, weight_decay=1e-6)
+    model = nn.Linear(out_dim, num_classes).to(device)
+    optimizer = Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
     scheduler = CosineAnnealingLR(optimizer, epochs)
+    F = nn.Identity().to(device) if F is None else F.to(device)
+    F.eval()
+    loss_fn = nn.CrossEntropyLoss().to(device)
 
     for e in tqdm(range(epochs), desc="Validation epochs", leave=False):
-        model, optimizer = one_epoch_supervised(model, optimizer, loader_tr, F)
+        model.train()
+
+        for x,y in loader_tr:
+            with torch.no_grad():
+                x = x.to(device, non_blocking=True)
+                x = x if F is None else F(x)
+
+            model.zero_grad()
+            loss = loss_fn(model(x), y.to(device, non_blocking=True))
+            loss.backward()
+            optimizer.step()
+
         scheduler.step()
-        if verbose:
-            val_acc = accuracy(nn.Sequential(F, model), loader_te)
-            tqdm.write(f"End of epoch {e + 1} | val acc {val_acc:.5f}")
 
     return accuracy(nn.Sequential(F, model), loader_te)
 
-
-def classification_eval(F, data_tr, data_te, augs_finetune, augs_te,
-    label_frac=1, samples=1, precompute_feats=True, epochs=100, bs=256,
-    verbose=False):
-    """Returns classification statistics using feature extractor [F] on Dataset
-    [data] with [cv_folds] cross-validation folds.
+def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
+    precompute_feats=True, ex_per_class="all", trials=3,
+    epochs=100, bs=64,
+    data_name=None, data_split=None):
+    """Returns evaluation accuracy of feature extractor [feature_extractor].
 
     Args:
-    F                   -- the feature extractor being trained
-    data_tr             -- a dataset for supervised training
-    data_te             -- a dataset for testing, or None to turn on cross validation
-    augs_finetune       -- data augmentation for finetuning
-    label_frac          -- the fraction of labels to use for each trial. If
-                            [data_te] is 'cv' this is the size of the training
-                            data for each cross validation fold, otherwise it is
-                            the subsample of data used for training. If greater
-                            than one, computes splits containing [label_frac]
-                            examples
-    samples             -- the number of samples to use for cross validation
-    precompute_feats    -- w...
+    feature_extractor   -- feature extractor
+    data_name           -- the the name of the data
+    data_tr             -- training data for linear model
+    data_te             -- testing data
+    augs_fn             -- augmentations for training (of linear model) data
+    augs_te             -- augmentations for testing data
+    precompute_feats    -- precompute features. This is massively faster because
+                            the CNN need be run only once, but reduces the
+                            number of augmentations used in total.
+    ex_per_class        -- examples per class
+    trials              -- number of trials. If [data_te] is 'cv', number of
+                            cross-validation folds
     """
+    def get_split_idxs(idxs, split_index, include):
+        """Computes a split of [idxs] to be used for cross-validation.
+
+        Args:
+        idxs        -- the indices to be split
+        split_index -- the index of the split (which trial is being run)
+        include     -- whether to return indices between the computed start and
+                        endpoints in [idxs], or those exluding those indices
+        """
+        start = split_index * (len(idxs) // trials)
+        end = (1 + split_index) * (len(idxs) // trials)
+        return idxs[start:end] if include else idxs[:start] + idxs[end:]
+
+    label2idxs = get_label2idxs(data_tr, data_name=data_name, data_split=data_split)
+    out_dim = feature_extractor.out_dim
+    num_classes = len(data_tr.class_to_idx)
     accuracies = []
-    label_frac = label_frac / len(data_tr) if label_frac > 1 else label_frac
-    data_tr, data_te = get_eval_data(data_tr, data_te, augs_finetune, augs_te,
-        F=F, precompute_feats=precompute_feats)
 
-    F = DimensionedIdentity(F.out_dim).to(device) if precompute_feats else F
 
-    for _ in tqdm(range(samples), leave=False, desc="Validation trials"):
-        data_tr_split, data_te_split = get_eval_splits(data_tr, data_te,
-            augs_finetune, augs_te, label_frac=label_frac)
-        accuracies.append(get_eval_accuracy(data_tr_split, data_te_split, F=F,
-            epochs=epochs, bs=bs, verbose=verbose))
+    trials = 1 if not data_te == "cv" and ex_per_class == "all" else trials
+    for t in tqdm(range(trials), desc="Validation trials"):
 
-    return np.mean(accuracies), np.std(accuracies) * 1.96 / np.sqrt(samples)
+        if data_te == "cv":
+            label2idxs_te = {y: get_split_idxs(label2idxs[y], t, include=True)
+                             for y in label2idxs}
+            label2idxs_tr = {y: get_split_idxs(label2idxs[y], t, include=False)
+                             for y in label2idxs}
+
+            if not ex_per_class == "all":
+                idxs_tr = [random.sample(label2idxs_tr[y], ex_per_class)
+                                    for y in label2idxs_tr]
+            else:
+                idxs_tr = [idx for y in label2idxs_tr for idx in label2idxs_tr[y]]
+            idxs_te = [idx for y in label2idxs_te for idx in label2idxs_te[y]]
+            trial_data_tr = Subset(data_tr, indices=flatten(idxs_tr))
+            trial_data_te = Subset(data_tr, indices=flatten(idxs_te))
+        else:
+            if not ex_per_class == "all":
+                idxs_tr = [random.sample(label2idxs[y], ex_per_class)
+                           for y in label2idxs]
+            else:
+                idxs_tr = [idx for y in label2idxs for idx in label2idxs[y]]
+            trial_data_tr = Subset(data_tr, indices=flatten(idxs_tr))
+            trial_data_te = data_te
+
+        trial_data_tr, trial_data_te = get_eval_data(trial_data_tr, trial_data_te,
+            augs_fn, augs_te, F=feature_extractor,
+            precompute_feats=precompute_feats)
+
+        accuracies.append(get_eval_trial_accuracy(trial_data_tr, trial_data_te,
+            (None if precompute_feats else feature_extractor),
+            out_dim, num_classes,
+            epochs=epochs, bs=bs))
+
+    return np.mean(accuracies), np.std(accuracies) * 1.96 / np.sqrt(trials)
+
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="IMLE training")
@@ -200,10 +211,10 @@ if __name__ == "__main__":
     model = model.to(device)
 
     data_tr, data_val = get_data_splits(old_args.data, args.eval)
-    augs_tr, augs_finetune, augs_te = get_data_augs(old_args.data)
+    augs_tr, augs_fn, augs_te = get_data_augs(old_args.data)
 
     val_acc_avg, val_acc_std = classification_eval(model.backbone, data_tr,
-        data_val, augs_finetune, augs_te,
+        data_val, augs_fn, augs_te,
         precompute_feats=args.precompute_feats, epochs=args.epochs, bs=args.bs,
         verbose=True)
     tqdm.write(f"val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")

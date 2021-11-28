@@ -104,8 +104,9 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     return model, optimizer, loss_total / len(loader)
 
 if __name__ == "__main__":
-    P = argparse.ArgumentParser(description="IMLE training")
-    P.add_argument("--data", choices=["cifar10"], default="cifar10", type=str,
+    P = argparse.ArgumentParser(description="ISICLE training")
+    P.add_argument("--data", choices=["cifar10", "miniImagenet"],
+        default="cifar10",
         help="dataset to load images from")
     P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
         help="The data to evaluate linear finetunings on")
@@ -128,6 +129,8 @@ if __name__ == "__main__":
         help="Resnet backbone to use")
     P.add_argument("--bs", default=1000, type=int,
         help="batch size")
+    P.add_argument("--color_distort", default=1, type=float,
+        help="color distortion strength")
     P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
     P.add_argument("--lars", default=1, choices=[0, 1],
@@ -153,6 +156,7 @@ if __name__ == "__main__":
     args.options = sorted([
         f"bs{args.bs}",
         f"epochs{args.epochs}",
+        f"color_distort{args.color_distort}",
         f"eval_{args.eval}",
         f"lars{args.lars}",
         f"lr{args.lr}",
@@ -188,7 +192,8 @@ if __name__ == "__main__":
         # correct param groups are fed to the optimizer so that if the otimizer
         # is wrapped in LARS, LARS will see the right param groups.
         model = get_resnet_with_head(args.backbone, args.proj_dim,
-            head_type="projection", is_cifar=("cifar" in args.data)).to(device)
+            head_type="projection",
+            small_image=(args.data in small_image_datasets)).to(device)
 
         if args.opt == "adam":
             optimizer = Adam(get_param_groups(model, args.lars), lr=args.lr,
@@ -208,7 +213,8 @@ if __name__ == "__main__":
         last_epoch=last_epoch)
 
     data_tr, data_val = get_data_splits(args.data, args.eval)
-    augs_tr, augs_finetune, augs_te = get_data_augs(args.data)
+    augs_tr, augs_finetune, augs_te = get_ssl_data_augs(args.data,
+        color_distort=args.color_distort)
     data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True)
