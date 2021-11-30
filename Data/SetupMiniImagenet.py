@@ -11,7 +11,7 @@ data_dir = os.path.dirname(os.path.abspath(__file__))
 miniImagenet_dir = f"{data_dir}/miniImagenet"
 
 # Download the data and splits
-url = "https://drive.google.com/u/1/uc?id=1PYNmmi3d2YldGlJvC0uEo_RnYDSJy0G-&export=download"
+url = "https://drive.google.com/u/1/uc?id=1XmneyaXBZZyCZFn7UWnni1HIBuvWlFJB&export=download"
 zip_path = f"{data_dir}/miniImagenet_data.zip"
 gdown.download(url, zip_path, quiet=False)
 with zipfile.ZipFile(zip_path) as z:
@@ -38,3 +38,30 @@ for split_file, split in csv2split.items():
         os.makedirs(cls_dir)
         for image in images:
             os.rename(f"{miniImagenet_dir}/images/{image}", f"{cls_dir}/{image}")
+
+# Of course, we maybe also want to train in a traditional train-val-test setup.
+# The split sizes allow for training with the same amount of data as in the
+# fewshot learning splits, which could be interesting!
+for default_split in ["train", "val", "default_test"]:
+    split_dir = f"{miniImagenet_dir}/{default_split}"
+    if not os.path.exists("split_dir"):
+        os.makedirs(split_dir)
+
+for fewshot_split in csv2split.values():
+    for dir in os.listdir(f"{miniImagenet_dir}/{fewshot_split}"):
+
+        dir_path = f"{miniImagenet_dir}/{fewshot_split}/{dir}"
+        n_images = len(list(os.listdir(dir_path)))
+        os.makedirs(f"{miniImagenet_dir}/train/{dir}")
+        os.makedirs(f"{miniImagenet_dir}/val/{dir}")
+        os.makedirs(f"{miniImagenet_dir}/default_test/{dir}")
+
+        for idx,file in enumerate(os.listdir(dir_path)):
+            file_path = f"{dir_path}/{file}"
+
+            if idx / n_images < .64:
+                shutil.copy(file_path, f"{miniImagenet_dir}/train/{dir}/{file}")
+            elif  idx / n_images  < .8:
+                shutil.copy(file_path, f"{miniImagenet_dir}/val/{dir}/{file}")
+            else:
+                shutil.copy(file_path, f"{miniImagenet_dir}/default_test/{dir}/{file}")

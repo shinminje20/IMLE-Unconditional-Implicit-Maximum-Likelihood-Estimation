@@ -38,9 +38,9 @@ def get_data_splits(data_str, eval_str):
         data_val = None
         data_te = CIFAR10(root=f"{project_dir}/Data", train=False, download=True)
     elif data_str == "miniImagenet":
-        data_tr = ImageFolder(root=f"{project_dir}/Data/miniImagenet/base")
-        data_val = ImageFolder(root=f"{project_dir}/Data/miniImagenet/novel")
-        data_te = ImageFolder(root=f"{project_dir}/Data/miniImagenet/test")
+        data_tr = ImageFolder(root=f"{project_dir}/Data/miniImagenet/train")
+        data_val = ImageFolder(root=f"{project_dir}/Data/miniImagenet/val")
+        data_te = ImageFolder(root=f"{project_dir}/Data/miniImagenet/default_test")
     else:
         raise ValueError(f"Unknown dataset {data_str}")
 
