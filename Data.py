@@ -54,8 +54,30 @@ def get_data_splits(data_str, eval_str):
     return data_tr, eval_data
 
 ################################################################################
-# Non-realistic augmentations. These represent an important baseline to beat.
+# NData augmentations
 ################################################################################
+def get_isicle_data_augs(in_size=32, out_size=128):
+    """Returns data augmentations for ISICLE training. No augmentations here
+    should take data off the real manifold!
+
+    Args:
+    in_size     -- size of images input to generator
+    out_size    -- size of images that come out of generator
+    """
+    augs_tr = transforms.Compose([
+        transforms.RandomResizedCrop(in_size),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.Grayscale(num_output_channels=3),
+        transforms.ToTensor()])
+    augs_fn = transforms.Compose([
+        transforms.RandomResizedCrop(out_size),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ToTensor()])
+    augs_te = transforms.Compose([
+        transforms.RandomResizedCrop(out_size),
+        transforms.ToTensor()])
+    return augs_tr, augs_fn, augs_te
+
 def get_ssl_data_augs(data_str, color_s=.5):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
@@ -89,7 +111,7 @@ def get_ssl_data_augs(data_str, color_s=.5):
             transforms.ToTensor()])
     elif "miniImagenet" in data_str:
         augs_tr = transforms.Compose([
-            transforms.RandomResizedCrop(224),
+            transforms.RandomResizedCrop(128),
             transforms.RandomHorizontalFlip(p=0.5),
             color_distortion,
             transforms.GaussianBlur(23, sigma=(.1, 2)),
@@ -98,14 +120,14 @@ def get_ssl_data_augs(data_str, color_s=.5):
         # Validate using the same augmentations as for training, in line with
         # https://github.com/leftthomas/SimCLR
         augs_fn = transforms.Compose([
-            transforms.RandomResizedCrop(224),
+            transforms.RandomResizedCrop(128),
             transforms.RandomHorizontalFlip(p=0.5),
             color_distortion,
             transforms.GaussianBlur(23, sigma=(.1, 2)),
             transforms.ToTensor()])
 
         augs_te = transforms.Compose([
-            transforms.RandomResizedCrop(224),
+            transforms.RandomResizedCrop(128),
             transforms.ToTensor()])
     else:
         raise ValueError("Unknown augmenta")
