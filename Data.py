@@ -111,7 +111,7 @@ def get_ssl_data_augs(data_str, color_s=.5):
             transforms.ToTensor()])
     elif "miniImagenet" in data_str:
         augs_tr = transforms.Compose([
-            transforms.RandomResizedCrop(128),
+            transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(p=0.5),
             color_distortion,
             transforms.GaussianBlur(23, sigma=(.1, 2)),
@@ -120,14 +120,14 @@ def get_ssl_data_augs(data_str, color_s=.5):
         # Validate using the same augmentations as for training, in line with
         # https://github.com/leftthomas/SimCLR
         augs_fn = transforms.Compose([
-            transforms.RandomResizedCrop(128),
+            transforms.RandomResizedCrop(224),
             transforms.RandomHorizontalFlip(p=0.5),
             color_distortion,
             transforms.GaussianBlur(23, sigma=(.1, 2)),
             transforms.ToTensor()])
 
         augs_te = transforms.Compose([
-            transforms.RandomResizedCrop(128),
+            transforms.RandomResizedCrop(224),
             transforms.ToTensor()])
     else:
         raise ValueError("Unknown augmenta")
