@@ -16,7 +16,7 @@ Download and set up the data we'll be using:
 ```
 python Data/SetupMiniImagenet.py
 ```
-_If you just want to run SimCLR, you should skip the rest of the setup. Otherwise, you'll need to setup CaMNet:_
+**_If you just want to run SimCLR, you should skip the rest of the setup. Otherwise, you'll need to setup CaMNet:_**
 Prepare datasets for CamNet's usage:
 ```
 python Data/InvertDirStructure.py --folder Data/miniImagenet
