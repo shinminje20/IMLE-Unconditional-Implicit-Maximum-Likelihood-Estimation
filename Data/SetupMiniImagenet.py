@@ -21,7 +21,7 @@ os.remove(zip_path)
 # Create splits so we can use an ImageFolder-based dataset. I'm using fewshot
 # learning terminology because it'd be cool to investigate out-of-distribution
 # generalization. Traditional splitting can be added later.
-csv2split = {"train.csv": "base", "val.csv": "novel", "test.csv": "test"}
+csv2split = {"train.csv": "base", "val.csv": "novel_val", "test.csv": "novel_test"}
 
 for split_file, split in csv2split.items():
     class2images = defaultdict(lambda: [])
@@ -42,9 +42,9 @@ for split_file, split in csv2split.items():
 # Of course, we maybe also want to train in a traditional train-val-test setup.
 # The split sizes allow for training with the same amount of data as in the
 # fewshot learning splits, which could be interesting!
-for default_split in ["train", "val", "default_test"]:
+for default_split in ["train", "val", "test"]:
     split_dir = f"{miniImagenet_dir}/{default_split}"
-    if not os.path.exists("split_dir"):
+    if not os.path.exists(split_dir):
         os.makedirs(split_dir)
 
 for fewshot_split in csv2split.values():
@@ -54,7 +54,7 @@ for fewshot_split in csv2split.values():
         n_images = len(list(os.listdir(dir_path)))
         os.makedirs(f"{miniImagenet_dir}/train/{dir}")
         os.makedirs(f"{miniImagenet_dir}/val/{dir}")
-        os.makedirs(f"{miniImagenet_dir}/default_test/{dir}")
+        os.makedirs(f"{miniImagenet_dir}/test/{dir}")
 
         for idx,file in enumerate(os.listdir(dir_path)):
             file_path = f"{dir_path}/{file}"
@@ -64,4 +64,4 @@ for fewshot_split in csv2split.values():
             elif  idx / n_images  < .8:
                 shutil.copy(file_path, f"{miniImagenet_dir}/val/{dir}/{file}")
             else:
-                shutil.copy(file_path, f"{miniImagenet_dir}/default_test/{dir}/{file}")
+                shutil.copy(file_path, f"{miniImagenet_dir}/test/{dir}/{file}")
