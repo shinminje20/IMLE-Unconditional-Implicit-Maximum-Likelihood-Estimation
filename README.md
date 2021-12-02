@@ -33,11 +33,9 @@ We use CamNet to generate images for training. _If you just want to use this pro
 3. Install CUDA.
 
 ## Running Code
-You can run the SimCLR baseline via
+You can run the SimCLR baseline via `python TrainSimCLR`. All command line arguments are optional. Below is the code to (mostly) replicate the reported SimCLR CIFAR-10 performance, with some extraneous arguments specified for clarity too.
 ```
-TrainSimCLR.py [-h] [--data {cifar10,miniImagenet}] [--eval {val,cv,test}] [--resume RESUME] [--suffix SUFFIX] [--n_workers N_WORKERS] [--eval_iter EVAL_ITER]
-                      [--save_iter SAVE_ITER] [--backbone {resnet18,resnet50}] [--bs BS] [--color_s COLOR_S] [--epochs EPOCHS] [--lars {0,1}] [--lr LR] [--mm MM [MM ...]]
-                      [--n_ramp N_RAMP] [--opt {adam,sgd}] [--proj_dim PROJ_DIM] [--temp TEMP] [--trust TRUST] [--seed SEED]
+TrainSimCLR.py --data cifar10 --eval test --n_workers 6 --eval_iter 10 --save_iter 100 --backbone resnet50 --bs 1000 --color_s .5, --epochs 1000, --lars 1 --lr 1e-3, --mm .9 .99 --n_ramp 10 --opt adam --proj_dim 128 --temp .5  --trust 1e-3 --seed 0
 ```
 You can run CaMNet as follows....
 ```
@@ -55,7 +53,7 @@ The vast majority of arguments have decent default settings and you probably sho
                             'resnet18' or 'resnet50'
 --bs                    -- batch size
 --color_s               -- color augmentation strength
---data                  -- dataset to run on
+--data                  -- dataset to run on, one of 'cifar10' or 'miniImagenet'
 --epochs                -- number of epochs to train for
 --eval                  -- the kind of evaluation to do. 'val' validates on the
                             validation set, 'cv' does cross-validation on the
