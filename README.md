@@ -67,7 +67,7 @@ to view logged data about the model's training.
       |   ├── ...
       |   └── class n
       ├── val
-      ├── test
+      └── test
     ```
 2. Run `python Data/InvertDirStructure.py --folder DATASET_FOLDER`. This will make a copy of your dataset in the `Data/camnet_data` folder with the directory structure inverted for CamNet compatibility.
 3. Decide on a short `NAME` for the dataset, eg. `cifar10`. Then, in `Data.py`, do the following:
