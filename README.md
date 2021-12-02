@@ -1,5 +1,5 @@
-# ISICLE
-**I**mage **S**ynthes**i**s for **C**ontrastive **Le**arning
+# **I**mage **S**ynthes**i**s for **C**ontrastive **Le**arning
+
 
 ## Setup
 
@@ -21,7 +21,7 @@ python Data/SetupMiniImagenet.py
 ```
 
 ### CaMNet
-We use CamNet to generate images for training. _If you just want to use this project to run basic SimCLR---our baseline---you don't need to and probably shouldn't do the following!_
+We use CamNet to generate images for training. _If you just want to use this project to run basic SimCLR—our baseline—you don't need to and probably shouldn't do the following!_
 
 1. Prepare datasets for CamNet's usage:
     ```
