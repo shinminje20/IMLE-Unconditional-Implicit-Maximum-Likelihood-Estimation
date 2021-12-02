@@ -16,18 +16,15 @@ Download and set up the data we'll be using:
 ```
 python Data/SetupMiniImagenet.py
 ```
-
-### CaMNet
-We use CamNet to generate images for training. _If you just want to use this project to run basic SimCLR—our baseline—you don't need to and probably shouldn't do the following!_
-
-1. Prepare datasets for CamNet's usage:
-    ```
-    python Data/InvertDirStructure.py --folder Data/miniImagenet
-    ```
-2. Install additional Python packages:
-    ```
-    ```
-3. Install CUDA.
+_If you just want to run SimCLR, you should skip the rest of the setup. Otherwise, you'll need to setup CaMNet:_
+Prepare datasets for CamNet's usage:
+```
+python Data/InvertDirStructure.py --folder Data/miniImagenet
+```
+Install additional Python packages:
+```
+```
+Install CUDA.
 
 ## Running Code
 You can run the SimCLR baseline via `python TrainSimCLR`. All command line arguments are optional. Below is the code to (mostly) replicate the reported SimCLR CIFAR-10 performance, with some extraneous arguments specified for clarity too.
