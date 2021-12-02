@@ -72,7 +72,7 @@ The vast majority of arguments have decent default settings and you probably sho
 ```
 
 ### Model saving
-Model checkpoints are saved to the `Models` directory, inside a folder named with a long string formed by concatenating the model's hyperparameters, as well as the training configuration. Inside this folder, checkpoints appear as `x.pt` where `x` is the index of the epoch run prior to saving. Checkpoints contain more information than just the model, so to load one you'll need to use the `load_()` function in `Utils.py`. Additionally, there are a number of TensorBoard files, and if you `cd` into the folder, so you can run
+Model checkpoints are saved to the `models` directory, inside a folder named with a long string formed by concatenating the model's hyperparameters, as well as the training configuration. Inside this folder, checkpoints appear as `x.pt` where `x` is the index of the epoch run prior to saving. Checkpoints contain more information than just the model, so to load one you'll need to use the `load_()` function in `Utils.py`. Additionally, there are a number of TensorBoard files, and if you `cd` into the folder, so you can run
 ```
 tensorboard --logdir Models/MODEL_DIRECTORY
 ```

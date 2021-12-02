@@ -13,15 +13,6 @@ from Utils import *
 
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
-dataset2input_dim = {
-    "cifar10": (3, 32, 32),
-    "imagenet": None,
-}
-
-dataset2n_classes = {
-    "cifar10": 10,
-    "imagenet": None,
-}
 
 def get_data_splits(data_str, eval_str):
     """Returns training and evaluation data given [data_str] and [eval_str].
@@ -34,13 +25,13 @@ def get_data_splits(data_str, eval_str):
     """
     # Get train, validation, and test splits of the data
     if data_str == "cifar10":
-        data_tr = CIFAR10(root=f"{project_dir}/Data", train=True, download=True)
+        data_tr = CIFAR10(root=f"{project_dir}/data", train=True, download=True)
         data_val = None
-        data_te = CIFAR10(root=f"{project_dir}/Data", train=False, download=True)
+        data_te = CIFAR10(root=f"{project_dir}/data", train=False, download=True)
     elif data_str == "miniImagenet":
-        data_tr = ImageFolder(root=f"{project_dir}/Data/miniImagenet/train")
-        data_val = ImageFolder(root=f"{project_dir}/Data/miniImagenet/val")
-        data_te = ImageFolder(root=f"{project_dir}/Data/miniImagenet/default_test")
+        data_tr = ImageFolder(root=f"{project_dir}/data/miniImagenet/train")
+        data_val = ImageFolder(root=f"{project_dir}/data/miniImagenet/val")
+        data_te = ImageFolder(root=f"{project_dir}/data/miniImagenet/default_test")
     else:
         raise ValueError(f"Unknown dataset {data_str}")
 

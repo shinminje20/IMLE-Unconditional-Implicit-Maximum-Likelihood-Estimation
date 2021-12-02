@@ -7,7 +7,7 @@
 *.pkl
 __pycache__
 
-Models
-Results
+models
+results
 .DS_Store
-Data/cifar-10*
+data/cifar-10*

@@ -50,13 +50,13 @@ def save_(model, optimizer, last_epoch, args, tb_results, folder):
 
 def generator_folder(args):
     """Returns the folder to save a generator trained with [args] to."""
-    folder = f"{project_dir}/Models/generators-{args.data}-{opts_str(args)}{suffix_str(args)}"
+    folder = f"{project_dir}/models/generators-{args.data}-{opts_str(args)}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
 def resnet_folder(args):
     """Returns the folder to to which to save a resnet trained with [args]."""
-    folder = f"{project_dir}/Models/resnets-{args.backbone}-{args.data}{opts_str(args)}{suffix_str(args)}"
+    folder = f"{project_dir}/models/resnets-{args.backbone}-{args.data}{opts_str(args)}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
