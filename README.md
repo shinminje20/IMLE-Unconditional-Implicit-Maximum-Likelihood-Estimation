@@ -1,9 +1,9 @@
 # ISICLE
 **I**mage **S**ynthes**i**s for **C**ontrastive **Le**arning
 
-### Setup
+## Setup
 
-**Python environment**
+### Python environment
 ```
 gdown==4.2.0
 lpips==0.1.4
@@ -14,13 +14,13 @@ torchvision==0.11.1
 tqdm==4.62.2
 ```
 
-**Datasets**
+###  Datasets
 Download and set up the data we'll be using:
 ```
 python Data/SetupMiniImagenet.py
 ```
 
-**CaMNet**
+### CaMNet
 We use CamNet to generate images for training. _If you just want to use this project to run basic SimCLR---our baseline---you don't need to and probably shouldn't do the following!_
 
 1. Prepare datasets for CamNet's usage:
@@ -32,7 +32,7 @@ We use CamNet to generate images for training. _If you just want to use this pro
     ```
 3. Install CUDA.
 
-### Running Code
+## Running Code
 You can run the SimCLR baseline via
 ```
 python TrainSimCLR.py
@@ -46,16 +46,16 @@ You can run the proposed method via
 python TrainISICLE.py
 ```
 
-**Model saving**
+### Model saving
 Model checkpoints are saved to the `Models` directory, inside a folder named with a long string formed by concatenating the model's hyperparameters, as well as the training configuration. Inside this folder, checkpoints appear as `x.pt` where `x` is the index of the epoch run prior to saving. Checkpoints contain more information than just the model, so to load one you'll need to use the `load_()` function in `Utils.py`. Additionally, there are a number of TensorBoard files, and if you `cd` into the folder, so you can run
 ```
 tensorboard --logdir Models/MODEL_DIRECTORY
 ```
 to view logged data about the model's training.
 
-### Extending This Code
+## Extending This Code
 
-**Training on new data**:
+### Training on new data
 1. This project expects data to appear in an ImageFolder format. The validation split is optional:
     ```
     Data/dataset_folder
@@ -77,10 +77,10 @@ to view logged data about the model's training.
     - Add your dataset to the `get_ssl_data_augs()` function. Again, you can essentially copy an existing case.
 4. In any file you want to run that takes a `--data` command line argument, add `NAME` to the `choices` kwarg of the corresponding `add_argument("--data", choices=[], ...)` for that file.
 
-### TODOs
+## TODOs
  - Get CaMNet working on miniImagenet
  - Improve CaMNet setup description in the README
 
-### DONE
+## DONE
 - Setup miniImagenet data and test it with basic SimCLR. We get 65% accuracy in a reasonably large setting, which is probably fine since there's less data per class than in Imagenet.
 - Get `TrainSimCLR.py` to work. Turned out evaluation needs to be done with training augmentations (grrrrr), and we can get 92% accuracy on the CIFAR-10, which is reasonably in line with the paper. The only difference is we use the Adam optimizer.
