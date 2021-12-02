@@ -35,7 +35,9 @@ We use CamNet to generate images for training. _If you just want to use this pro
 ## Running Code
 You can run the SimCLR baseline via
 ```
-python TrainSimCLR.py
+TrainSimCLR.py [-h] [--data {cifar10,miniImagenet}] [--eval {val,cv,test}] [--resume RESUME] [--suffix SUFFIX] [--n_workers N_WORKERS] [--eval_iter EVAL_ITER]
+                      [--save_iter SAVE_ITER] [--backbone {resnet18,resnet50}] [--bs BS] [--color_s COLOR_S] [--epochs EPOCHS] [--lars {0,1}] [--lr LR] [--mm MM [MM ...]]
+                      [--n_ramp N_RAMP] [--opt {adam,sgd}] [--proj_dim PROJ_DIM] [--temp TEMP] [--trust TRUST] [--seed SEED]
 ```
 You can run CaMNet as follows....
 ```
@@ -44,6 +46,37 @@ tbd
 You can run the proposed method via
 ```
 python TrainISICLE.py
+```
+
+### Argument meanings
+The vast majority of arguments have decent default settings and you probably shouldn't mess with them much.
+```
+--backbone              -- the backbone of the contrastive model, one of
+                            'resnet18' or 'resnet50'
+--bs                    -- batch size
+--color_s               -- color augmentation strength
+--data                  -- dataset to run on
+--epochs                -- number of epochs to train for
+--eval                  -- the kind of evaluation to do. 'val' validates on the
+                            validation set, 'cv' does cross-validation on the
+                            training set, and 'test' validates on the test set
+--eval_iter             -- number of epochs between evaluations
+--lars                  -- arguments are zero or one, indicates whether to use
+                            the LARS optimizer wrapped over --opt
+--lr                    -- base learning rate
+--mm                    -- the momentum if --opt is 'sgd' or beta1 and beta2 if
+                            --opt is 'adam'
+--n_ramp                -- number of epochs in which to linearly ramp the
+                            learning rate from zero to to --lr at the beginning
+                            of training
+--n_workers             -- number of workers to use for loading data
+--opt                   -- the optimizer, one of 'adam' or 'sgd'
+--proj_dim              -- end dimensionality of projection head
+--resume                -- file to resume from
+--seed                  --random seed
+--suffix                -- suffix for the model
+--temp                  -- contrastive loss temperature
+--trust                 -- trust coefficient for LARS
 ```
 
 ### Model saving
