@@ -2,8 +2,7 @@
 
 
 ## Setup
-
-### Python environment
+Install and activate the following Python environment:
 ```
 gdown==4.2.0
 lpips==0.1.4
@@ -13,8 +12,6 @@ tensorboard==2.7.0
 torchvision==0.11.1
 tqdm==4.62.2
 ```
-
-###  Datasets
 Download and set up the data we'll be using:
 ```
 python Data/SetupMiniImagenet.py
