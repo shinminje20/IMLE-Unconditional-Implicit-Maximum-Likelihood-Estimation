@@ -1,0 +1,12 @@
+Random Seed:  0
+Color output mode:  A*L*B*L
+AB range:  standard
+{'name': 'Train_Colorization', 'mode': 'Co_four_levels', 'dataroot_HR_Color': '/home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_256.lmdb', 'dataroot_D1': '/home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_32.lmdb', 'dataroot_D2': '/home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_64.lmdb', 'dataroot_D3': '/home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_128.lmdb', 'subset_file': None, 'use_shuffle': True, 'use_flip': True, 'use_rot': True, 'n_workers': 6, 'batch_size_per_month': 400, 'batch_size_per_day': 1, 'phase': 'train', 'scale': 16, 'data_type': 'lmdb'}
+read lmdb keys from cache: /home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_256.lmdb/_keys_cache.p
+[]
+read lmdb keys from cache: /home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_32.lmdb/_keys_cache.p
+[]
+read lmdb keys from cache: /home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_64.lmdb/_keys_cache.p
+[]
+read lmdb keys from cache: /home/tristan/Development/ISICLE/camnet/data/miniImagenetminiImagenet_train_128.lmdb/_keys_cache.p
+[]

@@ -92,7 +92,7 @@ def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, 
 """
 Expected structure:
 contains folders related to each category
-input_images_root: 
+input_images_root:
     - category_1:
         - test
         - train
@@ -108,13 +108,31 @@ input_images_root:
         - validation
 """
 
+
+################################################################################
+import argparse
+P = argparse.ArgumentParser(description="Preparing data for CaMNet")
+P.add_argument("--input_images_root", required=True, type=str,
+    help="folder containing images with folder/class/split/image organization")
+P.add_argument("--root_save_lmdb", required=True, type=str,
+    help="output folder")
+P.add_argument("--dataset_name", required=True, type=str,
+    help="dataset name")
+args = P.parse_args()
+
+
+################################################################################
+
 # parameters
 scales = [1., 1 / 2., 1 / 4., 1 / 8., 1 / 16.]
 dataset_modes = ['train', 'validation', 'test']  # support: 'train', 'test', 'validation'
 width = 256
-root_save_lmdb = "/path/to/save/lmdbs/"
-input_images_root = '/path/to/root/raw/images/*'
-dataset_name = "Dataset_name"
+# root_save_lmdb = "/path/to/save/lmdbs/"
+# input_images_root = '/path/to/root/raw/images/*'
+# dataset_name = "Dataset_name"
+root_save_lmdb = args.root_save_lmdb
+input_images_root = args.input_images_root
+dataset_name = args.dataset_name
 categories_list = sorted(glob.glob(input_images_root))
 
 print("Categories:")

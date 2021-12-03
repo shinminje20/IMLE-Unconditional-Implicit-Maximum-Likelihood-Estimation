@@ -10,12 +10,14 @@ def get_timestamp():
 
 def parse(opt_path, is_train=True):
     # remove comments starting with '//'
-    json_str = ''
+    # json_str = ''
+    # with open(opt_path, 'r') as f:
+    #     for line in f:
+    #         line = line.split('//')[0] + '\n'
+    #         json_str += line
+    # opt = json.loads(json_str, object_pairs_hook=OrderedDict)
     with open(opt_path, 'r') as f:
-        for line in f:
-            line = line.split('//')[0] + '\n'
-            json_str += line
-    opt = json.loads(json_str, object_pairs_hook=OrderedDict)
+        opt = json.load(f)
 
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
