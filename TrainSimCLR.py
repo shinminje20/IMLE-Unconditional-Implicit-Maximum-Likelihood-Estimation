@@ -46,7 +46,7 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="SimCLR training")
-    P.add_argument("--data", choices=["cifar10", "miniImagenet"],
+    P.add_argument("--data", choices=["cifar10", "fruit", "miniImagenet"],
         default="cifar10",
         help="dataset to load images from")
     P.add_argument("--eval", default="val", choices=["val", "cv", "test"],

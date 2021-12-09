@@ -32,6 +32,13 @@ def get_data_splits(data_str, eval_str):
         data_tr = ImageFolder(root=f"{project_dir}/data/miniImagenet/train")
         data_val = ImageFolder(root=f"{project_dir}/data/miniImagenet/val")
         data_te = ImageFolder(root=f"{project_dir}/data/miniImagenet/default_test")
+
+    # Added because I want to use contrastive learning for the Augmented
+    # Variance IMLE project
+    elif data_str == "fruit":
+        data_tr = ImageFolder(root=f"{project_dir}/data/ColorfulOriginal/train")
+        data_val = None #ImageFolder(root=f"{project_dir}/data/ColorfulOriginal/val")
+        data_te = None #ImageFolder(root=f"{project_dir}/data/ColorfulOriginal/test")
     else:
         raise ValueError(f"Unknown dataset {data_str}")
 
@@ -92,14 +99,8 @@ def get_ssl_data_augs(data_str, color_s=.5):
 
         # Validate using the same augmentations as for training, in line with
         # https://github.com/leftthomas/SimCLR
-        augs_fn = transforms.Compose([
-            transforms.RandomResizedCrop(32),
-            transforms.RandomHorizontalFlip(p=0.5),
-            color_distortion,
-            transforms.ToTensor()])
-
-        augs_te = transforms.Compose([
-            transforms.ToTensor()])
+        augs_fn = augs_tr
+        augs_te = transforms.Compose([transforms.ToTensor()])
     elif "miniImagenet" in data_str:
         augs_tr = transforms.Compose([
             transforms.RandomResizedCrop(224),
@@ -110,15 +111,21 @@ def get_ssl_data_augs(data_str, color_s=.5):
 
         # Validate using the same augmentations as for training, in line with
         # https://github.com/leftthomas/SimCLR
-        augs_fn = transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(p=0.5),
-            color_distortion,
-            transforms.GaussianBlur(23, sigma=(.1, 2)),
-            transforms.ToTensor()])
-
+        augs_fn = augs_tr
         augs_te = transforms.Compose([
             transforms.RandomResizedCrop(224),
+            transforms.ToTensor()])
+    elif "fruit" in data_str:
+        augs_tr = transforms.Compose([
+            transforms.RandomHorizontalFlip(p=0.5),
+            # transforms.RandomVerticalFlip(p=0.5),
+            # transforms.RandomRotation(90),
+            transforms.RandomResizedCrop(32, scale=(.8, 1)),
+            color_distortion,
+            transforms.ToTensor()])
+        augs_fn = augs_tr
+        augs_te = transforms.Compose([
+            transforms.RandomResizedCrop(32, scale=(.8, 1)),
             transforms.ToTensor()])
     else:
         raise ValueError("Unknown augmenta")

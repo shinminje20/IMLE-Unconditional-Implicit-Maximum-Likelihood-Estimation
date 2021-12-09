@@ -24,7 +24,7 @@ def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, 
     _count_correct_images = 0
     _count_incorrect_images = 0
 
-    print('Read images...')
+    print('Read images I...')
     pbar = ProgressBar(len(img_list))
     for i, v in enumerate(img_list):
         pbar.update('Read {}'.format(v))
@@ -35,13 +35,17 @@ def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, 
         images.append(img)
         _count_correct_images += 1
 
+
+
     for j, scale in enumerate(_scales):
         down_lmdb_save_path = _lmdb_save_paths[j]
         down_dataset = []
         down_data_size = 0
 
-        print('Read images...')
+        print('Read images II...')
         pbar = ProgressBar(len(img_list))
+        print("There are ", len(images), "images", _count_correct_images, _count_incorrect_images)
+        assert False
         for i, img in enumerate(images):
             pbar.update('Read {}'.format(i))
             down_img = np.array(

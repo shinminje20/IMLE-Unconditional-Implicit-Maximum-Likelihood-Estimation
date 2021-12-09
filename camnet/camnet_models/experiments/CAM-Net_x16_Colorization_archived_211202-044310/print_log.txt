@@ -1,3 +1,0 @@
-Random Seed:  0
-Color output mode:  A*L*B*L
-AB range:  standard
