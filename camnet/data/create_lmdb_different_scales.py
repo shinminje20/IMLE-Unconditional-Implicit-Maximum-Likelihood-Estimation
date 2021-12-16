@@ -45,7 +45,6 @@ def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, 
         print('Read images II...')
         pbar = ProgressBar(len(img_list))
         print("There are ", len(images), "images", _count_correct_images, _count_incorrect_images)
-        assert False
         for i, img in enumerate(images):
             pbar.update('Read {}'.format(i))
             down_img = np.array(
@@ -124,7 +123,9 @@ P.add_argument("--dataset_name", required=True, type=str,
     help="dataset name")
 args = P.parse_args()
 
-
+root_save_lmdb = f"{args.root_save_lmdb}/"
+input_images_root = f"{args.input_images_root}/*"
+dataset_name = args.dataset_name
 ################################################################################
 
 # parameters
@@ -134,9 +135,8 @@ width = 256
 # root_save_lmdb = "/path/to/save/lmdbs/"
 # input_images_root = '/path/to/root/raw/images/*'
 # dataset_name = "Dataset_name"
-root_save_lmdb = args.root_save_lmdb
-input_images_root = args.input_images_root
-dataset_name = args.dataset_name
+
+
 categories_list = sorted(glob.glob(input_images_root))
 
 print("Categories:")
@@ -161,7 +161,7 @@ for db_mode in dataset_modes:
         elif db_mode == "test":
             img_folder += "/test/*"
         elif db_mode == "validation":
-            img_folder += "/validation/*"
+            img_folder += "/val/*"
 
         count_correct_images, count_incorrect_images = creat_lmdb_per_category(
             img_folder,

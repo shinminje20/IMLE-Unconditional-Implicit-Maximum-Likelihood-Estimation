@@ -10,4 +10,5 @@ __pycache__
 models
 results
 .DS_Store
+__MACOSX
 data/cifar-10*

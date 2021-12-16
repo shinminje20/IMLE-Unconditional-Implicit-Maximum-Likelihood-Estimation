@@ -1,4 +1,9 @@
-"""Script to set up the MiniImagenet dataset."""
+"""
+Script to set up the MiniImagenet dataset.
+The images/splits inherent here are from
+https://mtl.yyliu.net/download/Lmzjm9tX.html.
+"""
+import argparse
 from collections import defaultdict
 import csv
 import os
@@ -6,62 +11,25 @@ import gdown
 import zipfile
 import shutil
 
-# Create directory for MiniImagenet
-data_dir = os.path.dirname(os.path.abspath(__file__))
-miniImagenet_dir = f"{data_dir}/miniImagenet"
+from DataUtils import *
 
-# Download the data and splits
-url = "https://drive.google.com/u/1/uc?id=1XmneyaXBZZyCZFn7UWnni1HIBuvWlFJB&export=download"
-zip_path = f"{data_dir}/miniImagenet_data.zip"
-gdown.download(url, zip_path, quiet=False)
-with zipfile.ZipFile(zip_path) as z:
-    z.extractall(path=data_dir)
-os.remove(zip_path)
+if __name__ == "__main__":
+    P = argparse.ArgumentParser(description="SimCLR training")
+    P.add_argument("--also_cls_first", action="store_true",
+        help="Also make a class-first dataset split")
+    args = P.parse_args()
 
-# Create splits so we can use an ImageFolder-based dataset. I'm using fewshot
-# learning terminology because it'd be cool to investigate out-of-distribution
-# generalization. Traditional splitting can be added later.
-csv2split = {"train.csv": "base", "val.csv": "novel_val", "test.csv": "novel_test"}
+    # Create directory for MiniImagenet
+    # data_dir = os.path.dirname(os.path.abspath(__file__))
+    miniImagenet_dir = f"{data_dir}/miniImagenet"
 
-for split_file, split in csv2split.items():
-    class2images = defaultdict(lambda: [])
+    # Download the data and splits
+    url = "https://drive.google.com/u/1/uc?id=15iRcb_h5od0GsTkBGRmVTR8LyfJGuJ2k&export=download"
+    zip_path = f"{data_dir}/miniImagenet_data.zip"
+    gdown.download(url, zip_path, quiet=False)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(path=data_dir)
+    os.remove(zip_path)
 
-    with open(f"{miniImagenet_dir}/{split_file}", newline="") as f:
-        csv_reader = csv.reader(f)
-        next(csv_reader) # Skip the first row
-        for row in csv_reader:
-            class2images[row[1]].append(row[0])
-
-    os.makedirs(f"{miniImagenet_dir}/{split}")
-    for cls,images in class2images.items():
-        cls_dir = f"{miniImagenet_dir}/{split}/{cls}"
-        os.makedirs(cls_dir)
-        for image in images:
-            os.rename(f"{miniImagenet_dir}/images/{image}", f"{cls_dir}/{image}")
-
-# Of course, we maybe also want to train in a traditional train-val-test setup.
-# The split sizes allow for training with the same amount of data as in the
-# fewshot learning splits, which could be interesting!
-for default_split in ["train", "val", "test"]:
-    split_dir = f"{miniImagenet_dir}/{default_split}"
-    if not os.path.exists(split_dir):
-        os.makedirs(split_dir)
-
-for fewshot_split in csv2split.values():
-    for dir in os.listdir(f"{miniImagenet_dir}/{fewshot_split}"):
-
-        dir_path = f"{miniImagenet_dir}/{fewshot_split}/{dir}"
-        n_images = len(list(os.listdir(dir_path)))
-        os.makedirs(f"{miniImagenet_dir}/train/{dir}")
-        os.makedirs(f"{miniImagenet_dir}/val/{dir}")
-        os.makedirs(f"{miniImagenet_dir}/test/{dir}")
-
-        for idx,file in enumerate(os.listdir(dir_path)):
-            file_path = f"{dir_path}/{file}"
-
-            if idx / n_images < .64:
-                shutil.copy(file_path, f"{miniImagenet_dir}/train/{dir}/{file}")
-            elif  idx / n_images  < .8:
-                shutil.copy(file_path, f"{miniImagenet_dir}/val/{dir}/{file}")
-            else:
-                shutil.copy(file_path, f"{miniImagenet_dir}/test/{dir}/{file}")
+    if args.also_cls_first:
+        make_cls_first(miniImagenet_dir)
