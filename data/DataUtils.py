@@ -34,11 +34,11 @@ def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
     for cls in tqdm(class2split2file, desc="Copying files to class-first directory"):
         for split in class2split2file[cls]:
 
-            folder = f"{data_dir}/{cls_first_folder}/{os.path.basename(data_folder)}/{cls}/{split}"
+            folder = f"{cls_first_folder}/{os.path.basename(data_folder)}/{cls}/{split}"
             if not os.path.exists(folder):
                 os.makedirs(folder)
 
             for image_file in class2split2file[cls][split]:
                 shutil.copy(image_file, f"{folder}/{os.path.basename(image_file)}")
 
-    return f"{data_dir}/{cls_first_folder}/{os.path.basename(data_folder)}"
+    return f"{cls_first_folder}/{os.path.basename(data_folder)}"
