@@ -18,4 +18,4 @@ if __name__ == "__main__":
         "miniImagenet")
 
     if args.also_cls_first:
-        make_cls_first(miniImagenet_dir)
+        make_cls_first(f"{data_dir}/{miniImagenet_dir}")
