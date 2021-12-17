@@ -1,6 +1,6 @@
 *.csv
 *.tsv
-*.json
+data/*.json
 *.pt
 *.jpg
 *.pt

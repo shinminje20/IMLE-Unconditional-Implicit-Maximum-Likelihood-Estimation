@@ -2,6 +2,7 @@
 
 
 ## Setup
+If you just want to use the SimCLR component of this, look under TBD instead.
 Install and activate the following Python environment:
 ```
 gdown==4.2.0
@@ -14,17 +15,9 @@ tqdm==4.62.2
 ```
 Download and set up the data we'll be using:
 ```
-python Data/SetupMiniImagenet.py
+python Data/SetupMiniImagenet.py --also_cls_first
 ```
-**_If you just want to run SimCLR, you should skip the rest of the setup. Otherwise, setup CaMNet:_**
-Prepare datasets for CamNet's usage:
-```
-python Data/InvertDirStructure.py --folder Data/miniImagenet
-```
-Install additional Python packages:
-```
-```
-Install CUDA.
+Install CUDA:
 
 ## Running Code
 You can run the SimCLR baseline via `python TrainSimCLR`. All command line arguments are optional. Below is the code to (mostly) replicate the reported SimCLR CIFAR-10 performance, with some extraneous arguments specified for clarity too.

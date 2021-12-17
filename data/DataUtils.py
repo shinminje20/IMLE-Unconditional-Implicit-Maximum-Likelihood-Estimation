@@ -8,7 +8,7 @@ import zipfile
 
 data_dir = os.path.dirname(os.path.abspath(__file__))
 
-def remove_bad_files(f, bad_files=[".DS_Store"]):
+def remove_bad_files(f, bad_files=[".DS_Store", "__MACOSX"]):
     """Recursively removes bad files from folder or file [f]."""
     if os.path.isdir(f):
         for item in os.listdir(f):
@@ -58,8 +58,8 @@ def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
             for cls in os.listdir(f"{data_folder}/{split}"):
                 if os.path.isdir(f"{data_folder}/{split}/{cls}"):
                     for image in os.listdir(f"{data_folder}/{split}/{cls}"):
-                        image = f"{data_folder}/{split}/{cls}/{image}"
-                        class2split2file[cls][split].append(image)
+                        class2split2file[cls][split].append(
+                            f"{data_folder}/{split}/{cls}/{image}")
 
     for cls in tqdm(class2split2file, desc="Copying files to class-first directory"):
         for split in class2split2file[cls]:
