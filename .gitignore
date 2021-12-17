@@ -12,3 +12,6 @@ results
 .DS_Store
 __MACOSX
 data/cifar-10*
+data/tinyImagenet
+data/cls_first
+data/miniImagenet
