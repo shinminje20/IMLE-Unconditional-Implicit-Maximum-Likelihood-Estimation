@@ -13,7 +13,7 @@ def remove_bad_files(f, bad_files=[".DS_Store"]):
     if os.path.isdir(f):
         for item in os.listdir(f):
             if item in bad_files:
-                os.remove(item)
+                os.remove(f"{f}/{item}")
             elif os.path.isdir(f"{f}/{item}"):
                 remove_bad_files(f"{f}/{item}")
             else:
