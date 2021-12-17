@@ -1,9 +1,38 @@
 from collections import defaultdict
+import gdown
 import os
 import shutil
 from tqdm import tqdm
+import zipfile
+
 
 data_dir = os.path.dirname(os.path.abspath(__file__))
+
+def remove_bad_files(f, bad_files=[".DS_Store"]):
+    """Recursively removes bad files from folder or file [f]."""
+    if os.path.isdir(f):
+        for item in os.listdir(f):
+            if item in bad_files:
+                os.remove(item)
+            elif os.path.isdir(f"{f}/{item}"):
+                remove_bad_files(f"{f}/{item}")
+            else:
+                pass
+    else:
+        pass
+
+def gdown_unzip(url, result):
+    """Downloads the file at Google drive URL [url], unzips it, and removes any
+    hidden files that are not `.` and `..`.
+    """
+    zip_path = f"{data_dir}/{result}.zip"
+    gdown.download(url, zip_path, quiet=False)
+    with zipfile.ZipFile(zip_path) as z:
+        z.extractall(path=data_dir)
+    os.remove(zip_path)
+    remove_bad_files(data_dir)
+
+    return result
 
 def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
     """Returns a path to a data folder that is identical to [data_folder] but
@@ -27,9 +56,10 @@ def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
     for split in os.listdir(data_folder):
         if os.path.isdir(f"{data_folder}/{split}"):
             for cls in os.listdir(f"{data_folder}/{split}"):
-                for image in os.listdir(f"{data_folder}/{split}/{cls}"):
-                    image = f"{data_folder}/{split}/{cls}/{image}"
-                    class2split2file[cls][split].append(image)
+                if os.path.isdir(f"{data_folder}/{split}/{cls}"):
+                    for image in os.listdir(f"{data_folder}/{split}/{cls}"):
+                        image = f"{data_folder}/{split}/{cls}/{image}"
+                        class2split2file[cls][split].append(image)
 
     for cls in tqdm(class2split2file, desc="Copying files to class-first directory"):
         for split in class2split2file[cls]:
