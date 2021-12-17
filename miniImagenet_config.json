@@ -32,7 +32,7 @@
     }
   },
   "path": {
-    "root": "/path/to/CAM-Net",
+    "root": ".",
     "pretrain_model_G": null
   },
   "network_G": {
