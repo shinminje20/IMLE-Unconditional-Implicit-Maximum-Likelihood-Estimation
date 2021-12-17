@@ -8,6 +8,23 @@ import zipfile
 
 data_dir = os.path.dirname(os.path.abspath(__file__))
 
+def get_all_files(path, extensions=[], acc=[]):
+    """Returns a list of all files under [path] with an extension in
+    [extensions] or simply all the files if [extensions] is empty.
+    """
+    if os.path.isdir(path):
+        for f in os.listdir(path):
+            get_all_files(f"{path}/{f}", extensions=extensions, acc=acc)
+    else:
+        acc.append(path)
+    return acc
+
+
+
+def resize_dataset(path, new_size, replace=False):
+    """Resizes every image under [path] to be [new_size]."""
+    pass
+
 def remove_bad_files(f, bad_files=[".DS_Store",]):
     """Recursively removes bad files from folder or file [f]."""
     if os.path.isdir(f):
@@ -72,14 +89,3 @@ def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
                 shutil.copy(image_file, f"{folder}/{os.path.basename(image_file)}")
 
     return f"{cls_first_folder}/{os.path.basename(data_folder)}"
-
-
-def move_up_dir(dir):
-    """Moves the contents of [dir] into the same level as [dir] and deletes
-    [dir] once it's empty.
-    """
-    outer_dir = os.path.dirname(dir)
-    for f in os.listdir(dir):
-        f_name = os.path.basename(f)
-        shutil.copy(f"{dir}/{f_fname}", f"{outer_dir}/{f_name}")
-    os.remove(dir)
