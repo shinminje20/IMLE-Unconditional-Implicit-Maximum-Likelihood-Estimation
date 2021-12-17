@@ -122,6 +122,8 @@ P.add_argument("--dataset_name", required=True, type=str,
     help="dataset name")
 P.add_argument("--width", required=True, type=int,
     help="dataset name")
+P.add_argument("--modes", default=['train', 'validation', 'test'], nargs="+",
+    help="dataset name")
 args = P.parse_args()
 
 root_save_lmdb = f"{args.root_save_lmdb}/"

@@ -1,10 +1,13 @@
+"""Downloads and sets up a dataset."""
+
+import argparse
 from collections import defaultdict
 import gdown
 import os
+from PIL import Image
 import shutil
 from tqdm import tqdm
 import zipfile
-
 
 data_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -19,13 +22,16 @@ def get_all_files(path, extensions=[], acc=[]):
         acc.append(path)
     return acc
 
-
-
-def resize_dataset(path, new_size, replace=False):
+def resize_dataset(path, new_size):
     """Resizes every image under [path] to be [new_size]."""
-    pass
+    tqdm.write(f"Getting list of all images under {path}")
+    files_list = get_all_files(path)
+    for f in tqdm(files_list, desc="Resizing images"):
+        img = Image.open(f)
+        img = img.resize(new_size, Image.BICUBIC)
+        img.save(f)
 
-def remove_bad_files(f, bad_files=[".DS_Store",]):
+def remove_bad_files(f, bad_files=[".DS_Store"]):
     """Recursively removes bad files from folder or file [f]."""
     if os.path.isdir(f):
         for item in os.listdir(f):
@@ -49,7 +55,7 @@ def gdown_unzip(url, result):
     os.remove(zip_path)
     remove_bad_files(data_dir)
 
-    return result
+    return f"{data_dir}/{result}"
 
 def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
     """Returns a path to a data folder that is identical to [data_folder] but
@@ -89,3 +95,31 @@ def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
                 shutil.copy(image_file, f"{folder}/{os.path.basename(image_file)}")
 
     return f"{cls_first_folder}/{os.path.basename(data_folder)}"
+
+data2url = {
+    # Data from https://mtl.yyliu.net/download/Lmzjm9tX.html
+    "miniImagenet": "https://drive.google.com/u/1/uc?id=15iRcb_h5od0GsTkBGRmVTR8LyfJGuJ2k&export=download",
+    # Data prepared via https://gist.github.com/moskomule/2e6a9a463f50447beca4e64ab4699ac4
+    "tinyImagenet": "https://drive.google.com/u/1/uc?id=1mCQOMcVbN0XT_uwcUjU1gdMvVRpBcX3w&export=download",
+}
+
+if __name__ == "__main__":
+    P = argparse.ArgumentParser(description="Dataset downloading and creation")
+    P.add_argument("--data", choices=["tinyImagenet", "miniImagenet"],
+        help="also make a class-first dataset split")
+    P.add_argument("--also_cls_first", action="store_true",
+        help="also make a class-first dataset split")
+    P.add_argument("--size", default=None, type=int,
+        help="size to make the images if different from 84x84")
+    args = P.parse_args()
+
+    dataset_dir = gdown_unzip(data2url[args.data], args.data)
+    tqdm.write("Dataset created")
+
+    if args.size is not None:
+        resize_dataset(dataset_dir, (args.size, args.size))
+        tqdm.write(f"Dataset resized to {args.size}x{args.size}")
+
+    if args.also_cls_first:
+        make_cls_first(dataset_dir)
+        tqdm.write(f"Made a class-first copy of the dataset")
