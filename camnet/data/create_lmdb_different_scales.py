@@ -18,7 +18,7 @@ def chunks(lst, n):
         yield lst[i:i + n]
 
 
-def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, width_check=256):
+def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, width_check=84):
     img_list = sorted(glob.glob(_img_folder))
     images = []
     _count_correct_images = 0
