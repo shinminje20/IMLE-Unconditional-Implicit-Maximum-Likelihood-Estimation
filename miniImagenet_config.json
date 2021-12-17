@@ -4,8 +4,8 @@
   "model": "CAMNet",
   "scale": 16,
   "task": "Colorization",
-  "HR_W": 84,
-  "HR_H": 84,
+  "HR_W": 64,
+  "HR_H": 64,
   "gpu_ids": [
     0
   ],
@@ -13,10 +13,10 @@
     "train": {
       "name": "Train_Colorization",
       "mode": "Co_four_levels",
-      "dataroot_HR_Color": "./data/miniImagenet_train_84.lmdb",
-      "dataroot_D1": "./data/miniImagenet_train_10.lmdb",
-      "dataroot_D2": "./data/miniImagenet_train_21.lmdb",
-      "dataroot_D3": "./data/miniImagenet_train_42.lmdb",
+      "dataroot_HR_Color": "./data/miniImagenet_train_64.lmdb",
+      "dataroot_D1": "./data/miniImagenet_train_8.lmdb",
+      "dataroot_D2": "./data/miniImagenet_train_16.lmdb",
+      "dataroot_D3": "./data/miniImagenet_train_32.lmdb",
       "subset_file": null,
       "use_shuffle": true,
       "use_flip": true,
@@ -28,7 +28,7 @@
     "val": {
       "name": "Validation_Colorization",
       "mode": "Co_four_levels",
-      "dataroot_HR_Color": "./data/miniImagenet_validation_84.lmdb"
+      "dataroot_HR_Color": "./data/miniImagenet_validation_64.lmdb"
     }
   },
   "path": {
