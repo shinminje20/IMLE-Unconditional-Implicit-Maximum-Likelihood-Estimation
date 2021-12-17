@@ -111,7 +111,6 @@ input_images_root:
         - validation
 """
 
-
 ################################################################################
 import argparse
 P = argparse.ArgumentParser(description="Preparing data for CaMNet")
@@ -121,25 +120,25 @@ P.add_argument("--root_save_lmdb", required=True, type=str,
     help="output folder")
 P.add_argument("--dataset_name", required=True, type=str,
     help="dataset name")
+P.add_argument("--width", required=True, type=int,
+    help="dataset name")
 args = P.parse_args()
 
 root_save_lmdb = f"{args.root_save_lmdb}/"
 input_images_root = f"{args.input_images_root}/*"
 dataset_name = args.dataset_name
+width = args.width
 ################################################################################
 
 # parameters
 scales = [1., 1 / 2., 1 / 4., 1 / 8., 1 / 16.]
 dataset_modes = ['train', 'validation', 'test']  # support: 'train', 'test', 'validation'
-width = 256
+# width = 256
 # root_save_lmdb = "/path/to/save/lmdbs/"
 # input_images_root = '/path/to/root/raw/images/*'
 # dataset_name = "Dataset_name"
 
-
 categories_list = sorted(glob.glob(input_images_root))
-
-print("Categories:")
 print(*categories_list, sep='\n')
 
 for db_mode in dataset_modes:
