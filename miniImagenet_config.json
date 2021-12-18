@@ -16,7 +16,7 @@
       "dataroot_HR_Color": "./data/miniImagenet-10-all-2-10-0_train_64.lmdb",
       "dataroot_D1": "./data/miniImagenet-10-all-2-10-0_train_8.lmdb",
       "dataroot_D2": "./data/miniImagenet-10-all-2-10-0_train_16.lmdb",
-      "dataroot_D3": "./data/mminiImagenet-10-all-2-10-0_train_32.lmdb",
+      "dataroot_D3": "./data/miniImagenet-10-all-2-10-0_train_32.lmdb",
       "subset_file": null,
       "use_shuffle": true,
       "use_flip": true,
