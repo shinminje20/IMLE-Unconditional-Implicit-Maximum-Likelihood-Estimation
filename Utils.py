@@ -19,6 +19,15 @@ state_sep_str = "=" * 40
 
 project_dir = os.path.dirname(os.path.abspath(__file__))
 
+def strip_slash(s):
+    """Returns string [s] without a trailing slash.
+
+    This project uses rather basic path-handling, which makes for slightly
+    clunky but easier-to-debug code. Generally, paths CAN NOT end in slashes or
+    f-strings using them will break!
+    """
+    return s if not s[-1] == "/" else s[:-1]
+
 def opts_str(args):
     """Returns the options string for [args]."""
     return f"-{'-'.join(args.options)}" if len(args.options) > 0 else "-"
