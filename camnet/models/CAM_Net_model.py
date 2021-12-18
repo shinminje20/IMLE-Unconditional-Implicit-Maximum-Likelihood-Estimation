@@ -52,6 +52,9 @@ class CAM_NetModel(BaseModel):
             self.cri_pix = None
 
         self.netF = networks.define_F(opt).to(self.device)
+
+        print("NET F", self.netF)
+
         self.projections = None
         if self.is_train:
             # G
