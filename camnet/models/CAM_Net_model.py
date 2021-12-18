@@ -130,6 +130,7 @@ class CAM_NetModel(BaseModel):
 
     # Random projection matrix for reducing LPIPS feature dimension
     def init_projection(self, h, w, total_dim=1000):
+        print("INIT PROJECTION", h, w)
         fake_input = torch.zeros(1, 3, h, w)
         fake_feat, fake_shape = self.netF(fake_input)
         self.projections = []
