@@ -58,7 +58,7 @@ def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, 
             down_data_size += down_img.nbytes
 
         _map_sizes[j] += down_data_size
-        down_env = lmdb.open(down_lmdb_save_path, map_size=_map_sizes[j] * 10)  # check the map_size
+        down_env = lmdb.open(down_lmdb_save_path, map_size=_map_sizes[j] * 20)  # check the map_size
         print('Finish reading {} images.\nWrite lmdb...'.format(len(img_list)))
 
         pbar = ProgressBar(len(img_list))

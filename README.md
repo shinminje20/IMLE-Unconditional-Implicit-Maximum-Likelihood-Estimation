@@ -97,8 +97,9 @@ to view logged data about the model's training.
 
 ## TODOs
  - Get CaMNet working on miniImagenet
- - Improve CaMNet setup description in the README
+ - Improve/fix CaMNet setup description in the README
 
 ## DONE
+- **12/18/201**: Added `MakeSmallDataset.py` for making a smaller split of a dataset. This aids in training CaMNet
 - Setup miniImagenet data and test it with basic SimCLR. We get 65% accuracy in a reasonably large setting, which is probably fine since there's less data per class than in Imagenet.
 - Get `TrainSimCLR.py` to work. Turned out evaluation needs to be done with training augmentations (grrrrr), and we can get 92% accuracy on the CIFAR-10, which is reasonably in line with the paper. The only difference is we use the Adam optimizer.
