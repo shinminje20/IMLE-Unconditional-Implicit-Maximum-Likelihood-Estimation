@@ -6,6 +6,7 @@ data/*.json
 *.pt
 *.pkl
 __pycache__
+*.lmdb
 
 models
 results
