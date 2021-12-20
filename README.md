@@ -1,5 +1,9 @@
 # **I**mage **S**ynthes**i**s for **C**ontrastive **Le**arning
 
+$$
+  \log(x) = \sin(x) \frac{\exp 7}{a}
+$$
+
 
 ## Setup
 If you just want to use the SimCLR component of this, look under TBD instead.
