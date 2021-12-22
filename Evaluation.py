@@ -84,9 +84,9 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, epochs=10
     """
     loader_tr = DataLoader(data_tr, shuffle=True, pin_memory=True,
         batch_size=bs, drop_last=False,
-        num_workers=6)
+        num_workers=6, **seed_kwargs(trial))
     loader_te = DataLoader(data_te, pin_memory=True, batch_size=1024,
-        drop_last=False, num_workers=6)
+        drop_last=False, num_workers=6, **seed_kwargs(trial))
 
     model = nn.Linear(out_dim, num_classes).to(device)
     optimizer = Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
@@ -191,9 +191,9 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="IMLE training")
-    P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
+    P.add_argument("--eval", default="val", choices=["val", "test"],
         help="The data to evaluate linear finetunings on")
-    P.add_argument("--resume", default=None, type=str,
+    P.add_argument("--model", default=None, type=str,
         help="file to resume from")
     P.add_argument("--precompute_feats", default=0, choices=[0, 1],
         help="whether to precompute features")
@@ -207,14 +207,16 @@ if __name__ == "__main__":
         help="random seed")
     args = P.parse_args()
 
-    model, _, _, old_args, _ = load_(args.resume)
+    model, _, _, old_args, _ = load_(args.model)
     model = model.to(device)
 
-    data_tr, data_val = get_data_splits(old_args.data, args.eval)
-    augs_tr, augs_fn, augs_te = get_data_augs(old_args.data)
+    data_tr, data_eval = get_data_splits(args.data, args.eval)
+    augs_tr, augs_fn, augs_te = get_ssl_data_augs(args.data, args.color_s)
 
     val_acc_avg, val_acc_std = classification_eval(model.backbone, data_tr,
         data_val, augs_fn, augs_te,
-        precompute_feats=args.precompute_feats, epochs=args.epochs, bs=args.bs,
-        verbose=True)
+        data_name=old_args.data,
+        ex_per_class="all",
+        precompute_feats=args.precompute_feats,
+        epochs=args.epochs, bs=args.bs)
     tqdm.write(f"val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")

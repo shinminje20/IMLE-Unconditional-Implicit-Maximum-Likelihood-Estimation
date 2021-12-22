@@ -14,6 +14,17 @@ from Utils import *
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
 
+def seed_kwargs(seed=0):
+    """Returns kwargs to be passed into a DataLoader to give it seed [seed]."""
+    def seed_worker(worker_id):
+        worker_seed = torch.initial_seed() % 2**32
+        numpy.random.seed(worker_seed)
+        random.seed(worker_seed)
+        
+    g = torch.Generator()
+    g.manual_seed(0)
+    return {"generator": g, "worker_init_fn": seed_worker}
+
 def get_data_splits(data_str, eval_str):
     """Returns training and evaluation data given [data_str] and [eval_str].
 

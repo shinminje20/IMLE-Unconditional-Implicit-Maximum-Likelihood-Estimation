@@ -124,7 +124,7 @@ if __name__ == "__main__":
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
     if args.resume is not None:
-        model, optimizer, last_epoch, old_args, tb_results = load_(args.resume)
+        model, optimizer, last_epoch, args, tb_results = load_(args.resume)
         model = model.to(device)
         last_epoch -= 1
     else:
@@ -149,13 +149,15 @@ if __name__ == "__main__":
         last_epoch = -1
 
     # Instantiate the scheduler and get the data
+    set_seed(args.seed)
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
     data_tr, data_eval = get_data_splits(args.data, args.eval)
     augs_tr, augs_fn, augs_te = get_ssl_data_augs(args.data, args.color_s)
     data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
-        drop_last=True, num_workers=args.n_workers, pin_memory=True)
+        drop_last=True, num_workers=args.n_workers, pin_memory=True,
+        **seed_kwargs(args.seed))
 
     ############################################################################
     # Begin training!

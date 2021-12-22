@@ -19,73 +19,25 @@ from Evaluation import classification_eval
 from ContrastiveUtils import *
 from Utils import *
 
-class CPSRLoss:
-    """Contrastive Perceptual Similarity Regression Loss.
+def get_generator():
+    """Returns the generator. Given an image [x], it returns two views of [x]
+    that can be used for contrastive learning.
 
-    1. Let cos(x,y) be the cosine distance between *embeddings of* x and y
-    2. Let lpips(x, y) be the LPIPS distance between *images* x and y, divided
-        by a constant M, and then truncated at one. M is chosen to be the
-        minimum/average LPIPS distance between any two images in the dataset.
-
-    For negatives n1 ... nN and positives p1 and p2, loss is for p1 is
-
-            exp[ - (cos(lpips(p1, p2) / pi) - cos(p1, p2)) / temp ]
-        —————————————————————————————————————————————————————————
-            sum over [i=1 ... N] exp[ - cos(p1, ni) / temp]
-
-    Basically, this is regressing cosine embedding distances to modified LPIPS
-    distances in the numerator, and regular contrastive loss in the denominator.
-    This modifies the familiar NT X-Entropy loss to include a *graded similarity
-    metric* that should make it mirror LPIPS distances in dense regions of
-    embedding space.
-
-    Hopefully features are better!
     """
+    pass
 
-    def __init__(self, max_lpips_dist, temp=.5):
-        """Args:
-        max_lpips_dist  -- the maximum
-        temp            -- contrastive loss temperature
-        """
-        self.temp = temp
-        self.lpips = LPIPS(net="vgg").to(device)
-        self.pi = torch.tensor(math.pi)
-        self.max_lpips_dist = max_lpips_dist
-
-    def __call__(self, x1, x2, fx1, fx2):
-        """Returns the loss from pre-normalized projections [fx1] and [fx2]."""
-        out = torch.cat([fx1, fx2], dim=0)
-        n_samples = len(out)
-
-        # Compute the positive samples loss. At a high level, this is regression
-        # on normalized LPIPs distances.
-        percept_dists = torch.min(self.lpips(x1, x2) / self.max_lpips_dist, 1)
-        percept_dists = torch.cos(percept_dists, out=percept_dists)
-
-        embed_dists = torch.sum(fx1 * fx2, dim=-1)
-        pos = torch.exp((embed_dists - percept_dists) / self.temp)
-
-        # Compute negative samples loss. This is exactly the denominator in
-        # standard NT X-entropy loss.
-        cov = torch.mm(out, out.t().contiguous())
-        sim = torch.exp(cov / self.temp)
-        mask = ~torch.eye(n_samples, device=sim.device).bool()
-        neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
-
-        return -torch.log(pos / neg).mean()
-
-def one_epoch_contrastive(model, optimizer, loader, temp=.5):
-    """Returns a (model, optimizer, loss) tuple after training [model] on
+def one_epoch_contrastive(encoder, optimizer, loader, temp=.5):
+    """Returns a (encoder, optimizer, loss) tuple after training [encoder] on
     [loader] for one epoch.
 
     The returned loss is averaged over batches.
 
-    model           -- a model of the form projection_head(feature_extractor())
-    optimizer       -- the optimizer for [model]
+    encoder           -- a encoder of the form projection_head(feature_extractor())
+    optimizer       -- the optimizer for [encoder]
     loader          -- a DataLoader over the data to train on
     temp            -- contrastive loss temperature
     """
-    model.train()
+    encoder.train()
     loss_fn = NTXEntLoss(temp)
     loss_total = 0
 
@@ -93,15 +45,15 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
         x1 = x1.float().to(device, non_blocking=True)
         x2 = x2.float().to(device, non_blocking=True)
 
-        model.zero_grad()
-        fx1, fx2 = model(x1), model(x2)
+        encoder.zero_grad()
+        fx1, fx2 = encoder(x1), encoder(x2)
         loss = loss_fn(fx1, fx2)
         loss.backward()
         optimizer.step()
 
         loss_total += loss.item()
 
-    return model, optimizer, loss_total / len(loader)
+    return encoder, optimizer, loss_total / len(loader)
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="ISICLE training")
@@ -121,7 +73,7 @@ if __name__ == "__main__":
     P.add_argument("--eval_iter", default=10, type=int,
         help="number of epochs between linear evaluations")
     P.add_argument("--save_iter", default=100, type=int,
-        help="save a model every --save_iter epochs")
+        help="save a encoder every --save_iter epochs")
 
     # Hyperparameter arguments
     P.add_argument("--backbone", default="resnet18",
@@ -184,22 +136,22 @@ if __name__ == "__main__":
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
     if args.resume is not None:
-        model, optimizer, last_epoch, old_args, tb_results = load_(args.resume)
-        model = model.to(device)
+        encoder, optimizer, last_epoch, old_args, tb_results = load_(args.resume)
+        encoder = encoder.to(device)
         last_epoch -= 1
     else:
-        # Get the model and optimizer. [get_param_groups()] ensures that the
+        # Get the encoder and optimizer. [get_param_groups()] ensures that the
         # correct param groups are fed to the optimizer so that if the otimizer
         # is wrapped in LARS, LARS will see the right param groups.
-        model = get_resnet_with_head(args.backbone, args.proj_dim,
+        encoder = get_resnet_with_head(args.backbone, args.proj_dim,
             head_type="projection",
             small_image=(args.data in small_image_datasets)).to(device)
 
         if args.opt == "adam":
-            optimizer = Adam(get_param_groups(model, args.lars), lr=args.lr,
+            optimizer = Adam(get_param_groups(encoder, args.lars), lr=args.lr,
                 betas=args.mm, weight_decay=1e-6)
         elif args.opt == "sgd":
-            optimizer = SGD(get_param_groups(model, args.lars), lr=args.lr,
+            optimizer = SGD(get_param_groups(encoder, args.lars), lr=args.lr,
                 momentum=args.mm, weight_decay=1e-6, nesterov=True)
         else:
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
@@ -217,20 +169,21 @@ if __name__ == "__main__":
         color_distort=args.color_distort)
     data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
-        drop_last=True, num_workers=args.n_workers, pin_memory=True)
+        drop_last=True, num_workers=args.n_workers, pin_memory=True,
+        **seed_kwargs(args.seed))
 
     ############################################################################
     # Begin training!
     ############################################################################
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
 
-        model, optimizer, loss_tr = one_epoch_contrastive(model, optimizer,
+        encoder, optimizer, loss_tr = one_epoch_contrastive(encoder, optimizer,
             loader, args.temp)
 
         # Perform a classification cross validation if desired, and otherwise
         # print/log results or merely that the epoch happened.
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
-            val_acc_avg, val_acc_std = classification_eval(model.backbone,
+            val_acc_avg, val_acc_std = classification_eval(encoder.backbone,
                 data_tr, data_val, augs_finetune, augs_te)
             tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
             tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
@@ -241,9 +194,9 @@ if __name__ == "__main__":
             tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
             tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f}")
 
-        # Saved the model and any visual validation results if they exist
+        # Saved the encoder and any visual validation results if they exist
         if e % args.save_iter == 0 and not e == 0:
-            save_(model, optimizer, e, args, tb_results, resnet_folder(args))
+            save_(encoder, optimizer, e, args, tb_results, resnet_folder(args))
             tqdm.write("Saved training state")
 
         scheduler.step()

@@ -1,6 +1,7 @@
 """File containing utilities."""
 import math
 import os
+import random
 from tqdm import tqdm
 
 import torch
@@ -11,6 +12,13 @@ from torch.optim.lr_scheduler import _LRScheduler
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 if "cuda" in device:
     torch.backends.cudnn.benchmark = True
+
+# Make non-determinism work out. This function should be called first
+def set_seed(seed):
+    """Seeds the program to use seed [seed]."""
+    random.seed(seed)
+    torch.manual_seed(seed)
+    tqdm.write(f"Set the PyTorch and Random modules seeds to {seed}")
 
 ################################################################################
 # I/O Utils
