@@ -34,7 +34,7 @@ if __name__ == "__main__":
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
     P.add_argument("--size", default=None, type=int,
-        help="size to make the images if different from 84x84")
+        help="size to make the images if different from the images downloaded")
     args = P.parse_args()
 
     dataset_dir = gdown_unzip(data2url[args.data], args.data)
