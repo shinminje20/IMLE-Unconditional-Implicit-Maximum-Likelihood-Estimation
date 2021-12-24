@@ -22,6 +22,7 @@ def get_resnet_with_head(backbone, head_dim, small_image=False,
     backone     -- backbone to use
     head_dim    -- output dimensionality of projection head
     small_image -- whether to modify the backbone to better work on small images
+    head_type   -- the type of head to put on the ResNet
     """
     R = HeadlessResNet(backbone=backbone, small_image=small_image)
 
@@ -32,7 +33,7 @@ def get_resnet_with_head(backbone, head_dim, small_image=False,
     elif head_type == "linear":
         H = nn.Linear(R.out_dim, head_dim)
     else:
-        raise ValueError(f"Unknown head_type '{head_type}'")
+        raise ValueError(f"Unknown head type '{head_type}'")
 
     return nn.Sequential(OrderedDict([("backbone", R), ("head", H)]))
 

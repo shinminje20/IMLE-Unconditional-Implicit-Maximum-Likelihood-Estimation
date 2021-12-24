@@ -1,23 +1,20 @@
-from collections import OrderedDict
-import torch
-import torch.nn as nn
-from torch.nn.utils import weight_norm
-
-####################
-# Basic blocks
-####################
-
+"""Neural building blocks for generators. At least partially taken from CaMNet.
+"""
 
 def act(act_type, inplace=True, neg_slope=0.2):
-    act_type = act_type.lower()
-    if act_type == 'leakyrelu':
-        layer = nn.LeakyReLU(neg_slope, inplace)
-    elif act_type == 'tanh':
-        layer = nn.Tanh()
-    else:
-        raise NotImplementedError('activation layer [{:s}] is not found'.format(act_type))
-    return layer
+    """Returns an activation function of type [act_type].
 
+    Args:
+    act_type    -- activation type
+    in_place    -- whether to do the activation in place or not
+    neg_slope   -- negative slope for LeakyReLU
+    """
+    if act_type.lower() == "leakyrelu":
+        return nn.LeakyReLU(neg_slope, inplace)
+    elif act_type.lower() == "tanh":
+        return nn.Tanh()
+    else:
+        raise NotImplementedError(f"Activation layer '{act_type}' is not found")
 
 def get_valid_padding(kernel_size, dilation):
     kernel_size = kernel_size + (kernel_size - 1) * (dilation - 1)
@@ -138,12 +135,9 @@ class ScalingLayer(nn.Module):
 
 
 class RerangeLayer(nn.Module):
-    # Change the input from range [-1., 1.] to [0., 1.]
-    def __init__(self):
-        super(RerangeLayer, self).__init__()
-
-    def forward(self, inp):
-        return (inp + 1.) / 2.
+    """Layer mapping inputs in [-1, 1] to [0, -1]."""
+    def __init__(self): super(RerangeLayer, self).__init__()
+    def forward(self, inp): return (inp + 1.) / 2.
 
 
 class NetLinLayer(nn.Module):

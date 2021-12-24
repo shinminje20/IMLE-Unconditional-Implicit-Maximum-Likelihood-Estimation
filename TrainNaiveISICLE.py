@@ -1,10 +1,13 @@
-import argparse
+import math
 import sys
 from tqdm import tqdm
+
+from lpips import LPIPS
 
 import torch
 from torch.optim import Adam, SGD
 import torch.nn as nn
+from torch.nn.functional import normalize
 from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 
@@ -16,24 +19,29 @@ from Evaluation import classification_eval
 from ContrastiveUtils import *
 from Utils import *
 
-def one_epoch_contrastive(model, optimizer, loader, temp=.5):
+def one_epoch_naive_isicle(generator, model, optimizer, loader, temp=.5):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch.
 
     The returned loss is averaged over batches.
 
-    model           -- a model of the form projection_head(feature_extractor())
-    optimizer       -- the optimizer for [model]
-    loader          -- a DataLoader over the data to train on
-    temp            -- contrastive loss temperature
+    generator   -- a generator to make real images from the images from [loader]
+    model       -- a model of the form projection_head(feature_extractor())
+    optimizer   -- the optimizer for [model]
+    loader      -- a DataLoader over the data to train on. It should return
+                    corrupted views of images so that [generator] can decorrupt
+                    them
+    temp        -- contrastive loss temperature
     """
     model.train()
     loss_fn = NTXEntLoss(temp)
     loss_total = 0
 
     for i,(x1,x2) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
-        x1 = x1.float().to(device, non_blocking=True)
-        x2 = x2.float().to(device, non_blocking=True)
+
+        with torch.no_grad():
+            x1 = generator(x1.float().to(device, non_blocking=True))
+            x2 = generator(x2.float().to(device, non_blocking=True))
 
         model.zero_grad()
         loss = loss_fn(model(x1), model(x2))
@@ -45,8 +53,8 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     return model, optimizer, loss_total / len(loader)
 
 if __name__ == "__main__":
-    P = argparse.ArgumentParser(description="SimCLR training")
-    P.add_argument("--data", choices=["cifar10", "fruit", "miniImagenet"],
+    P = argparse.ArgumentParser(description="ISICLE training")
+    P.add_argument("--data", choices=["cifar10", "miniImagenet"],
         default="cifar10",
         help="dataset to load images from")
     P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
@@ -70,7 +78,7 @@ if __name__ == "__main__":
         help="Resnet backbone to use")
     P.add_argument("--bs", default=1000, type=int,
         help="batch size")
-    P.add_argument("--color_s", default=1, type=float,
+    P.add_argument("--color_distort", default=1, type=float,
         help="color distortion strength")
     P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
@@ -97,7 +105,7 @@ if __name__ == "__main__":
     args.options = sorted([
         f"bs{args.bs}",
         f"epochs{args.epochs}",
-        f"color_s{args.color_s}",
+        f"color_distort{args.color_distort}",
         f"eval_{args.eval}",
         f"lars{args.lars}",
         f"lr{args.lr}",
@@ -116,7 +124,8 @@ if __name__ == "__main__":
     if args.opt == "sgd" and len(args.mm) == 2:
         raise ValueError("--mm must be a single momentum parameter if --opt is 'sgd'.")
     if args.data in no_val_split_datasets and args.eval == "val":
-        raise ValueError("The requested dataset has no validation split. Run with --eval test or cv instead.")
+        args.eval = "cv"
+        tqdm.write(f"--eval is set to 'val' but no validation split exists for {args.data}. Falling back to cross-validation.")
 
     args.mm = args.mm[0] if len(args.mm) == 1 else args.mm
 
@@ -124,7 +133,7 @@ if __name__ == "__main__":
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
     if args.resume is not None:
-        model, optimizer, last_epoch, args, tb_results = load_(args.resume)
+        model, optimizer, last_epoch, old_args, tb_results = load_(args.resume)
         model = model.to(device)
         last_epoch -= 1
     else:
@@ -134,6 +143,7 @@ if __name__ == "__main__":
         model = get_resnet_with_head(args.backbone, args.proj_dim,
             head_type="projection",
             small_image=(args.data in small_image_datasets)).to(device)
+
         if args.opt == "adam":
             optimizer = Adam(get_param_groups(model, args.lars), lr=args.lr,
                 betas=args.mm, weight_decay=1e-6)
@@ -142,18 +152,18 @@ if __name__ == "__main__":
                 momentum=args.mm, weight_decay=1e-6, nesterov=True)
         else:
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
+
         optimizer = LARS(optimizer, args.trust) if args.lars else optimizer
 
-        # Get the TensorBoard logger and set last_epoch to -1
         tb_results = SummaryWriter(resnet_folder(args), max_queue=0)
         last_epoch = -1
 
-    # Instantiate the scheduler and get the data
-    set_seed(args.seed)
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
-    data_tr, data_eval = get_data_splits(args.data, args.eval)
-    augs_tr, augs_fn, augs_te = get_ssl_data_augs(args.data, args.color_s)
+
+    data_tr, data_val = get_data_splits(args.data, args.eval)
+    augs_tr, augs_finetune, augs_te = get_ssl_data_augs(args.data,
+        color_distort=args.color_distort)
     data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True,
@@ -171,8 +181,7 @@ if __name__ == "__main__":
         # print/log results or merely that the epoch happened.
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
             val_acc_avg, val_acc_std = classification_eval(model.backbone,
-                data_tr, data_eval, augs_fn, augs_te, data_name=args.data,
-                data_split=args.eval)
+                data_tr, data_val, augs_finetune, augs_te)
             tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
             tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
             tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
