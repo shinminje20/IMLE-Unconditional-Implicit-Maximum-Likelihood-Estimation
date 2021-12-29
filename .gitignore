@@ -1,13 +1,18 @@
 *.csv
 *.tsv
-data/*.json
+
 *.pt
-*.jpg
 *.pt
 *.pth
 *.pkl
-__pycache__
+*.npy
+
 *.lmdb
+*.jpeg
+*.jpg
+*.png
+
+__pycache__
 
 ./models
 results
@@ -15,5 +20,4 @@ results
 __MACOSX
 data/cifar-10*
 data/tinyImagenet
-data/cls_first
 data/miniImagenet
