@@ -17,7 +17,7 @@ def parse(opt_path, is_train=True):
     #         json_str += line
     # opt = json.loads(json_str, object_pairs_hook=OrderedDict)
     with open(opt_path, "r") as f:
-	       opt = json.load(opt)
+	       opt = json.load(f)
 
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
