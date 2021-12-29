@@ -25,7 +25,7 @@ def seed_kwargs(seed=0):
     g.manual_seed(0)
     return {"generator": g, "worker_init_fn": seed_worker}
 
-def get_data_splits(data_str, eval_str):
+def get_data_splits_ssl(data_str, eval_str):
     """Returns training and evaluation data given [data_str] and [eval_str].
 
     Args:
@@ -54,30 +54,60 @@ def get_data_splits(data_str, eval_str):
 
     return data_tr, eval_data
 
-################################################################################
-# NData augmentations
-################################################################################
-def get_isicle_data_augs(in_size=32, out_size=128):
-    """Returns data augmentations for ISICLE training. No augmentations here
-    should take data off the real manifold!
+def get_data_splits_gen(data_str, eval_str, resolutions=[16, 32, 64, 128, 256]):
+    """Returns training and evaluation data given [data_str] and [eval_str].
+    The training and evaluation data are each returned as a list where each
+    element is a dataset with the data at a given resolution.
 
     Args:
-    in_size     -- size of images input to generator
-    out_size    -- size of images that come out of generator
+    data_str    -- a string specifying the dataset to return
+    eval_str    -- the kind of validation to do. 'cv' for cross validation,
+                    'val' for using a validation split (only if it exists), and
+                    'test' for using the test split
     """
-    augs_tr = transforms.Compose([
-        transforms.RandomResizedCrop(in_size),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.Grayscale(num_output_channels=3),
-        transforms.ToTensor()])
-    augs_fn = transforms.Compose([
-        transforms.RandomResizedCrop(out_size),
-        transforms.RandomHorizontalFlip(p=0.5),
-        transforms.ToTensor()])
-    augs_te = transforms.Compose([
-        transforms.RandomResizedCrop(out_size),
-        transforms.ToTensor()])
-    return augs_tr, augs_fn, augs_te
+    if data_str == "miniImagenet":
+        data_tr = OrderedDict(
+            {r: ImageFolder(root=f"{project_dir}/data/miniImagenet_{r}/train") for r in resolutions})
+        data_val = OrderedDict(
+            {r: ImageFolder(root=f"{project_dir}/data/miniImagenet_{r}/val") for r in resolutions})
+        data_te = OrderedDict(
+            {r: ImageFolder(root=f"{project_dir}/data/miniImagenet_{r}/test") for r in resolutions})
+    else:
+        raise ValueError(f"Unknown dataset {data_str}")
+
+    if eval_str == "cv":
+        eval_data = "cv"
+    elif eval_str == "val":
+        eval_data = data_val
+    elif eval_str == "test":
+        eval_data = data_te
+
+    return data_tr, eval_data
+
+################################################################################
+# Data augmentations
+################################################################################
+
+class RandomHorizontalFlips(torch.nn.Module):
+    """transforms.RandomHorizontalFlip but can be applied to multiple images."""
+    def __init__(self, p=0.5):
+        super(RandomHorizontalFlips, self).__init__()
+        self.p = p
+
+    def forward(self, images):
+        """Returns [images] but with all elements flipped in the same direction,
+        with the direction chosen randomly.
+
+        Args:
+        images  -- list of (PIL Image or Tensor): Images to be flipped
+        """
+        if torch.rand(1) < self.p:
+            return [F.hflip(img) for img in images]
+        return [images]
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(p={})'.format(self.p)
+
 
 def get_ssl_augs(data_str, color_s=.5, strong=True):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
@@ -135,6 +165,58 @@ def get_ssl_augs(data_str, color_s=.5, strong=True):
 ################################################################################
 # Datasets
 ################################################################################
+class MultiTaskDataset(Dataset):
+    """A dataset for forcing a model a generative model to perform multiple
+    tasks. Right now, only colorization + super-resolution are supported.
+    """
+    def __init__(self, res2data, task_transform, base_transform,
+        intermediate_supervision=True):
+        """
+        Args:
+        data                        -- list of input datasets. The first item in
+                                        the list is a dataset giving the images
+                                        fed to the model after corruption,
+                                        remaining datasets specify sequentially
+                                        higher resolutions of the original image
+                                        from the first
+        task_transform              -- transform giving the (x, (y1 ... yn))
+                                        images—the model must decorrupt [x] to
+                                        the sequence of ys
+        base_transform              -- transform applied to all images in the
+                                        (x, (y1 ... yn)) sequence returned from
+                                        __getitem__(). This transform must be
+                                        able to apply to a list of images, and
+                                        be deterministic across this list.
+        intermediate_supervision    -- whether to return targets for supervising
+                                        the model at different resolutions
+        """
+        assert all([len(d) == len(data[0]) for d in data]), f"All input datasets must have equal length, but lengths were {[len(d) for d in data]}"
+        self.data = data
+        self.task_transform = task_transform
+        self.base_transform = base_transform
+        self.intermediate_supervision = intermediate_supervision
+
+    def task_transform(self, idx):
+        if self.task_transform == "col_sr":
+            return self.data[0][idx][0], [d[idx][0] for for d in self.data[1:]]
+        else:
+            raise ValueError(f"Unknown task transform '{self.task_transform}'")
+
+    def __len__(self): return len(self.data[0])
+
+    def __getitem(self, idx):
+        if self.intermediate_supervision:
+            x,ys = task_transform(idx)
+            transformed_images = self.base_transform([x] + ys)
+            return (self.tensor_transforms(transformed_images[0]),
+                    [self.tensor_transforms(y) for y in transformed_images[1:])
+        else:
+            x,ys = task_transform(idx)
+            transformed_images = self.base_transform([x, ys[-1]])
+            return (self.tensor_transforms(transformed_images[0]),
+                    [self.tensor_transforms(y) for y in transformed_images[1:])
+
+
 class XYDataset(Dataset):
     """A simple dataset returning examples of the form (transform(x), y)."""
 
