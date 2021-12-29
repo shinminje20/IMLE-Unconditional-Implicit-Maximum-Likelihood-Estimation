@@ -35,7 +35,7 @@ if __name__ == "__main__":
         help="also make a class-first dataset split")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
-    P.add_argument("--sizes", default=[32, 64, 128, 256], type=int, nargs="+",
+    P.add_argument("--sizes", default=[16, 32, 64, 128, 256], type=int, nargs="+",
         help="sizes to make the images. -1 or zero for no resizing")
     args = P.parse_args()
 
