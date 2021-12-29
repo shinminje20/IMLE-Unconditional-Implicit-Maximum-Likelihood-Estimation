@@ -55,6 +55,10 @@ for test_loader in test_loaders:
     test_results['ssim'] = []
 
     for data in test_loader:
+
+
+        print(data)
+
         need_HR = False if test_loader.dataset.opt[HR_key] is None else True
         multiple = 1 if "multiple" not in opt else opt["multiple"]
 
