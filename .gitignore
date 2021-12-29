@@ -12,12 +12,18 @@
 *.jpg
 *.png
 
+*.txt
+
 __pycache__
 
 ./models
-results
+*events*
+*experiments*
+
 .DS_Store
 __MACOSX
+
+data/cls_first
 data/cifar-10*
 data/tinyImagenet
 data/miniImagenet
