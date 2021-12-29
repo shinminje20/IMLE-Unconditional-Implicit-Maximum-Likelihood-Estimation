@@ -4,11 +4,12 @@ data/*.json
 *.pt
 *.jpg
 *.pt
+*.pth
 *.pkl
 __pycache__
 *.lmdb
 
-models
+./models
 results
 .DS_Store
 __MACOSX
