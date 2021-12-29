@@ -13,9 +13,11 @@ def gdown_unzip(url, result):
     """
     zip_path = f"{data_dir}/{result}.zip"
     gdown.download(url, zip_path, quiet=False)
+    tqdm.write("Unzipping dataset...")
     with zipfile.ZipFile(zip_path) as z:
         z.extractall(path=data_dir)
     os.remove(zip_path)
+    tqdm.write("Removing potentially bad files...")
     remove_bad_files(data_dir)
 
     return f"{data_dir}/{result}"
@@ -33,17 +35,25 @@ if __name__ == "__main__":
         help="also make a class-first dataset split")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
-    P.add_argument("--size", default=None, type=int,
-        help="size to make the images if different from the images downloaded")
+    P.add_argument("--sizes", default=[32, 64, 128, 256], type=int, nargs="+",
+        help="sizes to make the images. -1 or zero for no resizing")
     args = P.parse_args()
 
+    tqdm.write(f"----- Downloading base dataset -----")
     dataset_dir = gdown_unzip(data2url[args.data], args.data)
-    tqdm.write("Dataset created")
 
-    if args.size is not None:
-        resize_dataset(dataset_dir, (args.size, args.size))
-        tqdm.write(f"Dataset resized to {args.size}x{args.size}")
+    if len(args.sizes) == 1 and args.sizes[0] <= 0:
+        tqmd.write("----- Not resizing dataset -----")
+        all_datasets = [dataset_dir]
+    else:
+        tqdm.write(f"----- Generating new resolutions: {args.sizes} -----")
+        all_datasets = [dataset_dir] + [resize_dataset(dataset_dir, s)
+            for s in tqdm(args.sizes)]
 
+
+    print(all_datasets)
     if args.also_cls_first:
-        make_cls_first(dataset_dir)
-        tqdm.write(f"Made a class-first copy of the dataset")
+        tqdm.write(f"----- Making class-first copies -----")
+        for dataset in all_datasets:
+            make_cls_first(dataset)
+            tqdm.write(f"Made a class-first copy of {dataset}")

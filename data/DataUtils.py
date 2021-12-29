@@ -19,13 +19,28 @@ def get_all_files(path, extensions=[], acc=[]):
     return acc
 
 def resize_dataset(path, new_size):
-    """Resizes every image under [path] to be [new_size]."""
-    tqdm.write(f"Getting list of all images under {path}")
+    """Generates a new dataset matching that under [path] but with the images
+    resized to [new_size].
+    """
+    if "_" in path:
+        raise ValueError(f"Resizing previously resized dataset not supported")
+
+    new_path = f"{path}_{new_size}"
+    tqdm.write(f"\nWill output new dataset to {new_path}")
+
     files_list = get_all_files(path)
-    for f in tqdm(files_list, desc="Resizing images"):
+    for f in tqdm(files_list, desc=f"Resizing images to {new_size}x{new_size}"):
+        # Ensure the folder we will put the image in exists
+        new_folder = os.path.dirname(f).replace(path, new_path)
+        if not os.path.exists(new_folder):
+            os.makedirs(new_folder)
+
+        # Generate a resized copy of the image and save it to the new folder
         img = Image.open(f)
-        img = img.resize(new_size, Image.BICUBIC)
-        img.save(f)
+        new_img = img.resize((new_size, new_size), Image.BICUBIC)
+        new_img.save(f.replace(path, new_path))
+
+    return new_path
 
 def remove_bad_files(f, bad_files=[".DS_Store"]):
     """Recursively removes bad files from folder or file [f]."""
