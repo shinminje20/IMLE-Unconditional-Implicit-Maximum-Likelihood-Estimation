@@ -199,6 +199,8 @@ class MultiTaskDataset(Dataset):
     def task_transform(self, idx):
         if self.task_transform == "col_sr":
             return self.data[0][idx][0], [d[idx][0] for for d in self.data[1:]]
+        elif self.task_transform == "colorization":
+            return self.data[0][idx][0], [d[idx][0] for for d in self.data[1:]]
         else:
             raise ValueError(f"Unknown task transform '{self.task_transform}'")
 

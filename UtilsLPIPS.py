@@ -21,36 +21,8 @@ def get_lpips_weights():
     file = f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth"
     if not path.exists(file):
         url = "https://drive.google.com/u/0/uc?id=1IQCDHxO-cYnFMx1hATjgSGQdO-_pB9nb&export=download"
-        file = f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth"
+        file = f"{path.dirname(f'{__file__}')}/data/vgg_lpips_weights.pth"
         gdown.download(url, file, quiet=False)
-
-class LPIPSFeats(nn.Module):
-    """Neural net for getting LPIPS features. Heavily modifed from CamNet."""
-
-    def __init__(self):
-        super(LPIPSFeats, self).__init__()
-        self.scaling_layer = ScalingLayer()
-        self.vgg = vgg16()
-
-        get_lpips_weights()
-        W = torch.load(f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth")
-        self.lin_layers = [NetLinLayer(torch.sqrt(W[k])) for k in W]
-
-        self.eval()
-
-    def forward(self, x, normalize=True):
-        """Returns an n_samples x 124928 tensor where each the ith row is the
-        LPIPS features of the ith example in [x].
-        Args:
-        x           -- input to get LPIPS features for with shape B x C x H x W
-        normalize   -- whether to normalize the input in 0...1 to -1...1
-        """
-        x = 2 * x - 1 if normalize else x
-        x = self.scaling_layer(x)
-        vgg_feats = [normalize_tensor(v) for v in self.vgg(x)]
-        feats = [l(v) for l,v in zip(self.lin_layers, vgg_feats)]
-        feats = torch.cat([l.flatten(start_dim=1) for l in feats], axis=1)
-        return feats
 
 def normalize_tensor(x, eps=1e-10):
     """Returns tensor [x] after normalization."""
@@ -115,5 +87,32 @@ class vgg16(torch.nn.Module):
 
         return out
 
+class LPIPSFeats(nn.Module):
+    """Neural net for getting LPIPS features. Heavily modifed from CamNet."""
+
+    def __init__(self):
+        super(LPIPSFeats, self).__init__()
+        self.scaling_layer = ScalingLayer()
+        self.vgg = vgg16()
+
+        get_lpips_weights()
+        W = torch.load(f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth")
+        self.lin_layers = [NetLinLayer(torch.sqrt(W[k])) for k in W]
+
+        self.eval()
+
+    def forward(self, x, normalize=True):
+        """Returns an n_samples x 124928 tensor where each the ith row is the
+        LPIPS features of the ith example in [x].
+        Args:
+        x           -- input to get LPIPS features for with shape B x C x H x W
+        normalize   -- whether to normalize the input in 0...1 to -1...1
+        """
+        x = 2 * x - 1 if normalize else x
+        x = self.scaling_layer(x)
+        vgg_feats = [normalize_tensor(v) for v in self.vgg(x)]
+        feats = [l(v) for l,v in zip(self.lin_layers, vgg_feats)]
+        return torch.cat([l.flatten(start_dim=1) for l in feats], axis=1)
+        
 if __name__ == "__main__":
     get_lpips_weights()

@@ -13,6 +13,39 @@ import torch.nn as nn
 
 from . import block as B
 
+class LPIPSFeatsLoss(nn.Module):
+    """Returns the MSE loss between the LPIPS features of sets of images."""
+    def __init__(self):
+        super(CAMNetLoss, self).__init__()
+        self.lpips_net = LPIPSFeats()
+        self.mse_loss = nn.MSELoss()
+
+    def forward(self, fx, y):
+        assert fx.shape == y.shape, f"Shape of predicted and target image\
+            batches must match.\n    predicted shape {fx.shape}\n    target \
+            shape {y.shape}"
+        return self.mse_loss(self.lpips_net(fx), self.lpips_net(y))
+
+class CAMNetLoss(nn.Module):
+    """Computes the loss of CAMNet on some objective."""
+
+    def __init__(self):
+        super(CAMNetLoss, self).__init__()
+        self.lpips_feats = LPIPSFeats()
+
+
+    def forward(self, fx, y):
+        """Returns the loss of prediction [fx] against ground truth [y]."""
+        if len(fx.shape) == len(y.shape) + 1:
+            lpips_feats_fx = self.lpips_feats(fx[:, -1])
+            lpips_feats_y = self.lpips_feats(y)
+        elif len(fx.shape) == len(y.shape):
+
+        else:
+            raise ValueError()
+
+
+
 def flatten(xs):
     """Returns collection [xs] after recursively flattening into a list."""
     result = []
@@ -193,7 +226,6 @@ class CAMNetModule(nn.Module):
             feature = self.upsample(feature)
 
         return feature, self.rerange_output(out)
-
 
 class CAMNet(nn.Module):
     """CAMNet rewritten to be substantially stateless and better-documented."""
