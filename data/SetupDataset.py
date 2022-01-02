@@ -7,6 +7,9 @@ import zipfile
 
 from DataUtils import *
 
+def download_camnet_splits_lmdb():
+    gdown_unzip("https://drive.google.com/u/1/uc?id=1o4f2EXaHAKvXZZMjY-o89Tr3ZI-XRxZM&export=download", "camnet-data-splits-lmdb")
+
 def gdown_unzip(url, result):
     """Downloads the file at Google drive URL [url], unzips it, and removes any
     hidden files that are not `.` and `..`.
@@ -50,8 +53,6 @@ if __name__ == "__main__":
         all_datasets = [dataset_dir] + [resize_dataset(dataset_dir, s)
             for s in tqdm(args.sizes)]
 
-
-    print(all_datasets)
     if args.also_cls_first:
         tqdm.write(f"----- Making class-first copies -----")
         for dataset in all_datasets:
