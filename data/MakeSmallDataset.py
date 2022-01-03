@@ -56,7 +56,7 @@ def get_smaller_dataset(dataset, n_cls_tr=10, n_cls_val=5, npc_tr=100,
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="Dataset subsampling for faster CaMNetting")
-    P.add_argument("--data", choices=["tinyImagenet", "miniImagenet", "camnet_three"],
+    P.add_argument("--data",
         required=True,
         help="also make a class-first dataset split")
     P.add_argument("--n_cls_tr", required=True, type=int,
