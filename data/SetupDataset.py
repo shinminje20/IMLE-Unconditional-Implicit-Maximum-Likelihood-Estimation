@@ -26,6 +26,8 @@ def gdown_unzip(url, result):
     return f"{data_dir}/{result}"
 
 data2url = {
+    # Data from the Cedar cluster
+    "camnet_three": "https://drive.google.com/u/1/uc?id=1pnA9Mhvo4pcvyBBvqB5piH3elmkwB5cA&export=download",
     # Data from https://mtl.yyliu.net/download/Lmzjm9tX.html
     "miniImagenet": "https://drive.google.com/u/1/uc?id=15iRcb_h5od0GsTkBGRmVTR8LyfJGuJ2k&export=download",
     # Data prepared via https://gist.github.com/moskomule/2e6a9a463f50447beca4e64ab4699ac4
