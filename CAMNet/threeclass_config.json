@@ -13,10 +13,10 @@
     "train": {
       "name": "Train_Colorization",
       "mode": "Co_four_levels",
-      "dataroot_HR_Color": "./data/camnet_three_train_256.lmdb",
-      "dataroot_D1": "./data/camnet_three_train_32.lmdb",
-      "dataroot_D2": "./data/camnet_three_train_64.lmdb",
-      "dataroot_D3": "./data/camnet_three_train_128.lmdb",
+      "dataroot_HR_Color": "./data/camnet_three-3-200-3-10-0_train_256.lmdb",
+      "dataroot_D1": "./data/camnet_three-3-200-3-10-0_train_32.lmdb",
+      "dataroot_D2": "./data/camnet_three-3-200-3-10-0_train_64.lmdb",
+      "dataroot_D3": "./data/camnet_three-3-200-3-10-0_train_128.lmdb",
       "subset_file": null,
       "use_shuffle": true,
       "use_flip": true,
@@ -28,7 +28,7 @@
     "val": {
       "name": "Validation_Colorization",
       "mode": "Co_four_levels",
-      "dataroot_HR_Color": "./data/camnet_three_validation_256.lmdb"
+      "dataroot_HR_Color": "./data/camnet_three-3-200-3-10-0_validation_256.lmdb"
     }
   },
   "path": {
