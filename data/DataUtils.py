@@ -22,9 +22,6 @@ def resize_dataset(path, new_size):
     """Generates a new dataset matching that under [path] but with the images
     resized to [new_size].
     """
-    if "_" in path:
-        raise ValueError(f"Resizing previously resized dataset not supported")
-
     new_path = f"{path}_{new_size}"
     tqdm.write(f"\nWill output new dataset to {new_path}")
 
