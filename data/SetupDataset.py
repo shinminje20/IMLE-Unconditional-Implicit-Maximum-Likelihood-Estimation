@@ -8,7 +8,7 @@ import zipfile
 from DataUtils import *
 
 def download_camnet_splits_lmdb():
-    gdown_unzip("https://drive.google.com/u/1/uc?id=1o4f2EXaHAKvXZZMjY-o89Tr3ZI-XRxZM&export=download", "camnet-data-splits-lmdb")
+    gdown_unzip("https://drive.google.com/u/1/uc?id=1gDKq13R6JHrndi9vy16lokQlmL7orbbF&export=download", "camnet-data-splits-lmdb")
 
 def gdown_unzip(url, result):
     """Downloads the file at Google drive URL [url], unzips it, and removes any
