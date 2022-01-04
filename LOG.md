@@ -1,7 +1,7 @@
 
-**1/4/22**:
+### 1/4/22
 
-**1/3/22**:
+### 1/3/22
 **Did**
   - Got a better understanding of how CAMNet works—on a syntactic level—and concluded (big thanks to Alireza/Shichong)
     - the code is complex and it's not worth messing with much (but re-implementing the architecture _was_ a useful exercise nonetheless)
