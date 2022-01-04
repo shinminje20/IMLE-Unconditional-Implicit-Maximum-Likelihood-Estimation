@@ -44,7 +44,7 @@ def suffix_str(args):
     """Returns the suffix string for [args]."""
     return f"-{args.suffix}" if not args.suffix == "" else ""
 
-def load_(file):
+def load_simclr(file):
     """Returns a (model, optimizer, last_epoch, args, tensorboard results) tuple
     from [file].
     """
@@ -56,7 +56,7 @@ def load_(file):
     tb_results = data["tb_results"]
     return model, optimizer, last_epoch, args, tb_results
 
-def save_(model, optimizer, last_epoch, args, tb_results, folder):
+def save_simclr(model, optimizer, last_epoch, args, tb_results, folder):
     """Saves input experiment objects to the [last_epoch].pt file [folder]."""
     tb_results.flush()
     tb_results.close()
@@ -65,21 +65,16 @@ def save_(model, optimizer, last_epoch, args, tb_results, folder):
         f"{folder}/{last_epoch}.pt")
     model.to(device)
 
-def generator_folder(args):
-    """Returns the folder to save a generator trained with [args] to."""
-    folder = f"{project_dir}/models/generators-{args.data}-{opts_str(args)}{suffix_str(args)}"
-    if not os.path.exists(folder): os.makedirs(folder)
-    return folder
-
-def resnet_folder(args):
+def simclr_folder(args):
     """Returns the folder to to which to save a resnet trained with [args]."""
-    folder = f"{project_dir}/models/{args.data}/{args.backbone}/{opts_str(args)}{suffix_str(args)}"
+    folder = f"{project_dir}/models/{simclr}/{args.data}/{args.backbone}/{opts_str(args)}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
 ################################################################################
 # Miscellaneous
 ################################################################################
+
 
 def flatten(xs):
     """Returns collection [xs] after recursively flattening into a list."""

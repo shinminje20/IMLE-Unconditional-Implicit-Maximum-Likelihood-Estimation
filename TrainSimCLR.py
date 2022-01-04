@@ -13,8 +13,9 @@ import torchvision.transforms as transforms
 
 from Data import *
 from Evaluation import classification_eval
-from ContrastiveUtils import *
-from Utils import *
+from utils.ContrastiveUtils import *
+from utils.Utils import *
+from utils.NestedNamespace import *
 
 def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     """Returns a (model, optimizer, loss) tuple after training [model] on
@@ -91,7 +92,7 @@ if __name__ == "__main__":
         help="LARS trust coefficient")
     P.add_argument("--seed", default=0, type=int,
         help="random seed")
-    args = P.parse_args()
+    args = NestedNamespace(P.parse_args())
 
     args.options = sorted([
         f"bs{args.bs}",
@@ -121,7 +122,7 @@ if __name__ == "__main__":
     # This needs to be a tuple or a float depending on its length
     args.mm = args.mm[0] if len(args.mm) == 1 else args.mm
 
-    tqdm.write(f"Will save model to {resnet_folder(args)}")
+    tqdm.write(f"Will save model to {simclr_folder(args)}")
 
     ############################################################################
     # Load prior state if it exists, otherwise instantiate a new training run.
@@ -145,7 +146,7 @@ if __name__ == "__main__":
         optimizer = LARS(optimizer, args.trust) if args.lars else optimizer
 
         # Get the TensorBoard logger and set last_epoch to -1
-        tb_results = SummaryWriter(resnet_folder(args), max_queue=0)
+        tb_results = SummaryWriter(simclr_folder(args), max_queue=0)
         last_epoch = -1
 
     ############################################################################
@@ -154,7 +155,7 @@ if __name__ == "__main__":
     set_seed(args.seed)
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
-    data_tr, data_eval = get_data_splits(args.data, args.eval)
+    data_tr, data_eval = get_data_splits_ssl(args.data, args.eval)
     augs_tr, augs_fn, augs_te = get_ssl_augs(args.data, color_s=args.color_s,
         strong=args.strong)
     data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
@@ -186,7 +187,7 @@ if __name__ == "__main__":
 
         # Saved the model if desired
         if e % args.save_iter == 0 and not e == 0:
-            save_(model, optimizer, e, args, tb_results, resnet_folder(args))
+            save_simclr(model, optimizer, e, args, tb_results, simclr_folder(args))
             tqdm.write("Saved training state")
 
         scheduler.step()

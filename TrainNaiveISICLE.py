@@ -37,7 +37,7 @@ def one_epoch_naive_isicle(generator, model, optimizer, loader, temp=.5):
     loss_fn = NTXEntLoss(temp)
     loss_total = 0
 
-    for i,(x1,x2) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
+    for i,(x, ys) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
 
         with torch.no_grad():
             x1 = generator(x1.float().to(device, non_blocking=True))
@@ -133,10 +133,10 @@ if __name__ == "__main__":
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
     if args.resume is not None:
-        model, optimizer, last_epoch, old_args, tb_results = load_(args.resume)
-        model = model.to(device)
-        last_epoch -= 1
+        raise NotImplementedError()
     else:
+        generator = Generator(**vars(args))
+
         # Get the model and optimizer. [get_param_groups()] ensures that the
         # correct param groups are fed to the optimizer so that if the otimizer
         # is wrapped in LARS, LARS will see the right param groups.
@@ -162,9 +162,10 @@ if __name__ == "__main__":
         last_epoch=last_epoch)
 
     data_tr, data_val = get_data_splits(args.data, args.eval)
-    augs_tr, augs_finetune, augs_te = get_ssl_data_augs(args.data,
-        color_distort=args.color_distort)
-    data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
+    data_gen = MultiTaskDataset(data_tr,
+        get_base_augs(args.data),
+        get_corruptions(get_corruptions_dict(args.gen_config))
+        )
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True,
         **seed_kwargs(args.seed))

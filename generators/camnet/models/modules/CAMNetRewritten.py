@@ -263,6 +263,7 @@ class CAMNet(nn.Module):
         self.levels = nn.ModuleDict({
             f"level {i}": CAMNetModule(**l) for i,l in enumerate(level_info)
         })
+        self.num_levels = len(self.levels)
 
     def forward(self, net_input, codes):
         """Returns a list of the outputs computed by each level.

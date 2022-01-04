@@ -28,8 +28,6 @@ def get_smaller_dataset(dataset, n_cls_tr=10, n_cls_val=5, npc_tr=100,
     # If [dataset] isn't an absolute path, correct it!
     dataset = f"{data_dir}/{dataset}" if not "/" in dataset else dataset
 
-    tqdm.write(f"Found {len(os.listdir(f'{dataset}/train'))} training images and {len(os.listdir(f'{dataset}/val'))} validation images")
-
     # Subsample the training and validation images
     random.seed(seed)
     cls_tr = random.sample(os.listdir(f"{dataset}/train"), n_cls_tr)
