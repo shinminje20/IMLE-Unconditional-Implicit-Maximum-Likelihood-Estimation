@@ -23,4 +23,5 @@
      but gradients wouldn't flow to $c$, the corruption operator that generates masks for the low-resolution images fed to CAMNet. I'm still a fan of reward for something involved in image generation being a moving average of the negative derivative of loss of the contrastive learner. As long as gradients can be computed in some way to train $c$
  - Another option is to learn on CAMNet's latent codes. However, I'm not a huge fan because it means we have to worry about making CAMNet generate real images too.
 
+### Before...
 _There were some older things in the log, and they're either on HackMD or were deleted. RIP_
