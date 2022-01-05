@@ -1,4 +1,5 @@
 """File containing utilities."""
+import json
 import math
 import os
 import random
@@ -25,7 +26,7 @@ def set_seed(seed):
 ################################################################################
 state_sep_str = "=" * 40
 
-project_dir = os.path.dirname(os.path.abspath(__file__))
+project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def strip_slash(s):
     """Returns string [s] without a trailing slash.
@@ -36,6 +37,14 @@ def strip_slash(s):
     """
     return s if not s[-1] == "/" else s[:-1]
 
+def json_to_dict(f):
+    """Returns the dictionary given by JSON file [f]."""
+    if isinstance(f, str) and json_file.endswith(".json") and os.path.exists(f):
+        with open(f, "r") as json_file:
+            return json.load(json_file)
+    else:
+        return ValueError(f"Can not read dictionary from {f}")
+
 def opts_str(args):
     """Returns the options string for [args]."""
     return f"-{'-'.join(args.options)}" if len(args.options) > 0 else "-"
@@ -43,6 +52,19 @@ def opts_str(args):
 def suffix_str(args):
     """Returns the suffix string for [args]."""
     return f"-{args.suffix}" if not args.suffix == "" else ""
+
+def load_camnet(file):
+    pass
+
+def camnet_folder(args):
+    """Returns the folder for saving a CAMNet model trained with [args].
+
+    Due to CAMNet's existing workings, models will actually be saved to
+    project_directory/models/camnet/camnet_folder(args)
+    """
+    folder = f"{args.task}/{args.data}/{opts_str(args)}{suffix_str(args)}"
+    if not os.path.exists(folder): os.makedirs(folder)
+    return folder
 
 def load_simclr(file):
     """Returns a (model, optimizer, last_epoch, args, tensorboard results) tuple
@@ -66,8 +88,8 @@ def save_simclr(model, optimizer, last_epoch, args, tb_results, folder):
     model.to(device)
 
 def simclr_folder(args):
-    """Returns the folder to to which to save a resnet trained with [args]."""
-    folder = f"{project_dir}/models/{simclr}/{args.data}/{args.backbone}/{opts_str(args)}{suffix_str(args)}"
+    """Returns the folder to which to save a resnet trained with [args]."""
+    folder = f"{project_dir}/models/simclr/{args.data}/{args.backbone}/{opts_str(args)}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
