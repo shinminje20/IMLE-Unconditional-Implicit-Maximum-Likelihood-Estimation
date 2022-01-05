@@ -7,6 +7,7 @@ import models.networks as networks
 from .base_model import BaseModel
 import math
 import os
+from tqdm import tqdm
 from utils import util
 
 
