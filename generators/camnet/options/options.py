@@ -1,8 +1,7 @@
 import os
 from collections import OrderedDict
 from datetime import datetime
-
-from utils.Utils import *
+import json
 
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
@@ -24,7 +23,12 @@ def parse(opt, is_train=True):
 
     # datasets
     for phase, dataset in opt['datasets'].items():
+
         phase = phase.split('_')[0]
+
+        print(phase, dataset)
+        print("\n\n")
+
         dataset['phase'] = phase
         dataset['scale'] = scale
 
@@ -35,7 +39,7 @@ def parse(opt, is_train=True):
             HR_key = "dataroot_HR_Color"
             LR_key = "dataroot_LR_Color"
             HR_bg_Key = "dataroot_HR_Color_bg"
-        elif opt['task'] == "Super_Resolution" or opt['task'] == "Decompression" or opt["task"] == "NaiveISICLE":
+        elif opt['task'] == "Super_Resolution" or opt['task'] == "Decompression" or opt["task"] == "ColorizationSuperResolution":
             HR_key = "dataroot_HR"
             LR_key = "dataroot_LR"
             HR_bg_Key = "dataroot_HR_bg"
@@ -74,7 +78,7 @@ def parse(opt, is_train=True):
         if path and key in opt['path']:
             opt['path'][key] = os.path.expanduser(path)
     if is_train:
-        experiments_root = os.path.join(opt['path']['root'], "camnet", opt['name'])
+        experiments_root = os.path.join(opt['path']['root'], "models", opt['name'])
         opt['path']['experiments_root'] = experiments_root
         opt['path']['models'] = os.path.join(experiments_root, 'models')
         opt['path']['log'] = experiments_root

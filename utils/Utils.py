@@ -45,9 +45,14 @@ def json_to_dict(f):
     else:
         return ValueError(f"Can not read dictionary from {f}")
 
+def dict_to_json(dictionary, f):
+    """Saves dict [dictionary] to file [f]."""
+    with open(f, "w+") as f:
+        json.dump(dictionary, f)
+
 def opts_str(args):
     """Returns the options string for [args]."""
-    return f"-{'-'.join(args.options)}" if len(args.options) > 0 else "-"
+    return f"-{'-'.join(args.options)}" if len(args.options) > 0 else ""
 
 def suffix_str(args):
     """Returns the suffix string for [args]."""
@@ -62,8 +67,9 @@ def camnet_folder(args):
     Due to CAMNet's existing workings, models will actually be saved to
     project_directory/models/camnet/camnet_folder(args)
     """
-    folder = f"{args.task}/{args.data}/{opts_str(args)}{suffix_str(args)}"
-    if not os.path.exists(folder): os.makedirs(folder)
+    folder = f"{args.task}/{args.data}{opts_str(args)}{suffix_str(args)}"
+    actual_folder = f"{project_dir}/models/camnet/{folder}"
+    if not os.path.exists(actual_folder): os.makedirs(actual_folder)
     return folder
 
 def load_simclr(file):

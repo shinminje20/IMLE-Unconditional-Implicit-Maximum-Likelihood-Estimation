@@ -42,7 +42,7 @@ def weights_init_kaiming(m, scale=1):
 
 def init_weights(net, init_type='kaiming', scale=1, std=0.02):
     # scale for 'kaiming', std for 'normal'.
-    print(f"initialization method [{init_type:s}]")
+    tqdm.write(f"initialization method [{init_type:s}]")
     if init_type == 'normal':
         weights_init_normal_ = functools.partial(weights_init_normal, std=std)
         net.apply(weights_init_normal_)

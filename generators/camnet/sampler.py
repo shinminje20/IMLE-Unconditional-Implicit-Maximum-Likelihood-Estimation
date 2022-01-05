@@ -1,7 +1,7 @@
 import torch
 import sys
 import math
-from dciknn_cuda.dciknn_cuda import DCI
+# from dciknn_cuda.dciknn_cuda import DCI
 from utils import util
 import time
 
@@ -36,7 +36,7 @@ def generate_code_samples(model, data, opt):
     sampled_codes = []
     sampled_targets = set()
 
-    print("Generating Samples")
+    tqdm.write("Generating Samples")
     with torch.no_grad():
         for level_num in range(1, num_levels + 1):
             num_instances = data['network_input'][0].shape[0]

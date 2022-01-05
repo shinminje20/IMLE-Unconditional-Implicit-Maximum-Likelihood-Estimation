@@ -49,7 +49,7 @@ class CAM_NetModel(BaseModel):
                 raise NotImplementedError('Loss type [{:s}] not recognized.'.format(l_pix_type))
             self.l_pix_w = train_opt['pixel_weight']
         else:
-            print('Remove pixel loss.')
+            tqdm.write('Remove pixel loss.')
             self.cri_pix = None
 
         self.netF = networks.define_F(opt).to(self.device)
@@ -75,7 +75,7 @@ class CAM_NetModel(BaseModel):
                         else:
                             core_network_params.append(v)
                 else:
-                    print('WARNING: params [{:s}] will not optimize.'.format(k))
+                    tqdm.write(f"WARNING: params [{k:s}] will not optimize.")
             self.optimizer_G = torch.optim.Adam([{'params': core_network_params},
                                                  {'params': map_network_params, 'lr': 1e-2 * train_opt['lr_G']}],
                                                 lr=train_opt['lr_G'], weight_decay=wd_G,
@@ -94,9 +94,9 @@ class CAM_NetModel(BaseModel):
 
             self.log_dict = OrderedDict()
 
-        print('---------- Model initialized ------------------')
+        tqdm.write('---------- Model initialized ------------------')
         self.print_network()
-        print('-----------------------------------------------')
+        tqdm.write('-----------------------------------------------')
 
     def feed_data(self, data, code=[], need_HR=True):
         self.network_input = []
@@ -270,7 +270,7 @@ class CAM_NetModel(BaseModel):
     def print_network(self):
         # Generator
         s, n = self.get_network_description(self.netG)
-        print('Number of parameters in G: {:,d}'.format(n))
+        tqdm.write(f"Number of parameters in G: {n:d}")
         if self.is_train:
             message = '-------------- Generator --------------\n' + s + '\n'
             network_path = os.path.join(self.save_dir, '../', 'network.txt')
@@ -279,7 +279,7 @@ class CAM_NetModel(BaseModel):
 
             # F, Perceptual Network
             s, n = self.get_network_description(self.netF)
-            print('Number of parameters in F: {:,d}'.format(n))
+            tqdm.write(f"Number of parameters in F: {n:d}")
             message = '\n\n\n-------------- Perceptual Network --------------\n' + s + '\n'
             with open(network_path, 'a') as f:
                 f.write(message)
@@ -287,13 +287,13 @@ class CAM_NetModel(BaseModel):
     def load(self):
         load_path_G = self.opt['path']['pretrain_model_G']
         if load_path_G is not None:
-            print('loading model for G [{:s}] ...'.format(load_path_G))
+            tqdm.write(f"loading model for G [{load_path_G:s}] ...")
             self.load_network(load_path_G, self.netG)
 
     def load_optimizer(self):
         load_path_O = self.opt['path']['pretrain_model_O']
         if load_path_O is not None:
-            print('loading optimizer [{:s}] ...'.format(load_path_O))
+            tqdm.write(f"loading optimizer [{load_path_O:s}] ...")
             self.optimizer_G.load_state_dict(torch.load(load_path_O))
 
     def save(self, iter_label):

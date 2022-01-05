@@ -13,4 +13,7 @@ _Is corruption everything?_ I don't think so, since positives can differ by **ro
 _How do we actually implement this?_
  - Rotation, flipping, and edge-aligned crops are easy to implement with the right TorchVision transforms and a simple `DataSet` we already have
  - CAMNet should be able to do both super-resolution and colorization.
- - Cropping doesn't seem like something CAMNet can easily do. ...
+ - Cropping doesn't seem like something CAMNet can easily do?
+
+## Sampling Corruptions
+On a basic level, we want a function that can take in an image and output a corrupted version of it. Ideally, it should be trainable without gradients flowing from the contrastive learner; we can bring in RL or a gradient-estimation technique here.
