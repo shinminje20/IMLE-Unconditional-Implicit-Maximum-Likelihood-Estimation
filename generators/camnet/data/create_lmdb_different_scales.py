@@ -98,16 +98,16 @@ input_images_root:
     - category_1:
         - test
         - train
-        - validation
+        - val
     - category_2:
         - test
         - train
-        - validation
+        - val
     ...
     - category_n:
         - test
         - train
-        - validation
+        - val
 """
 ################################################################################
 ################################################################################
@@ -124,7 +124,7 @@ P.add_argument("--dataset_name", required=True, type=str,
     help="dataset name")
 P.add_argument("--width", required=True, type=int,
     help="dataset name")
-P.add_argument("--modes", default=['train', 'validation', 'test'], nargs="+",
+P.add_argument("--modes", default=['train', 'val', 'test'], nargs="+",
     help="dataset name")
 args = P.parse_args()
 print("*** ENSURE that the input dataset contains 256x256 images ***")
@@ -137,7 +137,7 @@ width = args.width
 
 # parameters
 scales = [1., 1 / 2., 1 / 4., 1 / 8., 1 / 16.]
-dataset_modes = ['train', 'validation', 'test']  # support: 'train', 'test', 'validation'
+dataset_modes = ['train', 'val', 'test']  # support: 'train', 'test', 'val'
 # width = 256
 # root_save_lmdb = "/path/to/save/lmdbs/"
 # input_images_root = '/path/to/root/raw/images/*'
@@ -164,7 +164,7 @@ for db_mode in dataset_modes:
             img_folder += "/train/*"
         elif db_mode == "test":
             img_folder += "/test/*"
-        elif db_mode == "validation":
+        elif db_mode == "val":
             img_folder += "/val/*"
 
         count_correct_images, count_incorrect_images = creat_lmdb_per_category(
