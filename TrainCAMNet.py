@@ -166,6 +166,8 @@ if __name__ == "__main__":
         NestedNamespace.leaf_union(default_opts["datasets"],
                                    get_camnet_data_names(args)))
 
+    print(default_opts)
+
     config_save_path = f"{project_dir}/models/camnet/{camnet_folder(args)}/train_config.json"
     dict_to_json(default_opts, config_save_path)
     tqdm.write(f"Run the following command to start CAMNet:\npython generators/camnet/train.py -opt {config_save_path}")

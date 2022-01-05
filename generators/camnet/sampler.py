@@ -1,10 +1,10 @@
 import torch
 import sys
 import math
-# from dciknn_cuda.dciknn_cuda import DCI
+from dciknn_cuda.dciknn_cuda import DCI
 from utils import util
 import time
-
+from tqdm import tqdm
 
 def print_without_newline(s):
     sys.stdout.write(s)

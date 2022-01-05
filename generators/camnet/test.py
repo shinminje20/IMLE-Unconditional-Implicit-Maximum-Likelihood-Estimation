@@ -3,6 +3,8 @@ import sys
 import time
 import argparse
 from collections import OrderedDict
+from tqdm import tqdm
+
 
 import options.options as option
 import utils.util as util
