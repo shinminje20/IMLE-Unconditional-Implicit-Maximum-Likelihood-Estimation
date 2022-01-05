@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 import models.modules.architecture as arch
-
+from tqdm import tqdm
 
 ####################
 # initialize
