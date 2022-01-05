@@ -27,3 +27,5 @@ data/cls_first
 data/cifar-10*
 data/tinyImagenet
 data/miniImagenet
+
+models
