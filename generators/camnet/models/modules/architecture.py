@@ -6,6 +6,7 @@ import torch.nn as nn
 from torchvision import models as tv
 from . import block as B
 
+from tqdm import tqdm
 
 ####################
 # Generator
