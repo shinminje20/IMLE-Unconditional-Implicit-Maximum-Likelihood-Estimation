@@ -129,7 +129,7 @@ P.add_argument("--modes", default=['train', 'validation', 'test'], nargs="+",
 args = P.parse_args()
 print("*** ENSURE that the input dataset contains 256x256 images ***")
 
-root_save_lmdb = f"{args.root_save_lmdb.strip("/")}/"
+root_save_lmdb = f"{args.root_save_lmdb.strip('/')}/"
 input_images_root = f"{args.input_images_root.strip("/")}/*"
 dataset_name = args.dataset_name
 width = args.width
