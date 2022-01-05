@@ -88,7 +88,10 @@ class CAMNet(nn.Module):
     def forward_colorization_super_resolution(self, net_input, codes):
         assert len(codes) <= self.num_levels, "Number of codes should be no more than number of level of the network"
 
-        net_input[0] = torch.unsqueeze(torch.mean(net_input[0], axis=1), dim=1).expand(net_input[0].shape)
+        new_net_input0 = torch.unsqueeze(torch.mean(net_input[0], axis=1), dim=1).expand(net_input[0].shape)
+
+        assert new_net_input0.shape == net_input[0].shape
+        net_input[0] = new_net_input0
 
         outputs = []
         feature = None
