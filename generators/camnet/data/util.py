@@ -6,6 +6,7 @@ import lmdb
 import cv2
 import json
 from PIL import Image
+from tqdm import tqdm
 
 IMG_EXTENSIONS = ['.jpg', '.JPG', '.jpeg', '.JPEG', '.png', '.PNG', '.ppm', '.PPM', '.bmp', '.BMP']
 
