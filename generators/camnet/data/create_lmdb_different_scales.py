@@ -109,7 +109,10 @@ input_images_root:
         - train
         - validation
 """
-
+################################################################################
+################################################################################
+################################################################################
+# ISICLE Edits
 ################################################################################
 import argparse
 P = argparse.ArgumentParser(description="Preparing data for CaMNet")
@@ -124,9 +127,10 @@ P.add_argument("--width", required=True, type=int,
 P.add_argument("--modes", default=['train', 'validation', 'test'], nargs="+",
     help="dataset name")
 args = P.parse_args()
+print("*** ENSURE that the input dataset contains 256x256 images ***")
 
-root_save_lmdb = f"{args.root_save_lmdb}/"
-input_images_root = f"{args.input_images_root}/*"
+root_save_lmdb = f"{args.root_save_lmdb.strip("/")}/"
+input_images_root = f"{args.input_images_root.strip("/")}/*"
 dataset_name = args.dataset_name
 width = args.width
 ################################################################################

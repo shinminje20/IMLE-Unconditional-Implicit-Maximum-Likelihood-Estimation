@@ -36,11 +36,13 @@ data2url = {
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="Dataset downloading and creation")
-    P.add_argument("--data", choices=["tinyImagenet", "miniImagenet", "camnet_three"],
+    P.add_argument("--data",
+        choices=["tinyImagenet", "miniImagenet", "camnet_three"],
         help="also make a class-first dataset split")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
-    P.add_argument("--sizes", default=[16, 32, 64, 128, 256], type=int, nargs="+",
+    P.add_argument("--sizes", default=[16, 32, 64, 128, 256], type=int,
+        nargs="+",
         help="sizes to make the images. -1 or zero for no resizing")
     args = P.parse_args()
 

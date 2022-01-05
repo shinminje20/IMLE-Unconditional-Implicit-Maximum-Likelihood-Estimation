@@ -49,9 +49,6 @@ def generate_code_samples(model, data, opt):
             if target_data.shape[-1] > 256:
                 project_dim = 700
                 mini_batch_size = 5
-
-            print("SAMPLER", target_data.shape)
-
             model.init_projection(h=target_data.shape[-2], w=target_data.shape[-1], total_dim=project_dim)
             dci_db = DCI(project_dim, dci_num_comp_indices, dci_num_simp_indices, block_size, thread_size)
 

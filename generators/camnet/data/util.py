@@ -34,7 +34,7 @@ def _get_paths_from_images(path):
 def _get_paths_from_lmdb(dataroot):
     env = lmdb.open(dataroot, readonly=True, lock=False, readahead=False, meminit=False)
     keys_cache_file = os.path.join(dataroot, '_keys_cache.p')
-    if os.path.isfile(keys_cache_file) and False:
+    if os.path.isfile(keys_cache_file):
         print('read lmdb keys from cache: {}'.format(keys_cache_file))
         keys = pickle.load(open(keys_cache_file, "rb"))
     else:

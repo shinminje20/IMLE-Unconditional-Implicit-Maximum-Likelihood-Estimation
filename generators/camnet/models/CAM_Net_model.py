@@ -18,6 +18,7 @@ def compute_feature_loss(gen_feat, real_feat, gen_shape):
         result += cur_diff
     return result
 
+convert_to_rgb_tasks = ["Colorization", "NaiveISICLE"]
 
 class CAM_NetModel(BaseModel):
     def __init__(self, opt):
@@ -52,7 +53,6 @@ class CAM_NetModel(BaseModel):
             self.cri_pix = None
 
         self.netF = networks.define_F(opt).to(self.device)
-
         self.projections = None
         if self.is_train:
             # G
@@ -131,7 +131,6 @@ class CAM_NetModel(BaseModel):
 
     # Random projection matrix for reducing LPIPS feature dimension
     def init_projection(self, h, w, total_dim=1000):
-        print("INIT PROJECTION", h, w)
         fake_input = torch.zeros(1, 3, h, w)
         fake_feat, fake_shape = self.netF(fake_input)
         self.projections = []
@@ -157,7 +156,7 @@ class CAM_NetModel(BaseModel):
         with torch.no_grad():
             gen_imgs = self.netG(self.network_input, self.code)
             net_f_inp = gen_imgs[level]
-            if self.task == 'Colorization':
+            if self.task in convert_to_rgb_tasks:
                 net_f_inp = util.lab2rgb_tensor(net_f_inp)
             gen_feat, gen_shape = self.netF(net_f_inp)
             real_feat, real_shape = self.netF(self._get_target_at_level(level))
@@ -184,7 +183,7 @@ class CAM_NetModel(BaseModel):
         with torch.no_grad():
             gen_imgs = self.netG(self.network_input, self.code)
             img_out_rgb = gen_imgs[level]
-            if self.task == 'Colorization':
+            if self.task in convert_to_rgb_tasks:
                 img_out_rgb = util.lab2rgb_tensor(img_out_rgb)
 
             real_img = self._get_target_at_level(level)  # ground-truth image
@@ -210,7 +209,7 @@ class CAM_NetModel(BaseModel):
         if inter_supervision:
             for i, output in enumerate(outputs):
                 img_out_rgb = output
-                if self.task == 'Colorization':
+                if self.task in convert_to_rgb_tasks:
                     img_out_rgb = util.lab2rgb_tensor(img_out_rgb)
                 real_img = self._get_target_at_level(i)  # ground-truth image
 
@@ -224,7 +223,7 @@ class CAM_NetModel(BaseModel):
                     l_g_total += self._get_feature_loss(img_out_rgb, real_img)
         else:
             img_out_rgb = outputs[-1]
-            if self.task == 'Colorization':
+            if self.task in convert_to_rgb_tasks:
                 img_out_rgb = util.lab2rgb_tensor(img_out_rgb)
             real_img = self._get_target_at_level(-1)
 
@@ -252,7 +251,7 @@ class CAM_NetModel(BaseModel):
             # predicted image is in rgb format
             self.pred = []
             img_out = output[-1]
-            if self.task == 'Colorization':
+            if self.task in convert_to_rgb_tasks:
                 img_out = util.lab2rgb_tensor(img_out)
             self.pred.append(img_out)
         self.netG.train()

@@ -8,7 +8,7 @@ def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
 
 
-def parse(opt, is_train=True):
+def parse(opt_path, is_train=True):
     # remove comments starting with '//'
     # json_str = ''
     # with open(opt_path, 'r') as f:
@@ -16,6 +16,8 @@ def parse(opt, is_train=True):
     #         line = line.split('//')[0] + '\n'
     #         json_str += line
     # opt = json.loads(json_str, object_pairs_hook=OrderedDict)
+    with open(opt_path, "r") as f:
+	       opt = json.load(f)
 
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train

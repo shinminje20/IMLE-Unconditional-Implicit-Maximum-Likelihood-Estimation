@@ -3,7 +3,7 @@ import torch
 import torch.nn as nn
 from torch.nn import init
 import models.modules.architecture as arch
-import models.modules.CAMNetRewritten as CAMNetRewritten
+
 
 ####################
 # initialize
@@ -73,18 +73,6 @@ def define_G(opt):
                            latent_nc=opt_net['latent_nc'], no_upsample=opt_net['no_upsample'],
                            use_noise_encoder=opt_net['use_noise_encoder'],
                            task=task, hr_width=hr_width, hr_height=hr_height)
-    elif which_model == "CAMNet_rewritten":
-        netG_ = CAMNetRewritten.CAMNet(**CAMNetRewritten.original_to_rewritten_config(opt))
-        netG = arch.CAMNet(in_nc=opt_net['in_nc'], code_nc=opt_net['code_nc'], out_nc=opt_net['out_nc'],
-                           num_residual_channels=opt_net['num_residual_channels'],
-                           num_dense_channels=opt_net['num_dense_channels'], num_blocks=opt_net['num_blocks'],
-                           upscale=opt['scale'], act_type='leakyrelu', upsample_kernel_mode="nearest",
-                           feat_scales=opt_net['feat_scales'], map_nc=opt_net['map_nc'],
-                           latent_nc=opt_net['latent_nc'], no_upsample=opt_net['no_upsample'],
-                           use_noise_encoder=opt_net['use_noise_encoder'],
-                           task=task, hr_width=hr_width, hr_height=hr_height)
-        print(netG_)
-        print(netG)
     else:
         raise NotImplementedError('Generator model [{:s}] not recognized'.format(which_model))
 

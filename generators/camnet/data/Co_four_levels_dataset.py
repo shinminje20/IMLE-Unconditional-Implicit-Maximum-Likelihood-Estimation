@@ -29,8 +29,6 @@ class CoFourLevelsDataset(data.Dataset):
         self.paths_D1 = None
         self.D1_env = None
 
-        print(opt)
-
         # read image list from subset list txt
         if opt['subset_file'] is not None and opt['phase'] == 'train':
             with open(opt['subset_file']) as f:
@@ -43,7 +41,7 @@ class CoFourLevelsDataset(data.Dataset):
             self.D2_env, self.paths_D2 = util.get_image_paths(opt['data_type'], opt['dataroot_D2'])
             self.D3_env, self.paths_D3 = util.get_image_paths(opt['data_type'], opt['dataroot_D3'])
 
-        assert self.paths_HR_Color, f'Error: HR_Color path {self.paths_HR_Color} is empty.'
+        assert self.paths_HR_Color, 'Error: HR_Color path is empty.'
 
         self.random_scale_list = [1]
         self.rarity_masks = []
