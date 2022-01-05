@@ -2,8 +2,6 @@
 *.tsv
 
 *.pt
-*.pt
-*.pth
 *.pkl
 *.npy
 
@@ -28,4 +26,5 @@ data/cifar-10*
 data/tinyImagenet
 data/miniImagenet
 
-models
+models/camnet/*
+models/simclr/*

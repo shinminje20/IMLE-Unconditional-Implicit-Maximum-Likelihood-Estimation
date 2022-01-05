@@ -223,8 +223,9 @@ class LPNet(nn.Module):
         self.L = 5
         self.lins = [B.NetLinLayer() for _ in range(self.L)]
 
-        model_path = os.path.abspath(
-            os.path.join('.', 'models/weights/v%s/%s.pth' % (version, pnet_type)))
+        model_path = os.path.abspath(os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'weights/v%s/%s.pth' % (version, pnet_type)))
         tqdm.write(f"Loading model from: {model_path}")
         weights = torch.load(model_path)
         for i in range(self.L):
