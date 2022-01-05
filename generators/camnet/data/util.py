@@ -35,11 +35,11 @@ def _get_paths_from_lmdb(dataroot):
     env = lmdb.open(dataroot, readonly=True, lock=False, readahead=False, meminit=False)
     keys_cache_file = os.path.join(dataroot, '_keys_cache.p')
     if os.path.isfile(keys_cache_file):
-        print('read lmdb keys from cache: {}'.format(keys_cache_file))
+        tqdm.write(f"read lmdb keys from cache: {keys_cache_file}")
         keys = pickle.load(open(keys_cache_file, "rb"))
     else:
         with env.begin(write=False) as txn:
-            print('creating lmdb keys cache: {}'.format(keys_cache_file))
+            tqdm.write(f"creating lmdb keys cache: {keys_cache_file}")
             keys = [key.decode('ascii') for key, _ in txn.cursor()]
         pickle.dump(keys, open(keys_cache_file, 'wb'))
     paths = sorted([key for key in keys if not key.endswith('.meta')])

@@ -7,6 +7,8 @@ import time
 import random
 from collections import OrderedDict
 
+from tqdm import tqdm
+
 import torch
 
 import options.options as option
@@ -19,7 +21,7 @@ import numpy as np
 
 
 def validate(val_loader, opt, model, current_step, epoch, logger):
-    print('---------- validation -------------')
+    tqdm.write('---------- validation -------------')
     start_time = time.time()
 
     avg_psnr = 0.0
@@ -58,7 +60,7 @@ def validate(val_loader, opt, model, current_step, epoch, logger):
         avg_lpips += torch.sum(model.get_loss(level=-1))
 
     if current_step == 0:
-        print('Saving the model at the end of iter {:d}.'.format(current_step))
+        tqdm.write(f"Saving the model at the end of iter {current_step:d}.")
         model.save(current_step)
 
     avg_psnr = avg_psnr / idx
@@ -76,7 +78,7 @@ def validate(val_loader, opt, model, current_step, epoch, logger):
     else:
         print_rlt['lpips'] = avg_lpips
     logger.print_format_results('val', print_rlt)
-    print('-----------------------------------')
+    tqdm.write('-----------------------------------')
 
 
 def main():
@@ -98,24 +100,24 @@ def main():
     seed = opt['train']['manual_seed']
     if seed is None:
         seed = random.randint(1, 10000)
-    print("Random Seed: ", seed)
+    tqdm.write(f"Random Seed: {seed}")
     random.seed(seed)
     torch.manual_seed(seed)
 
     # LAB setup settings
-    print("Color output mode: ", util.color_output_mode)
-    print("AB range: ", util.AB_range)
+    tqdm.write(f"Color output mode: {util.color_output_mode}")
+    tqdm.write(f"AB range: {util.AB_range}")
 
     # create train and val dataloader
     for phase, dataset_opt in opt['datasets'].items():
         if phase == 'train':
             train_set = create_dataset(dataset_opt)
             train_size = int(math.ceil(len(train_set) / dataset_opt['batch_size_per_month']))
-            print('Number of train images: {:,d}, iters: {:,d}'.format(len(train_set), train_size))
+            tqdm.write(f"Number of train images: {len(train_set):d}, iters: {len(train_set):d}")
             num_months = int(opt['train']['num_months'])
             num_days = int(opt['train']['num_days'])
             total_iters = int(num_months * num_days)
-            print('Total epochs needed: {:d} for iters {:,d}'.format(num_months, total_iters))
+            tqdm.write(f"Total epochs needed: {num_months:d} for iters {total_iters:d}")
             train_loader = create_dataloader(train_set, dataset_opt)
             batch_size_per_month = dataset_opt['batch_size_per_month']
             batch_size_per_day = int(opt['datasets']['train']['batch_size_per_day'])
@@ -124,7 +126,7 @@ def main():
         elif phase == 'val':
             val_set = create_dataset(dataset_opt)
             val_loader = create_dataloader(val_set, dataset_opt)
-            print('Number of val images in [{:s}]: {:d}'.format(dataset_opt['name'], len(val_set)))
+            tqdm.write(f"Number of val images in [{dataset_opt['name']:s}]: {len(val_set):d}")
         else:
             raise NotImplementedError('Phase [{:s}] is not recognized.'.format(phase))
     assert train_loader is not None
@@ -136,10 +138,10 @@ def main():
 
     current_step = 0
     start_time = time.time()
-    print('---------- Start training -------------')
+    tqdm.write('---------- Start training -------------')
     validate(val_loader, opt, model, current_step, 0, logger)
-    for epoch in range(num_months):
-        for i, train_data in enumerate(train_loader):
+    for epoch in tqdm(range(num_months), desc="Epochs"):
+        for i, train_data in tqdm(enumerate(train_loader), desc="Batches", leave=False):
             # Sample the codes used for training of the month
             if use_dci:
                 cur_month_code = generate_code_samples(model, train_data, opt)
@@ -151,7 +153,7 @@ def main():
                                                 tensor_type=tensor_type)
             # clear projection matrix to save memory
             model.clear_projection()
-            for j in range(num_days):
+            for j in tqdm(range(num_days), desc="Iterating over batch"), leave=False:
                 current_step += 1
                 cur_month_batch_size = min(batch_size_per_month, train_data['network_input'][0].shape[0])
                 # get the sliced data
@@ -197,7 +199,7 @@ def main():
 
                 # save models
                 if current_step % opt['logger']['save_checkpoint_freq'] == 0:
-                    print('Saving the model at the end of iter {:d}.'.format(current_step))
+                    tqdm.write(f"Saving the model at the end of iter {current_step:d}.")
                     model.save(current_step)
 
                 # validation
@@ -207,9 +209,9 @@ def main():
                 # update learning rate
                 model.update_learning_rate()
 
-    print('Saving the final model.')
+    tqdm.write('Saving the final model.')
     model.save('latest')
-    print('End of training.')
+    tqdm.write('End of training.')
 
 
 if __name__ == '__main__':

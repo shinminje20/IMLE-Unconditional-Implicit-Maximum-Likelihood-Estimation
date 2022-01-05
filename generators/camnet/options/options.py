@@ -1,23 +1,22 @@
 import os
 from collections import OrderedDict
 from datetime import datetime
-import json
 
+from utils.Utils import *
 
 def get_timestamp():
     return datetime.now().strftime('%y%m%d-%H%M%S')
 
 
-def parse(opt_path, is_train=True):
-    # remove comments starting with '//'
-    # json_str = ''
-    # with open(opt_path, 'r') as f:
-    #     for line in f:
-    #         line = line.split('//')[0] + '\n'
-    #         json_str += line
-    # opt = json.loads(json_str, object_pairs_hook=OrderedDict)
-    with open(opt_path, "r") as f:
-	       opt = json.load(f)
+def parse(opt, is_train=True):
+    """Returns the CAMNet options dictionary given by [opt]."""
+    if isinstance(opt, dict):
+        opt = opt
+    elif isinstance(opt, str) and opt.endswith(".json"):
+        with open(opt, "r") as f:
+    	       opt = json.load(f)
+    else:
+        raise ValueError(f"Can't parse options {opt}")
 
     opt['timestamp'] = get_timestamp()
     opt['is_train'] = is_train
@@ -36,7 +35,7 @@ def parse(opt_path, is_train=True):
             HR_key = "dataroot_HR_Color"
             LR_key = "dataroot_LR_Color"
             HR_bg_Key = "dataroot_HR_Color_bg"
-        elif opt['task'] == "Super_Resolution" or opt['task'] == "Decompression":
+        elif opt['task'] == "Super_Resolution" or opt['task'] == "Decompression" or opt["task"] == "NaiveISICLE":
             HR_key = "dataroot_HR"
             LR_key = "dataroot_LR"
             HR_bg_Key = "dataroot_HR_bg"
@@ -75,7 +74,7 @@ def parse(opt_path, is_train=True):
         if path and key in opt['path']:
             opt['path'][key] = os.path.expanduser(path)
     if is_train:
-        experiments_root = os.path.join(opt['path']['root'], 'experiments', opt['name'])
+        experiments_root = os.path.join(opt['path']['root'], "camnet", opt['name'])
         opt['path']['experiments_root'] = experiments_root
         opt['path']['models'] = os.path.join(experiments_root, 'models')
         opt['path']['log'] = experiments_root

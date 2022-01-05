@@ -81,8 +81,37 @@ class CAMNet(nn.Module):
             return self.forward_super_resolution(net_input=net_input, codes=codes)
         elif self.task == "Decompression":
             return self.forward_decompression(net_input=net_input, codes=codes)
-        elif self.task == "ISICLE":
-            return self.forward_isicle(net_input=net_input, codes=codes)
+        elif self.task == "ColorizationSuperResolution":
+            return self.forward_colorization_super_resolution(net_input=net_input, codes=codes)
+
+    def forward_colorization_super_resolution(self, net_input, codes):
+        assert len(codes) <= self.num_levels, "Number of codes should be no more than number of level of the network"
+
+        print("net_input[0] shape", net_input[0].shape)
+
+        net_input[0] = torch.unsqueeze(torch.mean(net_input[0], axis=1)).expand(net_input[0].shape)
+        print("net_input[0] shape", net_input[0].shape)
+        assert False
+
+        outputs = []
+        feature = None
+        out = None
+        for i, code in enumerate(codes):
+            if i == 0:
+                bs, _, w, h = net_input[0].shape
+                x = torch.cat((net_input[0], code[:, self.map_nc:].reshape(bs, self.code_nc, w, h)), dim=1)
+            else:
+                bs, _, w, h = out.shape
+                # concat with the previous level output and feature
+                x = torch.cat((out, code[:, self.map_nc:].reshape(bs, self.code_nc, w, h), feature *
+                               self.feat_scales[i - 1]), dim=1)
+            mapped_code = getattr(self, "level_%d_map" % (i + 1))(code[:, :self.map_nc])
+            feature = getattr(self, "level_%d_feat" % (i + 1))(x)
+            feature = getattr(self, "level_%d_style" % (i + 1))(feature, mapped_code)
+            feature = getattr(self, "level_%d_up" % (i + 1))(feature)
+            out = getattr(self, "level_%d_out" % (i + 1))(feature)
+            outputs.append(self.out_layer(out))
+        return outputs
 
     def forward_colorization(self, net_input, codes):
         assert len(codes) <= self.num_levels, "Number of codes should be no more than number of level of the network"

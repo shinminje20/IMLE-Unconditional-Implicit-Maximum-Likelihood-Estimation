@@ -18,7 +18,7 @@ def compute_feature_loss(gen_feat, real_feat, gen_shape):
         result += cur_diff
     return result
 
-convert_to_rgb_tasks = ["Colorization", "NaiveISICLE"]
+convert_to_rgb_tasks = ["Colorization"]
 
 class CAM_NetModel(BaseModel):
     def __init__(self, opt):

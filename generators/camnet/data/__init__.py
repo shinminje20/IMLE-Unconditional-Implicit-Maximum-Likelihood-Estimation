@@ -29,8 +29,6 @@ def create_dataset(dataset_opt):
         from data.Co_four_levels_dataset import CoFourLevelsDataset as D
     elif mode == 'ImgSyn_five_levels':  # Image Synthesis, 5 levels
         from data.ImgSyn_five_levels_dataset import ImageLabelDatasetFiveLevels as D
-    elif mode == "NaiveISICLE":
-        from data.ColorizationSuperResolutionDataset import ColorizationSuperResolutionDataset as D
     else:
         raise NotImplementedError('Dataset [{:s}] is not recognized.'.format(mode))
 
