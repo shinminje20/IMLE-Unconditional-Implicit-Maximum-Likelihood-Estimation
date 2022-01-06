@@ -1,8 +1,12 @@
 
+**1/5/22**:
+ **Did**
+ - Tried to get CAMNet to run with two GPUs, but with no success. Setting `opt["gpu_ids"]` to `[0, 1]` in CAMNet's config seems to have been understood correctly, but `nn.DataParallel` generates a weird error involving an `int` not being iterable. I explored and prodded the error a bit, but with no success. Asked Alireza if he'd seen it before or had any clue how to proceed, he will likely respond tomorrow.
+
 **1/4/22**:
 **Did**
- - The baseline corruption should be decolorization + downsampling. Therefore, we should be able to train CAMNet to do colorization but with the outputs upsampled. I _think_ this translates to doing exactly super-resolution but with the RGB-to-LAB-to-RGB color space conversions of colorization. Implimented but wasn't able to test this
- - What's the right level of code interaction between CAMNet and other ISICLE components?
+ - The baseline corruption should be decolorization + downsampling. Therefore, we should be able to train CAMNet to do colorization but with the outputs upsampled. I _think_ this translates to doing exactly super-resolution but with the RGB-to-LAB-to-RGB color space conversions of colorization. Implemented but wasn't able to test this.
+ - What's the right level of code interaction between CAMNet and other ISICLE components? Generating the config file for CAMNet from an `argparse` plus `NestedNamespace` backend seems to work nicely.
 
 **1/3/22**:
  **Did**
