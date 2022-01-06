@@ -141,7 +141,7 @@ def main():
     tqdm.write('---------- Start training -------------')
     validate(val_loader, opt, model, current_step, 0, logger)
     for epoch in tqdm(range(num_months), desc="Epochs"):
-        for i, train_data in tqdm(enumerate(train_loader), desc="Batches", leave=False):
+        for i, train_data in tqdm(enumerate(train_loader), desc="Batches", total=len(train_loader), leave=False):
             # Sample the codes used for training of the month
             if use_dci:
                 cur_month_code = generate_code_samples(model, train_data, opt)
