@@ -38,7 +38,7 @@ def generate_code_samples(model, data, opt):
 
     tqdm.write("Generating Samples")
     with torch.no_grad():
-        for level_num in range(1, num_levels + 1):
+        for level_num in tqdm(range(1, num_levels + 1), desc="Levels", leave=False):
             num_instances = data['network_input'][0].shape[0]
             torch.cuda.empty_cache()
             target_name, target_data = get_data_at_level(data, level_num)
@@ -58,7 +58,7 @@ def generate_code_samples(model, data, opt):
                                               levels=[level_num - 1],
                                               tensor_type=torch.empty)[0]
 
-            for sample_index in range(num_instances):
+            for sample_index in tqdm(range(num_instances), desc="Instances", leave=False):
                 if (sample_index + 1) % 10 == 0:
                     print_without_newline('\rFinding level %d code: Processed %d out of %d instances' % (
                         level_num, sample_index + 1, num_instances))
