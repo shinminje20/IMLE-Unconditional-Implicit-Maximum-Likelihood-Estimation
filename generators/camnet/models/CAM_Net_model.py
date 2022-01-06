@@ -126,7 +126,7 @@ class CAM_NetModel(BaseModel):
 
     # intermediate supervision adds loss from intermediate resolutions
     def _get_feature_loss(self, gen_img_rgb, real_img_rgb):
-        gen_feat, gen_shape = self.netF([gen_img_rgb])
+        gen_feat, gen_shape = self.netF(gen_img_rgb)
         real_feat, real_shape = self.netF(real_img_rgb)
         return compute_feature_loss(gen_feat, real_feat, gen_shape)
 

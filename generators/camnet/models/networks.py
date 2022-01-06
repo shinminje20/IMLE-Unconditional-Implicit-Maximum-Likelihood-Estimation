@@ -58,7 +58,6 @@ def init_weights(net, init_type='kaiming', scale=1, std=0.02):
 ####################
 def define_G(opt):
     gpu_ids = opt['gpu_ids']
-    tqdm.write(f"GPU IDS {gpu_ids}")
     opt_net = opt['network_G']
     which_model = opt_net['which_model_G']
     task = opt['task']
@@ -89,7 +88,6 @@ def define_G(opt):
 
 def define_F(opt):
     gpu_ids = opt['gpu_ids']
-    tqdm.write(f"GPU IDS {gpu_ids}")
     netF = arch.LPNet()
     netF.eval()
     if gpu_ids:
