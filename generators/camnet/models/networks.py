@@ -89,6 +89,7 @@ def define_G(opt):
 
 def define_F(opt):
     gpu_ids = opt['gpu_ids']
+    tqdm.write(f"GPU IDS {gpu_ids}")
     netF = arch.LPNet()
     netF.eval()
     if gpu_ids:
