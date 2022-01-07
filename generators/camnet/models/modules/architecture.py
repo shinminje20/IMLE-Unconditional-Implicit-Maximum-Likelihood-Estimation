@@ -229,8 +229,7 @@ class LPNet(nn.Module):
 
     def forward(self, in0, avg=False):
 
-        print("IN0", in0.device)
-        in0 = 2 * in0 - 1
+        in0 = in0.to("cuda")
         in0_input = self.scaling_layer(in0)
         outs0 = self.net.forward(in0_input)
         feats0 = {}
@@ -249,7 +248,7 @@ class LPNet(nn.Module):
                 res.append(cur_res.reshape(cur_res.shape[0], -1))
 
         print("RES", type(res), [r.device for r in res])
-        shapes = torch.tensor(shapes).to("cuda:0")
+        shapes = torch.tensor(shapes).to("cuda")
         print("SHAPES", shapes)
         return res, shapes
 
