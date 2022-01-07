@@ -225,12 +225,12 @@ class LPNet(nn.Module):
         tqdm.write(f"Loading model from: {model_path}")
         weights = torch.load(model_path)
         for i in range(self.L):
-            self.lins[i].weight = torch.sqrt(weights["lin%d.model.1.weight" % i])
+            self.lins[i].weight = torch.sqrt(weights[f"lin{i}.model.1.weight"])
 
     def forward(self, in0, avg=False):
 
         # in0 = in0.to("cuda")
-        # print("in0 DEVICE", in0.device)
+        # # print("in0 DEVICE", in0.device)
         in0_input = self.scaling_layer(in0)
         outs0 = self.net.forward(in0_input)
         feats0 = {}
@@ -248,9 +248,9 @@ class LPNet(nn.Module):
                 shapes.append(cur_res.shape[-1])
                 res.append(cur_res.reshape(cur_res.shape[0], -1))
 
-        print("RES", type(res), [r.device for r in res])
+        # print("RES", type(res), [r.device for r in res])
         shapes = torch.tensor(shapes).to("cuda")
-        print("SHAPES", shapes)
+        # print("SHAPES", shapes)
         return res, shapes
 
 
