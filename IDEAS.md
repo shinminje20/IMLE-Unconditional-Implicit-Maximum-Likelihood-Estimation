@@ -31,5 +31,6 @@ One thing to consider is that for a given corruption, CAMNet can generate many d
         -\log \frac{\sum_{i,j=1}^{n} \exp sim(f(x_i), f(x_j))}{Z}
     $$
     where $Z$ is a partition function given by the sum of all the exponentiated distances.
+    
         - This is somewhat similar to the KMeans objective, though in this case I think the partition functions are performing different roles since in KMeans the diversity of the data prevents it from collapsing to a single point.... there is no model. (The normal version has this same property, but two points isn't really a cluster.)
         - What about a linear classifier? Projected onto a unit sphere, this somewhat works.
