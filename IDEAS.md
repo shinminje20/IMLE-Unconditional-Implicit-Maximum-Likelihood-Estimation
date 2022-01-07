@@ -5,7 +5,7 @@ Ke noted that it makes a lot of sense to generate data as follows: (1) sample an
 
 _With this in mind, what corruptions make sense?_
 1) **Cropping** out regions of the image easily deletes information, but it's unclear what the right amount/way to crop is. This actually strikes me as an operator that'd need to be used sparingly outside of the background of an image.
-2) **Downsampling** should allow the generator to fill in fine details. _I'm interested to see if this is helpful since it shouldn't really distributionally change an image at all and this operator should lead to the greatest sameness between images as per human vision. Therefore we can evaluate how sensitivity between images (what contrastive loss focuses on) is important for the classification task.
+2) **Downsampling** should allow the generator to fill in fine details. _I'm interested to see if this is helpful since it shouldn't really distributionally change an image at all and this operator should lead to the greatest sameness between images as per human vision. Therefore we can evaluate how sensitivity between images (what contrastive loss focuses on) is important for the classification task._
 2) **Decolorization** could lead the generator to generate wildly different dominant colors for positive images, which would would be good according to the augmentations found useful in SimCLR
 
 _Is corruption everything?_ I don't think so, since positives can differ by **rotation**, **flipping**, and small **edge-aligned crops**, and it's difficult to see a conditional generative model doing this! In other words, we should think of the generative model/corruptions as providing special spicy augmentations.
