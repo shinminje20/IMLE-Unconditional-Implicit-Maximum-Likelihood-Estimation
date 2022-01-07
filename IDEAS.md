@@ -28,7 +28,7 @@ One thing to consider is that for a given corruption, CAMNet can generate many d
         - ...
  - Why not just use them all? Contrastive loss can be adapted to multiple positives. This is inherently subject to memory constraints, but the question of how to optimize number of different source images vs. number of positives remains. The loss function for de-corrupted versions of an image $x$ $\{x_1 \dots x_n\}$ would be
     $$
-        -\log \frac{\sum_{i,j=1}{n} \exp sim(f(x_i), f(x_j))}{Z}
+        -\log \frac{\sum_{i,j=1}^{n} \exp sim(f(x_i), f(x_j))}{Z}
     $$
     where $Z$ is a partition function given by the sum of all the exponentiated distances.
         - This is somewhat similar to the KMeans objective, though in this case I think the partition functions are performing different roles since in KMeans the diversity of the data prevents it from collapsing to a single point.... there is no model. (The normal version has this same property, but two points isn't really a cluster.)
