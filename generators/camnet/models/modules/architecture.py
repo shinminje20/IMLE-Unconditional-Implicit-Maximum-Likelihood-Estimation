@@ -217,7 +217,7 @@ class LPNet(nn.Module):
         self.scaling_layer = B.ScalingLayer()
         self.net = vgg16(pretrained=True, requires_grad=False)
         self.L = 5
-        self.lins = [B.NetLinLayer() for _ in range(self.L)]
+        self.lins = nn.ModuleList([B.NetLinLayer() for _ in range(self.L)])
 
         model_path = os.path.abspath(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -229,8 +229,8 @@ class LPNet(nn.Module):
 
     def forward(self, in0, avg=False):
 
-        in0 = in0.to("cuda")
-        print("in0 DEVICE", in0.device)
+        # in0 = in0.to("cuda")
+        # print("in0 DEVICE", in0.device)
         in0_input = self.scaling_layer(in0)
         outs0 = self.net.forward(in0_input)
         feats0 = {}
