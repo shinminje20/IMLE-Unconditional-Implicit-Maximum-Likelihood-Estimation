@@ -1,4 +1,11 @@
 
+**1/6/22**:
+
+**Did**:
+ - Turned out I needed to talk to Shichong. The issue is somewhat resolved, but another issue relating to things being on the wrong device has come up.
+ - Talked with Shichong about CAMNet's computational pain points.
+ - Thought about the problem of sampling from CAMNet's outputs
+
 **1/5/22**:
 
  **Did**
@@ -17,11 +24,11 @@
     - the code is complex and it's not worth messing with much (but re-implementing the architecture _was_ a useful exercise nonetheless)
     - it's too slow to train to be useful while we optimize much else. However, this isn't a problem; we should just treat it like a de-corruption operator, freeze its weights, and train the contrastive learner and how we corrupt images instead. _This makes sense for all the reasons we talked about while I was flying, too!_
     - Wrote the `NestedNamespace` class. It acts like an `argparse` namespace, but can be constructed from any number of JSON files, dictionaries, or anything with a `__dict__` attribute, and recursively constructs a hierarchical namespace from them. I hope it may prove useful for dealing with the insanely large number of configuration options endemic to CAMNet, SimCLR, and this project. (The key useful feature would be something like writing `--camnet_config config.json` as a command-line argument along and using `argparse` to work with this and the myriad of other arguments.)
-    
+
  **Do**
   - Get CAMNet doing super-resolution and colorization on three-class combo dataset on the cluster, and make sure the config is set so it finishes
   - Literature search things that can act as corruption operators—dropout, augmentations
-  
+
  **Musings**
  - It seems pretty clear that the contrastive learner will be basically SimCLR. What about corruptions? Even without gradients flowing through CAMNet, RL exists. There are a number of papers that propose learned corruptions, after a fashion:
     - [Phan and Le, _AutoDropout: Learning Dropout Patterns to Regularize Deep Neural Networks_, 2021](https://arxiv.org/pdf/2101.01761.pdf) learns patterned regions of dropout across the activations of multiple layers of a neural net. It's trained through REINFORCE with the optimized quantity being the main model's validation loss. The papers gets good results, but _I'm not sure it'd be optimal for contrastive learning, since it's probably more valuable to be able to drop out specific (semantic? non-semantic?) subsets of an object or the background instead of regular shapes of it._

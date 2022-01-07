@@ -17,3 +17,19 @@ _How do we actually implement this?_
 
 ## Sampling Corruptions
 On a basic level, we want a function that can take in an image and output a corrupted version of it. Ideally, it should be trainable without gradients flowing from the contrastive learner; we can bring in RL or a gradient-estimation technique here.
+
+## Sampling Images from CAMNet
+One thing to consider is that for a given corruption, CAMNet can generate many different images. Which two (or more) are best to show to the contrastive learner?
+ - First off, we could just sample randomly and assert that the inherent computational ease is worth it
+ - The naive approach is to sample the two images that are the most different
+    - Not as per LPIPS; they could be validly **very** different images
+    - Why not as per the contrastive learner being trained?
+        - This is maybe not that big a computational inefficiency because we can run an initial pass without gradients enabled
+        - ...
+ - Why not just use them all? Contrastive loss can be adapted to multiple positives. This is inherently subject to memory constraints, but the question of how to optimize number of different source images vs. number of positives remains. The loss function for de-corrupted versions of an image $x$ $\{x_1 \dots x_n\}$ would be
+    $$
+        -\log \frac{\sum_{i,j=1}{n} \exp sim(f(x_i), f(x_j))}{Z}
+    $$
+    where $Z$ is a partition function given by the sum of all the exponentiated distances.
+        - This is somewhat similar to the KMeans objective, though in this case I think the partition functions are performing different roles since in KMeans the diversity of the data prevents it from collapsing to a single point.... there is no model. (The normal version has this same property, but two points isn't really a cluster.)
+        - What about a linear classifier? Projected onto a unit sphere, this somewhat works.
