@@ -246,6 +246,7 @@ class LPNet(nn.Module):
                 shapes.append(cur_res.shape[-1])
                 res.append(cur_res.reshape(cur_res.shape[0], -1))
 
+        shapes = torch.tensor(shapes).to(self.device)
         print("SHAPES", shapes)
         return res, shapes
 
