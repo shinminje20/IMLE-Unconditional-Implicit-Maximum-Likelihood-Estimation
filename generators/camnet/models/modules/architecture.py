@@ -230,6 +230,7 @@ class LPNet(nn.Module):
     def forward(self, in0, avg=False):
 
         in0 = in0.to("cuda")
+        print("in0 DEVICE", in.device)
         in0_input = self.scaling_layer(in0)
         outs0 = self.net.forward(in0_input)
         feats0 = {}
