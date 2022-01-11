@@ -134,6 +134,7 @@ class ScalingLayer(nn.Module):
         self.register_buffer('scale', torch.Tensor([.458, .448, .450])[None, :, None, None])
 
     def forward(self, inp):
+        print("ORIG DIMENSION", inp.shape)
         if len(inp.shape) == 3:
             inp = inp.unsqueeze(0)
 
