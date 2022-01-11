@@ -152,13 +152,13 @@ class NetLinLayer(nn.Module):
     def __init__(self, weight):
         super(NetLinLayer, self).__init__()
         self.model = nn.Linear(1, 1, bias=False)
-        self.w = weight
+        self.s = weight.shape
         self.model.weight = torch.nn.Parameter(weight)
 
     def forward(self, inp):
-        print("INPUT SHAPE", input.shape, "W shape", self.w.shape)
+        print("INPUT SHAPE", inp.shape, "W shape", self.s)
 
-        return self.weight(inp)
+        return self.model(inp)
 
 
 class RRDB(nn.Module):
