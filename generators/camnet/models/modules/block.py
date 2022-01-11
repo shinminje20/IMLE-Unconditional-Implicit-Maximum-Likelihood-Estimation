@@ -149,13 +149,13 @@ class RerangeLayer(nn.Module):
 class NetLinLayer(nn.Module):
     ''' A single linear layer used as placeholder for LPIPS learnt weights '''
 
-    def __init__(self, weight):
+    def __init__(self):
         super(NetLinLayer, self).__init__()
-        self.weight = torch.nn.Parameter(weight)
+        self.weight = None
 
     def forward(self, inp):
-        return self.weight * inp
-
+        out = self.weight * inp
+        return out
 
 class RRDB(nn.Module):
     '''

@@ -217,28 +217,17 @@ class LPNet(nn.Module):
         self.scaling_layer = B.ScalingLayer()
         self.net = vgg16(pretrained=True, requires_grad=False)
         self.L = 5
+        self.lins = [B.NetLinLayer() for _ in range(self.L)]
 
-
-        model_path = os.path.abspath(os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            'weights/v%s/%s.pth' % (version, pnet_type)))
-        tqdm.write(f"Loading model from: {model_path}")
-
-
-
+        model_path = os.path.abspath(
+            os.path.join('.', 'models/weights/v%s/%s.pth' % (version, pnet_type)))
+        print('Loading model from: %s' % model_path)
         weights = torch.load(model_path)
-        weights = [weights[f"lin{i}.model.1.weight"] for i in range(self.L)]
-        self.lins = nn.ModuleList([B.NetLinLayer(torch.sqrt(w)) for w in weights])
-
-        #
-        #
-        # for i in range(self.L):
-        #     self.lins[i].weight = torch.sqrt(weights[f"lin{i}.model.1.weight"])
+        for i in range(self.L):
+            self.lins[i].weight = nn.Parameter(torch.sqrt(weights["lin%d.model.1.weight" % i]))
 
     def forward(self, in0, avg=False):
-
-        # in0 = in0.to("cuda")
-        # # print("in0 DEVICE", in0.device)
+        in0 = 2 * in0 - 1
         in0_input = self.scaling_layer(in0)
         outs0 = self.net.forward(in0_input)
         feats0 = {}
@@ -256,9 +245,6 @@ class LPNet(nn.Module):
                 shapes.append(cur_res.shape[-1])
                 res.append(cur_res.reshape(cur_res.shape[0], -1))
 
-        # print("RES", type(res), [r.device for r in res])
-        shapes = torch.tensor(shapes).to("cuda")
-        # print("SHAPES", shapes)
         return res, shapes
 
 
