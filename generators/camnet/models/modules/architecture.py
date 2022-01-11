@@ -224,7 +224,7 @@ class LPNet(nn.Module):
         print('Loading model from: %s' % model_path)
         weights = torch.load(model_path)
         for i in range(self.L):
-            self.lins[i].weight = nn.Parameter(torch.sqrt(weights["lin%d.model.1.weight" % i]))
+            self.lins[i].weight = nn.Parameter(torch.sqrt(weights[f"lin{i}.model.1.weight"]))
 
     def forward(self, in0, avg=False):
         in0 = 2 * in0 - 1
