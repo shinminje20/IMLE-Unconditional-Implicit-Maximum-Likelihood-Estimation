@@ -137,6 +137,7 @@ class ScalingLayer(nn.Module):
         if len(inp.shape) == 3:
             inp = inp.unsqueeze(0)
 
+        print("INP DIMENSION", inp.shape)
         return (inp - self.shift)  / self.scale
 
 
