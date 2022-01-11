@@ -13,6 +13,10 @@ from Utils import *
 
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
+data2split2n_class = {
+    "cifar10": {"train": 10, "val": 10, "test": 10},
+    "miniImagenet": {"train": 64, "val": 16, "test": 20} # Not sure if these numbers are correct
+}
 
 def seed_kwargs(seed=0):
     """Returns kwargs to be passed into a DataLoader to give it seed [seed]."""
