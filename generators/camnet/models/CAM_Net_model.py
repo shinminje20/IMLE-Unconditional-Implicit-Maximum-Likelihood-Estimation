@@ -162,7 +162,10 @@ class CAM_NetModel(BaseModel):
             if self.task in convert_to_rgb_tasks:
                 net_f_inp = util.lab2rgb_tensor(net_f_inp)
             gen_feat, gen_shape = self.netF(net_f_inp)
-            real_feat, real_shape = self.netF(self._get_target_at_level(level))
+
+            _target_at_level = self._get_target_at_level(level)
+
+            real_feat, real_shape = self.netF(_target_at_level)
             gen_features = []
             real_features = []
 
