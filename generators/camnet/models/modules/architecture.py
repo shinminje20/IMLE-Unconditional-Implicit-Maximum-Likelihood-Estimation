@@ -217,13 +217,21 @@ class LPNet(nn.Module):
         self.scaling_layer = B.ScalingLayer()
         self.net = vgg16(pretrained=True, requires_grad=False)
         self.L = 5
-        self.lins = nn.ModuleList([B.NetLinLayer() for _ in range(self.L)])
+
 
         model_path = os.path.abspath(os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'weights/v%s/%s.pth' % (version, pnet_type)))
         tqdm.write(f"Loading model from: {model_path}")
+
+
+
         weights = torch.load(model_path)
+        weights = [weights[f"lin{i}.model.1.weight"] for i in range(self.L)]
+        self.lins = nn.ModuleList([B.NetLinLayer(torch.sqrt(w)) for w in weights]
+
+
+
         for i in range(self.L):
             self.lins[i].weight = torch.sqrt(weights[f"lin{i}.model.1.weight"])
 
