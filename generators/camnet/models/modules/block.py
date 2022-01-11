@@ -151,11 +151,12 @@ class NetLinLayer(nn.Module):
 
     def __init__(self, weight):
         super(NetLinLayer, self).__init__()
-        self.weight = nn.Linear(1, 1, bias=False)
-        self.weight.weight = torch.nn.Parameter(weight)
+        self.model = nn.Linear(1, 1, bias=False)
+        self.w = weight
+        self.model.weight = torch.nn.Parameter(weight)
 
     def forward(self, inp):
-        print("INPUT SHAPE", input.shape, "W shape", self.weight.weight.shape)
+        print("INPUT SHAPE", input.shape, "W shape", self.w.shape)
 
         return self.weight(inp)
 
