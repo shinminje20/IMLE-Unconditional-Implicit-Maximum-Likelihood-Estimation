@@ -228,9 +228,9 @@ class LPNet(nn.Module):
 
         weights = torch.load(model_path)
         weights = [weights[f"lin{i}.model.1.weight"] for i in range(self.L)]
-        self.lins = nn.ModuleList([B.NetLinLayer(torch.sqrt(w)) for w in weights]
+        self.lins = nn.ModuleList([B.NetLinLayer(torch.sqrt(w)) for w in weights])
 
-        # 
+        #
         #
         # for i in range(self.L):
         #     self.lins[i].weight = torch.sqrt(weights[f"lin{i}.model.1.weight"])
