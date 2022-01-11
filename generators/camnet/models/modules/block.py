@@ -134,6 +134,7 @@ class ScalingLayer(nn.Module):
         self.register_buffer('scale', torch.Tensor([.458, .448, .450])[None, :, None, None])
 
     def forward(self, inp):
+        print("INP shape", inp.shape, torch.Tensor([-.030, -.088, -.188])[None, :, None, None].shape)
         result = (inp - self.shift)
         return result  / self.scale
 
