@@ -164,9 +164,6 @@ class CAM_NetModel(BaseModel):
             gen_feat, gen_shape = self.netF(net_f_inp)
 
             _target_at_level = self._get_target_at_level(level)
-
-            print("TARGET AT LEVEL SHAPE", _target_at_level.shape)
-
             real_feat, real_shape = self.netF(_target_at_level)
             gen_features = []
             real_features = []
