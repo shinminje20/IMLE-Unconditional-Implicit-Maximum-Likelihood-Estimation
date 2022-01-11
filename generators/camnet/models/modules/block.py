@@ -152,7 +152,7 @@ class NetLinLayer(nn.Module):
     def __init__(self, weight):
         super(NetLinLayer, self).__init__()
         self.weight = nn.Linear(1, 1, bias=False)
-        self.weight.weight = weight
+        self.weight.weight = torch.nn.Parameter(weight, device="cuda")
 
     def forward(self, inp):
         out = self.weight * inp
