@@ -141,7 +141,6 @@ class ScalingLayer(nn.Module):
         print("INP DIMENSION", inp.shape)
         return (inp - self.shift)  / self.scale
 
-
 class RerangeLayer(nn.Module):
     # Change the input from range [-1., 1.] to [0., 1.]
     def __init__(self):
