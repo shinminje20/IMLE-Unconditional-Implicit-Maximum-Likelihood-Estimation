@@ -137,7 +137,11 @@ class ScalingLayer(nn.Module):
         if len(inp.shape) == 3:
             inp = inp.unsqueeze(0)
 
-        return (inp - self.shift)  / self.scale
+        try:
+            return (inp - self.shift)  / self.scale
+        except:
+            print("INP SHAPE", inp.shape, "SHIFT SHAPE", torch.Tensor([-.030, -.088, -.188])[None, :, None, None].shape)
+            assert False
 
 class RerangeLayer(nn.Module):
     # Change the input from range [-1., 1.] to [0., 1.]
