@@ -45,12 +45,17 @@ def generate_code_samples(model, data, opt):
             sampled_targets.add(target_name)
             project_dim = 1000 if 'project_dims' not in options else options['project_dims'][level_num - 1]
             mini_batch_size = 20 if 'mini_batch_size' not in options else options['mini_batch_size']
+
             # # handle really large target resolution explicitly due to vRAM constraint
             if target_data.shape[-1] > 256:
                 project_dim = 700
                 mini_batch_size = 5
             model.init_projection(h=target_data.shape[-2], w=target_data.shape[-1], total_dim=project_dim)
-            dci_db = DCI(project_dim, dci_num_comp_indices, dci_num_simp_indices, block_size, thread_size)
+            dci_db = DCI(project_dim,
+                dci_num_comp_indices,
+                dci_num_simp_indices,
+                block_size,
+                thread_size)
 
             cur_sampled_code = model.gen_code(data['network_input'][0].shape[0],
                                               data['network_input'][0].shape[2],
@@ -59,9 +64,9 @@ def generate_code_samples(model, data, opt):
                                               tensor_type=torch.empty)[0]
 
             for sample_index in tqdm(range(num_instances), desc="Instances", leave=False):
-                if (sample_index + 1) % 10 == 0:
-                    print_without_newline('\rFinding level %d code: Processed %d out of %d instances' % (
-                        level_num, sample_index + 1, num_instances))
+                # if (sample_index + 1) % 10 == 0:
+                #     print_without_newline('\rFinding level %d code: Processed %d out of %d instances' % (
+                #         level_num, sample_index + 1, num_instances))
                 code_pool = model.gen_code(num_samples_per_img,
                                            data['network_input'][0].shape[2],
                                            data['network_input'][0].shape[3],

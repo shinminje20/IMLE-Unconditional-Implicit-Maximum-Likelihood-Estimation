@@ -33,7 +33,8 @@ default_opts = {
       "use_rot": True,
       "n_workers": 6,
       "batch_size_per_month": 400,
-      "batch_size_per_day": 1
+      "batch_size_per_day": 1,
+      "iters_per_example": 25
     },
     "val": {
       "name": "Validation_Super_Resolution",
@@ -143,7 +144,7 @@ if __name__ == "__main__":
     P.add_argument("--gpu_ids", nargs="+", type=int, default=[0, 1],
         help="GPU IDs")
 
-    P.add_argument("--use_dci", action="store_true", default=True,
+    P.add_argument("--use_dci", default=1, type=int,
         help="whether or not to use DCI")
 
     args = NestedNamespace(P.parse_args())
@@ -160,7 +161,7 @@ if __name__ == "__main__":
     default_opts["datasets"]["train"]["batch_size_per_month"] = args.bs
     default_opts["train"]["num_months"] = args.epochs
     default_opts["train"]["num_days"] = args.num_days
-    default_opts["train"]["use_dci"] = args.use_dci
+    default_opts["train"]["use_dci"] = bool(args.use_dci)
 
     default_opts["datasets"] = NestedNamespace.to_dict(
         NestedNamespace.leaf_union(default_opts["datasets"],
