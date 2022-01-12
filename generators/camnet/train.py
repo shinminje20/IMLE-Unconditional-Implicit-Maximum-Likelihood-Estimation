@@ -178,7 +178,7 @@ def main():
             model.clear_projection()
 
             cur_month_batch_size = min(batch_size_per_month, train_data['network_input'][0].shape[0])
-            num_days = iters_per_example * cur_month_batch_size / batch_size_per_day
+            num_days = int(iters_per_example * cur_month_batch_size / batch_size_per_day)
             for j in tqdm(range(num_days), desc="Iterating over batch", leave=False):
                 current_step += 1
 
