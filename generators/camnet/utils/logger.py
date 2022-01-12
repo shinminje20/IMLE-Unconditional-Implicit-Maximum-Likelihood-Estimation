@@ -1,7 +1,7 @@
 import os
 import sys
 from utils.util import get_timestamp
-
+from tqdm import tqdm
 
 # print to file and std_out simultaneously
 class PrintLogger(object):
@@ -59,7 +59,7 @@ class Logger(object):
                 self.tb_logger.log_value(label, value, iters)
 
         # print in console
-        print(message)
+        tqdm.write(message)
         # write in log file
         if mode == 'train':
             with open(self.loss_log_path, 'a') as log_file:

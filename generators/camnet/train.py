@@ -153,6 +153,8 @@ def main():
                                                 tensor_type=tensor_type)
             # clear projection matrix to save memory
             model.clear_projection()
+
+            num_days = num_days // batch_size_per_day
             for j in tqdm(range(num_days), desc="Iterating over batch", leave=False):
                 current_step += 1
                 cur_month_batch_size = min(batch_size_per_month, train_data['network_input'][0].shape[0])
