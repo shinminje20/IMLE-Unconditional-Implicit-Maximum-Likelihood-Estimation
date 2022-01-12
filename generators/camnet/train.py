@@ -121,8 +121,8 @@ def main():
             train_loader = create_dataloader(train_set, dataset_opt)
             batch_size_per_month = dataset_opt['batch_size_per_month']
             batch_size_per_day = int(opt['datasets']['train']['batch_size_per_day'])
-            iters_per_example = int(opt['datasets']['train']["iters_per_example"]))
-            use_dci = opt['train']['use_dci']
+            iters_per_example = int(opt['datasets']['train']["iters_per_example"])
+            use_dci = int(opt['train']['use_dci'])
             inter_supervision = opt['train']['inter_supervision']
         elif phase == 'val':
             val_set = create_dataset(dataset_opt)
@@ -178,7 +178,6 @@ def main():
             model.clear_projection()
 
             cur_month_batch_size = min(batch_size_per_month, train_data['network_input'][0].shape[0])
-
             num_days = iters_per_example * cur_month_batch_size / batch_size_per_day
             for j in tqdm(range(num_days), desc="Iterating over batch", leave=False):
                 current_step += 1
