@@ -8,7 +8,7 @@ from utils.NestedNamespace import *
 from utils.Utils import *
 
 default_opts = {
-  "name": None,
+  "name": "test",
   "use_tb_logger": True,
   "model": "CAMNet",
   "scale": 16,
