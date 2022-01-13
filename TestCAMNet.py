@@ -58,15 +58,12 @@ def get_camnet_data_names(args):
     """Returns the names of the CAMNet datasets required by [args] as a
     dictionary.
     """
-    if args.data == "camnet_three":
-        return {
-            "val": {
-                "dataroot_HR": f"{project_dir}/generators/camnet/data/camnet_three_val_256.lmdb",
-                "dataroot_LR": f"{project_dir}/generators/camnet/data/camnet_three_val_16.lmdb",
-            }
+    return {
+        "val": {
+            "dataroot_HR": f"{project_dir}/generators/camnet/data/camnet_three_val_256.lmdb",
+            "dataroot_LR": f"{project_dir}/generators/camnet/data/camnet_three_val_16.lmdb",
         }
-    else:
-        raise ValueError("Unknown dataset")
+    }
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
