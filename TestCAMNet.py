@@ -9,7 +9,7 @@ from utils.Utils import *
 
 {
   "name": None,
-  "use_tb_logger": true,
+  "use_tb_logger": True,
   "model": "CAMNet",
   "scale": 16,
   "task": None,
@@ -49,8 +49,8 @@ from utils.Utils import *
     "code_nc": 5,
     "map_nc": 128,
     "latent_nc": 512,
-    "use_noise_encoder": false,
-    "no_upsample": false
+    "use_noise_encoder": False,
+    "no_upsample": False
   }
 }
 
