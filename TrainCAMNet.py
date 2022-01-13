@@ -169,6 +169,6 @@ if __name__ == "__main__":
 
     print(default_opts)
 
-    config_save_path = f"{project_dir}/models/camnet/{camnet_folder(args)}/train_config.json"
+    config_save_path = f"{camnet_folder(args)}/train_config.json"
     dict_to_json(default_opts, config_save_path)
     tqdm.write(f"Run the following command to start CAMNet:\npython generators/camnet/train.py -opt {config_save_path}")
