@@ -75,7 +75,7 @@ if __name__ == "__main__":
     default_opts["datasets"] = NestedNamespace.to_dict(
         NestedNamespace.leaf_union(default_opts["datasets"],
                                    get_camnet_data_names(args)))
-
+    default_opts["path"]["pretrain_model_G"] = args.model
     print(default_opts)
 
     config_save_path = f"{os.path.dirname(os.path.dirname(args.model))}/test_config.json"
