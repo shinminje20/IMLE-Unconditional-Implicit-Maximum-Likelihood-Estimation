@@ -49,7 +49,7 @@ default_opts = {
     "code_nc": 5,
     "map_nc": 128,
     "latent_nc": 512,
-    "use_noise_encoder": False,
+    "use_noise_encoder": True,
     "no_upsample": False
   }
 }
