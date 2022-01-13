@@ -12,7 +12,7 @@ default_opts = {
   "use_tb_logger": True,
   "model": "CAMNet",
   "scale": 16,
-  "task": None,
+  "task": "ColorizationSuperResolution",
   "gpu_ids": [
     0
   ],
