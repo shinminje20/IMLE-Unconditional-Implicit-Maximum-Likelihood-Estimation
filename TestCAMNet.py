@@ -7,7 +7,7 @@ from tqdm import tqdm
 from utils.NestedNamespace import *
 from utils.Utils import *
 
-{
+default_opts = {
   "name": None,
   "use_tb_logger": True,
   "model": "CAMNet",
