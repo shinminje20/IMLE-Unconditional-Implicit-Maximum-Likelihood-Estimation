@@ -78,6 +78,6 @@ if __name__ == "__main__":
 
     print(default_opts)
 
-    config_save_path = os.path.dirname(os.path.dirname(args.model))
+    config_save_path = f"{os.path.dirname(os.path.dirname(args.model))}/test_config.json"
     dict_to_json(default_opts, config_save_path)
     tqdm.write(f"Run the following command to start CAMNet:\npython generators/camnet/test.py -opt {config_save_path}")
