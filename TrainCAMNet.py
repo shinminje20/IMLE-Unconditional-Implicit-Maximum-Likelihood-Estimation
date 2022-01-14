@@ -32,7 +32,7 @@ default_opts = {
       "use_flip": True,
       "use_rot": True,
       "n_workers": 6,
-      "batch_size_per_month": 400,
+      "batch_size_per_month": 300,
       "batch_size_per_day": 1,
       "iters_per_example": 25
     },
