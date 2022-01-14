@@ -70,7 +70,7 @@ def camnet_folder(args):
     folder = f"{args.task}/{args.data}{opts_str(args)}{suffix_str(args)}"
     actual_folder = f"{project_dir}/models/camnet/{folder}"
     if not os.path.exists(actual_folder): os.makedirs(actual_folder)
-    return folder
+    return actual_folder
 
 def load_simclr(file):
     """Returns a (model, optimizer, last_epoch, args, tensorboard results) tuple

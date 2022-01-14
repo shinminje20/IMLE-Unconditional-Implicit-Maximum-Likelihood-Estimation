@@ -154,7 +154,7 @@ if __name__ == "__main__":
     tqdm.write(f"Begin CAMNet training with configuration:\n{str(args)}")
 
     default_opts["task"] = args.task
-    default_opts["name"] = camnet_folder(args)
+    default_opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
     default_opts["gpu_ids"] = args.gpu_ids
     default_opts["path"]["root"] = f"{project_dir}/models/camnet"
     default_opts["datasets"]["train"]["batch_size_per_day"] = args.bs_day
