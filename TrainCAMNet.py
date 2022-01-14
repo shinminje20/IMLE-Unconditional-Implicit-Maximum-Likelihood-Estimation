@@ -152,7 +152,7 @@ if __name__ == "__main__":
         f"bs{args.bs}",
         f"bs_day{args.bs_day}",
         f"epochs{args.epochs}",
-        f"gpus_{'_'.join(args.gpu_ids)}",
+        f"gpus_{'_'.join([str(x) for x in args.gpu_ids])}",
     ])
     tqdm.write(f"Begin CAMNet training with configuration:\n{str(args)}")
 
