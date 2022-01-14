@@ -194,7 +194,7 @@ def main():
                 try:
                     cur_day_train_data = {key: val[cur_day_batch_idx] for key, val in train_data.items()}
                 except:
-                    print("    ", cur_day_batch_idx, type(cur_day_batch_idx))
+                    print("    ", cur_day_batch_idx, type(cur_day_batch_idx), len(val), type(val))
                     assert False
                 code = [gen_code[cur_day_batch_idx] for gen_code in cur_month_code]
 
