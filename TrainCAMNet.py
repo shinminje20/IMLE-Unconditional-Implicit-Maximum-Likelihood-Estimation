@@ -156,22 +156,22 @@ if __name__ == "__main__":
     ])
     tqdm.write(f"Begin CAMNet training with configuration:\n{str(args)}")
 
+    opts = default_opts
     default_opts["task"] = args.task
-    default_opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
-    default_opts["gpu_ids"] = args.gpu_ids
-    default_opts["path"]["root"] = f"{project_dir}/models/camnet"
-    default_opts["datasets"]["train"]["batch_size_per_day"] = args.bs_day
-    default_opts["datasets"]["train"]["batch_size_per_month"] = args.bs
-    default_opts["train"]["num_months"] = args.epochs
-    default_opts["train"]["num_days"] = args.num_days
-    default_opts["train"]["use_dci"] = bool(args.use_dci)
+    opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
+    opts["gpu_ids"] = args.gpu_ids
+    opts["path"]["root"] = f"{project_dir}/models/camnet"
+    opts["datasets"]["train"]["batch_size_per_day"] = args.bs_day
+    opts["datasets"]["train"]["batch_size_per_month"] = args.bs
+    opts["train"]["num_months"] = args.epochs
+    opts["train"]["num_days"] = args.num_days
+    opts["train"]["use_dci"] = bool(args.use_dci)
 
-    default_opts["datasets"] = NestedNamespace.to_dict(
-        NestedNamespace.leaf_union(default_opts["datasets"],
+    opts["datasets"] = NestedNamespace.to_dict(
+        NestedNamespace.leaf_union(opts["datasets"],
                                    get_camnet_data_names(args)))
 
-    print(default_opts)
 
     config_save_path = f"{camnet_folder(args)}/train_config.json"
-    dict_to_json(default_opts, config_save_path)
+    dict_to_json(opts, config_save_path)
     tqdm.write(f"Run the following command to start CAMNet:\npython generators/camnet/train.py -opt {config_save_path}")
