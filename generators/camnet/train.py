@@ -191,7 +191,11 @@ def main():
                 else:
                     cur_day_batch_idx = slice(cur_day_batch_start_idx, cur_day_batch_end_idx)
 
-                cur_day_train_data = {key: val[cur_day_batch_idx] for key, val in train_data.items()}
+                try:
+                    cur_day_train_data = {key: val[cur_day_batch_idx] for key, val in train_data.items()}
+                except:
+                    print("    ", cur_day_batch_idx, type(cur_dat_batch_idx))
+                    assert False
                 code = [gen_code[cur_day_batch_idx] for gen_code in cur_month_code]
 
                 cur_day_train_data['network_input'] = []
