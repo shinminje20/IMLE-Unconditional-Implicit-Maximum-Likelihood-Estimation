@@ -149,7 +149,10 @@ if __name__ == "__main__":
 
     args = NestedNamespace(P.parse_args())
     args.options = sorted([
+        f"bs{args.bs}",
+        f"bs_day"{args.bs_day}",
         f"epochs{args.epochs}",
+        f"gpus_{'_'.join(args.gpus_ids)}",
     ])
     tqdm.write(f"Begin CAMNet training with configuration:\n{str(args)}")
 
