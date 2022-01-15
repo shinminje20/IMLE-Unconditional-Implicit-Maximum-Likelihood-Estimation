@@ -78,7 +78,7 @@ def parse(opt, is_train=True):
         if path and key in opt['path']:
             opt['path'][key] = os.path.expanduser(path)
     if is_train:
-        experiments_root = os.path.join(opt['path']['root'], "models", opt['name'])
+        experiments_root = os.path.join(opt['path']['root'])
         opt['path']['experiments_root'] = experiments_root
         opt['path']['models'] = os.path.join(experiments_root, 'models')
         opt['path']['log'] = experiments_root
@@ -91,7 +91,7 @@ def parse(opt, is_train=True):
             opt['logger']['save_checkpoint_freq'] = 8
             opt['train']['lr_decay_iter'] = 10
     else:  # test
-        results_root = os.path.join(opt['path']['root'], 'results', opt['name'])
+        results_root = os.path.join(opt['path']['root'], "results")
         opt['path']['results_root'] = results_root
         opt['path']['log'] = results_root
 

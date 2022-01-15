@@ -161,7 +161,7 @@ if __name__ == "__main__":
     default_opts["task"] = args.task
     opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
     opts["gpu_ids"] = args.gpu_ids
-    opts["path"]["root"] = f"{project_dir}/models/camnet"
+    opts["path"]["root"] = camnet_folder(args)
     opts["datasets"]["train"]["batch_size_per_day"] = args.bs_day
     opts["datasets"]["train"]["batch_size_per_month"] = args.bs
     opts["train"]["num_months"] = args.epochs
