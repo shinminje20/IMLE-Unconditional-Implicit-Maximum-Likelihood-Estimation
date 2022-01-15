@@ -87,7 +87,8 @@ def main():
     parser.add_argument('-opt', type=str, required=True, help='Path to option JSON file.')
     opt = option.parse(parser.parse_args().opt, is_train=True)
 
-    util.mkdir_and_rename(opt['path']['experiments_root'])  # rename old experiments if exists
+    # Overwriting is better!
+    # util.mkdir_and_rename(opt['path']['experiments_root'])  # rename old experiments if exists
     util.mkdirs((path for key, path in opt['path'].items() if not key == 'experiments_root' and
                  not key == 'pretrain_model_G'))
     option.save(opt)
