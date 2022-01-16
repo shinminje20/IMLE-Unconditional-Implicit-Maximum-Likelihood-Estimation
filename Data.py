@@ -9,7 +9,8 @@ from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset, random_
 from torchvision.datasets import CIFAR10, ImageFolder
 from torchvision import transforms
 
-from Utils import *
+from Corruptions import *
+from utils.Utils import *
 
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
@@ -63,7 +64,7 @@ def get_data_splits_ssl(data_str, eval_str):
 
     return data_tr, eval_data
 
-def get_ssl_augs(data_str, color_s=.5, strong=True):
+def get_contrastive_augs(data_str, color_s=.5, strong=True):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
 
@@ -170,10 +171,6 @@ class RandomHorizontalFlips(nn.Module):
 
     def __repr__(self):
         return self.__class__.__name__ + '(p={})'.format(self.p)
-
-class RandomResizedCrops(nn.Module):
-    """This might become important later..."""
-    pass
 
 def get_base_augs(data_str):
     """Returns a list of base transforms for image generation. Each should be

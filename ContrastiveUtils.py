@@ -1,5 +1,3 @@
-"""Utilities deriving from SimCLR."""
-
 from collections import OrderedDict
 
 import torch
@@ -9,14 +7,10 @@ import torch.nn.functional as F
 
 from torchvision import models
 
-from Utils import *
+from utils.Utils import *
 
-################################################################################
-# Model utilties
-################################################################################
-def get_resnet_with_head(backbone, head_dim, small_image=False,
-    head_type="none"):
-    """Returns a resnet of [backbone] with a head of [head_type] attached.
+class HeadedResNet(nn.Module):
+    """A resnet of [backbone] with a head of [head_type] attached.
 
     Args:
     backone     -- backbone to use
@@ -24,18 +18,23 @@ def get_resnet_with_head(backbone, head_dim, small_image=False,
     small_image -- whether to modify the backbone to better work on small images
     head_type   -- the type of head to put on the ResNet
     """
-    R = HeadlessResNet(backbone=backbone, small_image=small_image)
+    def __init__(self, backbone, head_dim, small_image, head_type="none"):
+        super(HeadedResNet, self).__init__()
+        R = HeadlessResNet(backbone=backbone, small_image=small_image)
+        if head_type == "none":
+            self.model = nn.Sequential(OrderedDict([("backbone", R)]))
+        elif head_type == "projection":
+            self.model = nn.Sequential(OrderedDict([
+                ("backbone", R),
+                ("projection", ProjectionHead(R.out_dim, head_dim))]))
+        elif head_type == "linear":
+            self.model = nn.Sequential(OrderedDict([
+                ("backbone", R),
+                ("linear", nn.Linear(R.out_dim, head_dim))]))
+        else:
+            raise ValueError(f"Unknown head type '{head_type}'")
 
-    if head_type == "none":
-        return nn.Sequential(OrderedDict([("backbone", R)]))
-    elif head_type == "projection":
-        H = ProjectionHead(R.out_dim, head_dim)
-    elif head_type == "linear":
-        H = nn.Linear(R.out_dim, head_dim)
-    else:
-        raise ValueError(f"Unknown head type '{head_type}'")
-
-    return nn.Sequential(OrderedDict([("backbone", R), ("head", H)]))
+    def forward(self x): return self.model(x)
 
 class HeadlessResNet(nn.Module):
     """A class representing a ResNet with its head cut off."""

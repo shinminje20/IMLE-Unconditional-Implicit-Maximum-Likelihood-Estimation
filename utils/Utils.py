@@ -6,6 +6,7 @@ import random
 from tqdm import tqdm
 
 import torch
+import torch.nn as nn
 from torch.optim import Optimizer
 from torch.optim.lr_scheduler import _LRScheduler
 
@@ -103,6 +104,17 @@ def simclr_folder(args):
 # Miscellaneous
 ################################################################################
 
+class ReshapeNN(nn.Module):
+
+    def __init__(self, *dims):
+        super(ReshapeNN, self).__init__()
+        self.dims = dims
+
+    def forward(self, x): return x.view(self.dims)
+
+
+def view_tensor(x):
+    """Shows tensor [x]."""
 
 def flatten(xs):
     """Returns collection [xs] after recursively flattening into a list."""

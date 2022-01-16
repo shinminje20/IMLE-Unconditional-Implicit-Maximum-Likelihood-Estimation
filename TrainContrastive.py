@@ -132,7 +132,7 @@ if __name__ == "__main__":
         model = model.to(device)
         last_epoch -= 1
     else:
-        model = get_resnet_with_head(args.backbone, args.proj_dim,
+        model = HeadedResNet(args.backbone, args.proj_dim,
             head_type="projection",
             small_image=(args.data in small_image_datasets)).to(device)
         if args.opt == "adam":
@@ -173,8 +173,11 @@ if __name__ == "__main__":
         # Perform a classification cross validation if desired, and otherwise
         # print/log results or merely that the epoch happened.
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
-            val_acc_avg, val_acc_std = classification_eval(model.backbone,
-                data_tr, data_eval, augs_fn, augs_te, data_name=args.data,
+            val_acc_avg, val_acc_std = classification_eval(
+                model.backbone,
+                data_tr, data_eval,
+                augs_fn, augs_te,
+                data_name=args.data,
                 data_split=args.eval)
             tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
             tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
