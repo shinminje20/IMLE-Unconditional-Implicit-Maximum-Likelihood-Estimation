@@ -231,7 +231,7 @@ if __name__ == "__main__":
     test_opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
     test_opts["gpu_ids"] = args.gpu_ids
     test_opts["path"]["root"] = camnet_folder(args)
-    test_opts["path"]["model"] = f"{camnet_folder(args)}/models/{latest.pth}"
+    test_opts["path"]["model"] = f"{camnet_folder(args)}/models/latest.pth"
 
 
 
