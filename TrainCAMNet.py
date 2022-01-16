@@ -110,7 +110,7 @@ test_config = {
   "gpu_ids": [
     0
   ],
-  "": 10,
+  "multiple": 10,
   "datasets": {
     "val": {
       "name": "Test",
