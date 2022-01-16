@@ -221,7 +221,7 @@ if __name__ == "__main__":
     train_opts["train"]["use_dci"] = bool(args.use_dci)
     train_opts["datasets"] = NestedNamespace.to_dict(
         NestedNamespace.leaf_union(train_opts["datasets"],
-                                   get_camnet_data_names(args)))
+                                   get_camnet_data_names_tr(args)))
 
     ############################################################################
     # Create the test config
