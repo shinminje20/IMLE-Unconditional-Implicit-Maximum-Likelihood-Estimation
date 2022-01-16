@@ -7,7 +7,7 @@ from tqdm import tqdm
 from utils.NestedNamespace import *
 from utils.Utils import *
 
-default_opts = {
+train_config = {
   "name": None, # Set by this program
   "use_tb_logger": True,
   "model": "CAMNet",
@@ -99,7 +99,56 @@ default_opts = {
   }
 }
 
-def get_camnet_data_names(args):
+test_config = {
+  "name": "test",
+  "use_tb_logger": True,
+  "model": "CAMNet",
+  "scale": 16,
+  "HR_W": 256,
+  "HR_H": 256,
+  "task": "ColorizationSuperResolution",
+  "gpu_ids": [
+    0
+  ],
+  "": 10,
+  "datasets": {
+    "val": {
+      "name": "Test",
+      "mode": "LRHR",
+      "dataroot_HR": f"{project_dir}/generators/camnet/data/camnet_three_val_256.lmdb",
+      "dataroot_LR": f"{project_dir}/generators/camnet/data/camnet_three_val_16.lmdb",
+    }
+  },
+  "path": {
+    "root": ".",
+    "pretrain_model_G": None
+  },
+  "network_G": {
+    "which_model_G": "CAMNet",
+    "num_dense_channels": [
+      256,
+      192,
+      128,
+      64
+    ],
+    "num_residual_channels": [
+      128,
+      64,
+      64,
+      64
+    ],
+    "num_blocks": 6,
+    "in_nc": 1,
+    "out_nc": 2,
+    "code_nc": 5,
+    "map_nc": 128,
+    "latent_nc": 512,
+    "use_noise_encoder": True,
+    "no_upsample": False
+  }
+}
+
+def get_camnet_data_names_tr(args):
     """Returns the names of the CAMNet datasets required by [args] as a
     dictionary.
     """
@@ -157,22 +206,38 @@ if __name__ == "__main__":
     ])
     tqdm.write(f"Begin CAMNet training with configuration:\n{str(args)}")
 
-    opts = default_opts
-    default_opts["task"] = args.task
-    opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
-    opts["gpu_ids"] = args.gpu_ids
-    opts["path"]["root"] = camnet_folder(args)
-    opts["datasets"]["train"]["batch_size_per_day"] = args.bs_day
-    opts["datasets"]["train"]["batch_size_per_month"] = args.bs
-    opts["train"]["num_months"] = args.epochs
-    opts["train"]["num_days"] = args.num_days
-    opts["train"]["use_dci"] = bool(args.use_dci)
-
-    opts["datasets"] = NestedNamespace.to_dict(
-        NestedNamespace.leaf_union(opts["datasets"],
+    ############################################################################
+    # Create the training config
+    ############################################################################
+    train_opts = train_config
+    train_opts["task"] = args.task
+    train_opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
+    train_opts["gpu_ids"] = args.gpu_ids
+    train_opts["path"]["root"] = camnet_folder(args)
+    train_opts["datasets"]["train"]["batch_size_per_day"] = args.bs_day
+    train_opts["datasets"]["train"]["batch_size_per_month"] = args.bs
+    train_opts["train"]["num_months"] = args.epochs
+    train_opts["train"]["num_days"] = args.num_days
+    train_opts["train"]["use_dci"] = bool(args.use_dci)
+    train_opts["datasets"] = NestedNamespace.to_dict(
+        NestedNamespace.leaf_union(train_opts["datasets"],
                                    get_camnet_data_names(args)))
+
+    ############################################################################
+    # Create the test config
+    ############################################################################
+    test_opts = train_config
+    test_opts["task"] = args.task
+    test_opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
+    test_opts["gpu_ids"] = args.gpu_ids
+    test_opts["path"]["root"] = camnet_folder(args)
+    test_opts["path"]["model"] = f"{camnet_folder(args)}/models/{latest.pth}"
+
 
 
     config_save_path = f"{camnet_folder(args)}/train_config.json"
-    dict_to_json(opts, config_save_path)
+    dict_to_json(train_opts, config_save_path)
     tqdm.write(f"Run the following command to start CAMNet:\npython generators/camnet/train.py -opt {config_save_path}")
+
+    config_save_path = f"{camnet_folder(args)}/test_config.json"
+    dict_to_json(test_opts, config_save_path)
