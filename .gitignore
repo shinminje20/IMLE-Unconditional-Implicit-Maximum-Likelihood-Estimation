@@ -23,7 +23,9 @@ __MACOSX
 
 data/cls_first
 *data/camnet_three*
+data/cifar10*
 data/cifar-10*
+data/camnet3*
 data/tinyImagenet
 data/miniImagenet
 

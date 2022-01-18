@@ -35,14 +35,14 @@ def seed_kwargs(seed=0):
 # augmentations are basic/naive/not-necessarily-on-manifold.
 ################################################################################
 
-def get_data_splits_ssl(data_str, eval_str):
+def get_data_splits(data_str, eval_str):
     """Returns training and evaluation Datasets given [data_str] and [eval_str].
 
     Args:
     data_str    -- a string specifying the dataset to return
     eval_str    -- the kind of validation to do. 'cv' for cross validation,
                     'val' for using a validation split (only if it exists), and
-                    'test' for using the test split
+                    'test' for using the test split (if it exists)
     """
     if data_str == "cifar10":
         data_tr = CIFAR10(root=f"{project_dir}/data", train=True, download=True)
@@ -52,6 +52,10 @@ def get_data_splits_ssl(data_str, eval_str):
         data_tr = ImageFolder(root=f"{project_dir}/data/miniImagenet/train")
         data_val = ImageFolder(root=f"{project_dir}/data/miniImagenet/val")
         data_te = ImageFolder(root=f"{project_dir}/data/miniImagenet/default_test")
+    elif data_str == "camnet3":
+        data_tr = ImageFolder(root=f"{project_dir}/data/camnet3/train")
+        data_val = ImageFolder(root=f"{project_dir}/data/camnet3/val")
+        data_te = None
     else:
         raise ValueError(f"Unknown dataset {data_str}")
 
@@ -62,6 +66,8 @@ def get_data_splits_ssl(data_str, eval_str):
     elif eval_str == "test":
         eval_data = data_te
 
+    if eval_data is None:
+        tqdm.write("Evaluation data is None. Please use a different --data and --eval combination")
     return data_tr, eval_data
 
 def get_contrastive_augs(data_str, color_s=.5, strong=True):
@@ -250,54 +256,54 @@ class FeatureDataset(Dataset):
 
     def __getitem__(self, idx): return self.data[idx]
 
-
-class MultiTaskDataset(Dataset):
-    """A dataset for forcing a model a generative model to perform multiple
-    tasks. Returned images are as follows. Suppose x_1, x_2, ... x_N are
-    versions of an image x at different (typically increasing) resolutions. Then
-    this dataset can return
-
-        [corruption(transform(x_2)),
-         transform(x_1),
-         ...
-         transform(x_N)
-        ]
-
-    Args:
-    data                        -- list of input datasets. The first item in
-                                    the list is a dataset giving that will be
-                                    corrupted; the rest should be sequentially
-                                    higher resolutions of the original
-                                    (uncorrupted) image
-    corruption                  -- transform giving the (x, (y1 ... yn))
-                                    images—the model must decorrupt [x] to
-                                    the sequence of ys
-    transform                   -- transform applied to all images in the
-                                    (x, (y1 ... yn)) sequence returned from
-                                    __getitem__(). This transform must be
-                                    able to apply to a list of images, and
-                                    be deterministic across this list.
-    intermediate_supervision    -- whether to return targets for supervising
-                                    the model at different resolutions
-    """
-    def __init__(self, res2data, b
-        intermediate_supervision=True):
-        assert all([len(d) == len(data[0]) for d in data]), f"All input datasets must have equal length, but lengths were {[len(d) for d in data]}"
-        self.data = data
-        self.corruption = corruption
-        self.transform = transform
-        self.intermediate_supervision = intermediate_supervision
-
-    def __len__(self): return len(self.data[0])
-
-    def __getitem(self, idx):
-        if self.intermediate_supervision:
-            images = [d[idx][0] for d in self.data]
-        else:
-            images = [self.data[0][idx][0], self.data[-1][idx][0]]
-
-        images = [self.transform(image) for image in images]
-        return self.corruption(images[0]), images[1:]
+# 
+# class MultiTaskDataset(Dataset):
+#     """A dataset for forcing a model a generative model to perform multiple
+#     tasks. Returned images are as follows. Suppose x_1, x_2, ... x_N are
+#     versions of an image x at different (typically increasing) resolutions. Then
+#     this dataset can return
+#
+#         [corruption(transform(x_2)),
+#          transform(x_1),
+#          ...
+#          transform(x_N)
+#         ]
+#
+#     Args:
+#     data                        -- list of input datasets. The first item in
+#                                     the list is a dataset giving that will be
+#                                     corrupted; the rest should be sequentially
+#                                     higher resolutions of the original
+#                                     (uncorrupted) image
+#     corruption                  -- transform giving the (x, (y1 ... yn))
+#                                     images—the model must decorrupt [x] to
+#                                     the sequence of ys
+#     transform                   -- transform applied to all images in the
+#                                     (x, (y1 ... yn)) sequence returned from
+#                                     __getitem__(). This transform must be
+#                                     able to apply to a list of images, and
+#                                     be deterministic across this list.
+#     intermediate_supervision    -- whether to return targets for supervising
+#                                     the model at different resolutions
+#     """
+#     def __init__(self, res2data, b
+#         intermediate_supervision=True):
+#         assert all([len(d) == len(data[0]) for d in data]), f"All input datasets must have equal length, but lengths were {[len(d) for d in data]}"
+#         self.data = data
+#         self.corruption = corruption
+#         self.transform = transform
+#         self.intermediate_supervision = intermediate_supervision
+#
+#     def __len__(self): return len(self.data[0])
+#
+#     def __getitem(self, idx):
+#         if self.intermediate_supervision:
+#             images = [d[idx][0] for d in self.data]
+#         else:
+#             images = [self.data[0][idx][0], self.data[-1][idx][0]]
+#
+#         images = [self.transform(image) for image in images]
+#         return self.corruption(images[0]), images[1:]
 
 class ImagesFromTransformsDataset(Dataset):
     """Wraps an internal dataset for which queries produce a tuple in which an

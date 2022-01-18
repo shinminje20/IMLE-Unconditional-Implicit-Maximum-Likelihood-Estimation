@@ -27,7 +27,7 @@ def gdown_unzip(url, result):
 
 data2url = {
     # Data from the Cedar cluster
-    "camnet_three": "https://drive.google.com/u/1/uc?id=1pnA9Mhvo4pcvyBBvqB5piH3elmkwB5cA&export=download",
+    "camnet3": "https://drive.google.com/u/1/uc?id=1pnA9Mhvo4pcvyBBvqB5piH3elmkwB5cA&export=download",
     # Data from https://mtl.yyliu.net/download/Lmzjm9tX.html
     "miniImagenet": "https://drive.google.com/u/1/uc?id=15iRcb_h5od0GsTkBGRmVTR8LyfJGuJ2k&export=download",
     # Data prepared via https://gist.github.com/moskomule/2e6a9a463f50447beca4e64ab4699ac4
@@ -37,7 +37,7 @@ data2url = {
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="Dataset downloading and creation")
     P.add_argument("--data",
-        choices=["tinyImagenet", "miniImagenet", "camnet_three"],
+        choices=["tinyImagenet", "miniImagenet", "camnet3"],
         help="also make a class-first dataset split")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
