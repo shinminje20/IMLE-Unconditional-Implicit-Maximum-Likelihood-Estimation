@@ -110,7 +110,7 @@ test_config = {
   "gpu_ids": [
     0
   ],
-  "multiple": 10,
+  "multiple": 1,
   "datasets": {
     "val": {
       "name": "Test",
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     ############################################################################
     # Create the test config
     ############################################################################
-    test_opts = train_config
+    test_opts = test_config
     test_opts["task"] = args.task
     test_opts["name"] = camnet_folder(args).replace(f"{project_dir}/models/camnet/", "")
     test_opts["gpu_ids"] = args.gpu_ids

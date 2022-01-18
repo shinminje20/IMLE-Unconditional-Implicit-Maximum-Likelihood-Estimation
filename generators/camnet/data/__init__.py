@@ -11,8 +11,14 @@ def create_dataloader(dataset, dataset_opt, use_pin=True):
         batch_size = 1
         shuffle = False
         num_workers = 1
-    return torch.utils.data.DataLoader(
-        dataset, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, pin_memory=use_pin)
+
+
+    print("BATCH SIZE", batch_size)
+    return torch.utils.data.DataLoader(dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        pin_memory=use_pin)
 
 
 def create_dataset(dataset_opt):

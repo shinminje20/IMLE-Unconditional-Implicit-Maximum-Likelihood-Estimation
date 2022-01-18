@@ -22,6 +22,7 @@ __pycache__
 __MACOSX
 
 data/cls_first
+*data/camnet_three*
 data/cifar-10*
 data/tinyImagenet
 data/miniImagenet
