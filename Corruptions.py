@@ -40,9 +40,9 @@ class RandomMask(nn.Module):
         self.size = size
 
     def forward(self, x):
-        mask = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size)) * 100
+        mask = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size))
         mask = F.interpolate(mask, scale_factor=(16, 16), mode="nearest")
-        x[mask < self.mask_frac * 100] = 0
+        x[mask < self.mask_frac] = 0
         return x
 
 # class LearnablePerPixelMaskCorruption(nn.Module):
@@ -91,10 +91,7 @@ if __name__ == "__main__":
         help="whether or not to grayscale images")
     P.add_argument("--idxs", type=int, default=[-10], nargs="+",
         help="indices of images to corrupt, or negative number to sample that many randomly")
-    P.add_argument("--seed", type=int, default=None,
-        help="random seed")
     args = NestedNamespace(P.parse_args())
-
 
     data, _ = get_data_splits(args.data, "cv")
 
@@ -102,7 +99,6 @@ if __name__ == "__main__":
         idxs = random.sample(range(len(data)), abs(args.idxs[0]))
     else:
         idxs = args.idxs
-
 
     transform = transforms.Compose([
         transforms.RandomResizedCrop(256),
@@ -112,8 +108,5 @@ if __name__ == "__main__":
                                               mask_frac=args.mask_frac)
 
     images = [transform(data[idx][0]) for idx in idxs]
-    images = torch.stack(images)
-    corrupted_images = corruption(images)
-    corrupted_images = [c for c in corrupted_images]
-    print(corrupted_images[0])
-    show_images_grid(corrupted_images)
+    corrupted_images = corruption(torch.stack(images))
+    show_images_grid([c for c in corrupted_images])
