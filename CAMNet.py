@@ -166,8 +166,13 @@ class CAMNetModule(nn.Module):
         super(CAMNetModule, self).__init__()
         self.upsample_output = upsample_output
         self.map_nc = map_nc
+        self.code_nc = code_nc
         self.feat_scale = feat_scale
         self.mapping_net = MappingNet(map_nc, latent_nc, act_type)
+
+
+        print("AAAAA", in_nc + code_nc + prev_resid_nc)
+
         self.feat_net = B.conv_block(in_nc + code_nc + prev_resid_nc,
             resid_nc,
             kernel_size=3, act_type=None)
@@ -193,13 +198,15 @@ class CAMNetModule(nn.Module):
         """
         bs, _, w, h = level_input.shape
 
-        print("CODE SHAPE", code.shape, self.map_nc, code[:, self.map_nc:].shape)
+        print("BBBBB", level_input.shape)
 
 
         level_input = torch.cat([
             level_input,
-            code[:, self.map_nc:].reshape(bs, self.map_nc, w, h),
+            code[:, self.map_nc:].reshape(bs, self.code_nc, w, h),
             feature * self.feat_scale], dim=1)
+
+        print("CCCCC", level_input.shape)
 
         mapped_code = self.mapping_net(code[:, :self.map_nc])
         feature = self.feat_net(level_input)
@@ -262,7 +269,7 @@ if __name__ == "__main__":
     corruption = get_non_learnable_batch_corruption(grayscale=True)
     transform = get_gen_augs()
     data_tr = GeneratorDataset(data_tr, transform)
-    G = CAMNet()
+    G = CAMNet(n_levels=1)
 
     loader = DataLoader(data_tr, batch_size=4)
     for x,ys in loader:

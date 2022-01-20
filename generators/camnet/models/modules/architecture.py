@@ -98,6 +98,7 @@ class CAMNet(nn.Module):
                 bs, _, w, h = net_input[0].shape
                 print("CODE SHAPE", code.shape, self.map_nc, code[:, self.map_nc:].shape, bs, self.code_nc, w, h)
                 x = torch.cat((net_input[0], code[:, self.map_nc:].reshape(bs, self.code_nc, w, h)), dim=1)
+                print("SHAPE", x.shape)
             else:
                 bs, _, w, h = out.shape
                 # concat with the previous level output and feature
@@ -109,6 +110,8 @@ class CAMNet(nn.Module):
             feature = getattr(self, "level_%d_up" % (i + 1))(feature)
             out = getattr(self, "level_%d_out" % (i + 1))(feature)
             outputs.append(self.out_layer(out))
+
+        assert False
         return outputs
 
     def forward_colorization(self, net_input, codes):
