@@ -1,7 +1,8 @@
 import torch.nn as nn
 from GeneratorArchitectures import *
 
-def show_results(generator, images): pass
+def show_results(generator, images):
+    
 
 class CodeGetter:
     """Class for maintaining the state of the latent codes used in IMLE. This

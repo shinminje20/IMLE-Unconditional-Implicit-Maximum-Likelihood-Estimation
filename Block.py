@@ -7,7 +7,6 @@ from torch.nn.utils import weight_norm
 # Basic blocks
 ####################
 
-
 def act(act_type, inplace=True, neg_slope=0.2):
     act_type = act_type.lower()
     if act_type == 'leakyrelu':

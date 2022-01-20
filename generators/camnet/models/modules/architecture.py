@@ -89,7 +89,7 @@ class CAMNet(nn.Module):
         assert len(codes) <= self.num_levels, "Number of codes should be no more than number of level of the network"
 
         net_input[0] = torch.unsqueeze(torch.mean(net_input[0], axis=1), dim=1).expand(net_input[0].shape)
-
+        tqdm.write(str([c.shape for c in codes]))
         outputs = []
         feature = None
         out = None

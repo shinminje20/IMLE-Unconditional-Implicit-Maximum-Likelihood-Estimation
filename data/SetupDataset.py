@@ -7,9 +7,6 @@ import zipfile
 
 from DataUtils import *
 
-def download_camnet_splits_lmdb():
-    gdown_unzip("https://drive.google.com/u/1/uc?id=1gDKq13R6JHrndi9vy16lokQlmL7orbbF&export=download", "camnet-data-splits-lmdb")
-
 def gdown_unzip(url, result):
     """Downloads the file at Google drive URL [url], unzips it, and removes any
     hidden files that are not `.` and `..`.
@@ -27,7 +24,9 @@ def gdown_unzip(url, result):
 
 data2url = {
     # Data from the Cedar cluster
-    "camnet3": "https://drive.google.com/u/1/uc?id=1pnA9Mhvo4pcvyBBvqB5piH3elmkwB5cA&export=download",
+    "camnet3": "https://drive.google.com/u/1/uc?id=1Yly8SJitGnA25opej57TRLlSyoGmqeIN&export=download",
+    # Data from https://www.kaggle.com/swaroopkml/cifar10-pngs-in-folders
+    "cifar10": "https://drive.google.com/u/1/uc?id=1_CILJzGysgPLflV2HxXSNMjVzlJat6hs&export=download",
     # Data from https://mtl.yyliu.net/download/Lmzjm9tX.html
     "miniImagenet": "https://drive.google.com/u/1/uc?id=15iRcb_h5od0GsTkBGRmVTR8LyfJGuJ2k&export=download",
     # Data prepared via https://gist.github.com/moskomule/2e6a9a463f50447beca4e64ab4699ac4
@@ -37,7 +36,7 @@ data2url = {
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="Dataset downloading and creation")
     P.add_argument("--data",
-        choices=["tinyImagenet", "miniImagenet", "camnet3"],
+        choices=["tinyImagenet", "miniImagenet", "camnet3", "cifar10"],
         help="also make a class-first dataset split")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")

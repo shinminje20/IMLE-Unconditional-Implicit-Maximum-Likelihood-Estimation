@@ -29,6 +29,15 @@ def set_seed(seed):
 ################################################################################
 # File I/O Utils
 ################################################################################
+def check_paths_exist(paths):
+    """Raises a ValueError if every path in [paths] exists, otherwise does
+    nothing.
+    """
+    for path in flatten(paths):
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"{path}' but this path couldn't be found")
+
+
 state_sep_str = "=" * 40
 
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -211,7 +220,7 @@ class NestedNamespace():
 ################################################################################
 plt.rcParams["savefig.bbox"] = "tight"
 
-def show_images_grid(images):
+def show_image_grid(images):
     """Shows list of images [images], either a Tensor giving one image, a List
     where each element is a Tensors giving one images, or a 2D List where each
     element is a Tensor giving an image.
@@ -243,11 +252,10 @@ def show_images_grid(images):
 
 def flatten(xs):
     """Returns collection [xs] after recursively flattening into a list."""
-    result = []
-    for x in xs:
-        if isinstance(x, list) or isinstance(x, set) or isinstance(x, tuple):
+    if isinstance(xs, list) or isinstance(xs, set) or isinstance(xs, tuple):
+        result = []
+        for x in xs:
             result += flatten(x)
-        else:
-            result.append(x)
-
-    return result
+        return result
+    else:
+        return [xs]

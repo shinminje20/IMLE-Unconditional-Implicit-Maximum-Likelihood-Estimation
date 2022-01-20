@@ -1,3 +1,12 @@
+"""Code for building datasets.
+
+See data/SetupDataset.py for downloading their underlying data.
+
+The important portions of this file are get_data_splits(), which returns
+training and evaluation ImageFolders, and the various Dataset subclasses that
+can be used to construct various useful datasets.
+"""
+from collections import OrderedDict
 import PIL
 import random
 import sys
@@ -6,8 +15,9 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset, random_split
 
-from torchvision.datasets import CIFAR10, ImageFolder
+from torchvision.datasets import ImageFolder
 from torchvision import transforms
+from torchvision.transforms.functional import hflip
 
 from Corruptions import *
 from utils.Utils import *
@@ -15,6 +25,7 @@ from utils.Utils import *
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
 data2split2n_class = {
+    "camnet3": {"train": 3, "val": 3},
     "cifar10": {"train": 10, "val": 10, "test": 10},
     "miniImagenet": {"train": 64, "val": 16, "test": 20} # Not sure if these numbers are correct
 }
@@ -30,47 +41,61 @@ def seed_kwargs(seed=0):
     g.manual_seed(0)
     return {"generator": g, "worker_init_fn": seed_worker}
 
+
 ################################################################################
-# Baseline contrastive learning functions. Data is loaded directly, and image
-# augmentations are basic/naive/not-necessarily-on-manifold.
+# Functionality for loading datasets
 ################################################################################
 
-def get_data_splits(data_str, eval_str):
-    """Returns training and evaluation Datasets given [data_str] and [eval_str].
+def get_data_splits(data_str, eval_str, res=None):
+    """Returns data for training and evaluation. All Datasets returned are
+    ImageFolders, meaning that another kind of dataset likely needs to be built
+    on top of them.
 
     Args:
-    data_str    -- a string specifying the dataset to return
-    eval_str    -- the kind of validation to do. 'cv' for cross validation,
-                    'val' for using a validation split (only if it exists), and
-                    'test' for using the test split (if it exists)
+    data_str    -- string specifying the dataset to load. It must exactly exist
+                    in the data directory, ie. data/data_str exists.
+    eval_str    -- how to get validation/testing data
+    resolutions -- resolutions in which to return data
+                    - leave empty (no arguments) to get data for plain
+                        contrastive learning
+                    - if specified, validation data will include the minimum and
+                        maximum resolutions
     """
-    if data_str == "cifar10":
-        data_tr = CIFAR10(root=f"{project_dir}/data", train=True, download=True)
-        data_val = None
-        data_te = CIFAR10(root=f"{project_dir}/data", train=False, download=True)
-    elif data_str == "miniImagenet":
-        data_tr = ImageFolder(root=f"{project_dir}/data/miniImagenet/train")
-        data_val = ImageFolder(root=f"{project_dir}/data/miniImagenet/val")
-        data_te = ImageFolder(root=f"{project_dir}/data/miniImagenet/default_test")
-    elif data_str == "camnet3":
-        data_tr = ImageFolder(root=f"{project_dir}/data/camnet3/train")
-        data_val = ImageFolder(root=f"{project_dir}/data/camnet3/val")
-        data_te = None
-    else:
-        raise ValueError(f"Unknown dataset {data_str}")
+    def paths_to_datasets(data_paths):
+        """Returns ImageFolder(s) given [data_paths], a list of data paths for a
+        list of ImageFolders, or a string for a single ImageFolder.
+        """
+        if isinstance(data_paths, (list, OrderedDict)):
+            return [ImageFolder(data_path) for data_path in data_paths]
+        else:
+            return ImageFolder(data_paths)
 
-    if eval_str == "cv":
-        eval_data = "cv"
+    data_path = f"{project_dir}/data/{data_str}"
+
+    if eval_str == "test":
+        eval_split_specifier = "test"
     elif eval_str == "val":
-        eval_data = data_val
-    elif eval_str == "test":
-        eval_data = data_te
+        eval_split_specifier = "val"
+    elif eval_str == "cv":
+        eval_split_specifier = "train"
 
-    if eval_data is None:
-        tqdm.write("Evaluation data is None. Please use a different --data and --eval combination")
-    return data_tr, eval_data
+    if res is None:
+        data_paths_tr = f"{data_path}/train"
+        data_paths_eval = f"{data_path}/{eval_split_specifier}"
+    else:
+        data_paths_tr = [f"{data_path}_{r}/train" for r in res]
+        data_paths_eval = [
+             f"{data_path}_{min(res)}/{eval_split_specifier}",
+             f"{data_path}_{max(res)}/{eval_split_specifier}"
+        ]
 
-def get_contrastive_augs(data_str, color_s=.5, strong=True):
+    check_paths_exist([data_paths_tr, data_paths_eval])
+    return paths_to_datasets(data_paths_tr), paths_to_datasets(data_paths_eval)
+
+################################################################################
+# Augmentations
+################################################################################
+def get_simclr_augs(crop_size=32, gaussian_blur=False, color_s=.5, strong=True):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
 
@@ -85,78 +110,25 @@ def get_contrastive_augs(data_str, color_s=.5, strong=True):
         transforms.RandomApply([color_jitter], p=0.8),
         transforms.RandomGrayscale(p=0.2)])
 
-    if "cifar" in data_str:
-        if strong:
-            augs_tr = transforms.Compose([
-                transforms.RandomResizedCrop(32),
-                transforms.RandomHorizontalFlip(p=0.5),
-                color_distortion,
-                transforms.ToTensor()])
-        else:
-            augs_tr = transforms.Compose([
-                transforms.RandomResizedCrop(32),
-                transforms.RandomHorizontalFlip(p=0.5),
-                transforms.ToTensor()])
+    augs_tr_list = [transforms.RandomResizedCrop(crop_size)]
 
-        augs_fn = augs_tr
-        augs_te = transforms.Compose([transforms.ToTensor()])
-    elif "imagenet" in data_str.lower():
-        if strong:
-            augs_tr = transforms.Compose([
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(p=0.5),
-                color_distortion,
-                transforms.GaussianBlur(23, sigma=(.1, 2)),
-                transforms.ToTensor()])
-        else:
-            augs_tr = transforms.Compose([
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(p=0.5),
-                 transforms.ToTensor()])
+    if color_s > 0:
+        augs_tr_list.append(color_distortion)
+    if gaussian_blur:
+        augs_tr_list.append(transforms.GaussianBlur(23, sigma=(.1, 2)))
 
-        augs_fn = augs_tr
-        augs_te = transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.ToTensor()])
-    else:
-        raise ValueError("Unknown augmenta")
+    augs_tr_list += [
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ToTensor()
+    ]
 
-    return augs_tr, augs_fn, augs_te
+    augs_tr = transforms.Compose(augs_tr_list)
 
-################################################################################
-# ISICLE contrastive learning function—these are really data loading functions
-# for a generative model that feeds data to a contrastive learner.
-################################################################################
+    augs_te = transforms.Compose([
+        transforms.RandomResizedCrop(crop_size),
+        transforms.ToTensor()])
 
-def get_data_splits_gen(data_str, eval_str, resolutions=[16, 32, 64, 128, 256]):
-    """Returns training and evaluation Datasets given [data_str] and [eval_str].
-    The training and evaluation data are each returned as a list where each
-    element is a dataset with the data at a given resolution.
-
-    Args:
-    data_str    -- a string specifying the dataset to return
-    eval_str    -- the kind of validation to do. 'cv' for cross validation,
-                    'val' for using a validation split (only if it exists), and
-                    'test' for using the test split
-    """
-    if data_str == "miniImagenet":
-        data_tr = OrderedDict(
-            {r: ImageFolder(root=f"{project_dir}/data/miniImagenet_{r}/train") for r in resolutions})
-        data_val = OrderedDict(
-            {r: ImageFolder(root=f"{project_dir}/data/miniImagenet_{r}/val") for r in resolutions})
-        data_te = OrderedDict(
-            {r: ImageFolder(root=f"{project_dir}/data/miniImagenet_{r}/test") for r in resolutions})
-    else:
-        raise ValueError(f"Unknown dataset {data_str}")
-
-    if eval_str == "cv":
-        eval_data = "cv"
-    elif eval_str == "val":
-        eval_data = data_val
-    elif eval_str == "test":
-        eval_data = data_te
-
-    return data_tr, eval_data
+    return augs_tr, augs_tr, augs_te
 
 class RandomHorizontalFlips(nn.Module):
     """transforms.RandomHorizontalFlip but can be applied to multiple images."""
@@ -172,39 +144,30 @@ class RandomHorizontalFlips(nn.Module):
         images  -- list of (PIL Image or Tensor): Images to be flipped
         """
         if torch.rand(1) < self.p:
-            return [F.hflip(img) for img in images]
-        return [images]
+            return [hflip(img) for img in images]
+        return images
 
-    def __repr__(self):
-        return self.__class__.__name__ + '(p={})'.format(self.p)
+    def __repr__(self): return f"{self.__class__.__name__}(p={self.p})"
 
-def get_base_augs(data_str):
+class ToTensors(nn.Module):
+    def __init__(self):
+        super(ToTensors, self).__init__()
+        self.to_tensor = transforms.ToTensor()
+
+    def forward(self, images): return [self.to_tensor(x) for x in images]
+
+    def __repr__(self): return self.__class__.__name__
+
+
+def get_gen_augs():
     """Returns a list of base transforms for image generation. Each should be
     able to accept multiple input images and be deterministic between any two
     images input at the same time, and return a list of the transformed images.
-
-    Args:
-    data_str  -- a string specifying the dataset to get transforms for
     """
     return transforms.Compose([
-        RandomHorizontalFlips()
+        RandomHorizontalFlips(),
+        ToTensors()
     ])
-
-def get_corruptions(corruptions_dict):
-    """Returns a list of transforms acting as corruptions.
-
-    Args:
-    corruptions -- list containing any of 'grayscale',
-    """
-    corruptions = []
-
-    if corruptions_dict["grayscale"]:
-        corruptions.append(transforms.GrayScale(num_output_channels=3))
-    elif corruptions_dict["crops"]:
-        raise NotImplementedError()
-
-    return transforms.Compose(corruptions)
-
 
 ################################################################################
 # Datasets
@@ -256,7 +219,63 @@ class FeatureDataset(Dataset):
 
     def __getitem__(self, idx): return self.data[idx]
 
-# 
+
+class GeneratorDataset(Dataset):
+    """A dataset for returning data for generative modeling. Returns data in as
+
+        model_input, [model_output_1, ... model_output_n]
+
+    where [model_input] is half the resolution of [model_output_1], and
+    [model_output_i] is half the resolution of [model_output_i+1]. All returned
+    images are CxHxW.
+
+    **Apply corruptions at the minibatch level in the training loop directly.**
+
+    Args:
+    datasets    -- list of ImageFolders containing training data at sequentially
+                    doubling resolutions
+    transform   -- transformation applied deterministically to both input and
+                    target images
+    """
+    def __init__(self, datasets, transform):
+        self.datasets = datasets
+        self.transform = transform
+
+        ########################################################################
+        # Validate the sequence of datasets. The H and W dimensions of
+        ########################################################################
+        tqdm.write("----- Validating GeneratorDataset -----")
+        if not all([len(d) == len(self.datasets[0]) for d in self.datasets]):
+            raise ValueError(f"All input datasets must have the same shape, but shapes were {[len(d) for d in self.datasets]}")
+
+        shapes = [d[0][0].size for d in self.datasets]
+        if len(self.datasets) > 2:
+            for s1,s2 in zip(shapes[:-1], shapes[1:]):
+                if not s1[1] == s2[1] / 2 and  s1[2] == s2[2] / 2:
+                    raise ValueError(f"Got sequential resolutions of {s1} and {s2}")
+        else:
+            tqdm.write(f"Shape sequence is {shapes}. Ensure that the generative model is correctly configred to use these.")
+
+        self.shapes = [s[0] for s in shapes]
+        tqdm.write(f"Validated source datasets: lengths {[len(d) for d in self.datasets]} | shape sequence {shapes}")
+
+    def __len__(self): return len(self.datasets[0])
+
+    def __getitem__(self, idx):
+        images = [d[idx][0] for d in self.datasets]
+        print("IIIII", type(images[0]))
+        images = self.transform(images)
+        return images[0], images[1:]
+
+    def __repr__(self): return f"GeneratorDataset\n\tshapes {self.shapes}"
+
+
+
+
+
+
+
+#
 # class MultiTaskDataset(Dataset):
 #     """A dataset for forcing a model a generative model to perform multiple
 #     tasks. Returned images are as follows. Suppose x_1, x_2, ... x_N are
