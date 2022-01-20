@@ -96,7 +96,7 @@ class CAMNet(nn.Module):
     act_type                    -- activation type
     """
 
-    def __init__(self, n_levels=4, base_size=16, in_nc=1, out_nc=2,
+    def __init__(self, n_levels=4, base_size=16, in_nc=3, out_nc=2,
         feat_scales=None,
         map_nc=128, latent_nc=512, n_blocks=6,
         resid_nc=[128, 64, 64, 64], prev_resid_nc=[0, 128, 64, 64],
@@ -108,7 +108,7 @@ class CAMNet(nn.Module):
             "n_blocks": n_blocks,
             "map_nc": 128,
             "latent_nc": 512,
-            "in_nc": 1,
+            "in_nc": in_nc,
             "out_nc": 2,
             "dense_nc": dense_nc[i],
             "resid_nc": resid_nc[i],
@@ -142,7 +142,7 @@ class CAMNet(nn.Module):
 
 class CAMNetModule(nn.Module):
 
-    def __init__(self, map_nc=128, latent_nc=512, in_nc=1, out_nc=2, code_nc=5,
+    def __init__(self, map_nc=128, latent_nc=512, in_nc=3, out_nc=2, code_nc=5,
         feat_scale=1, prev_resid_nc=0, resid_nc=-1, dense_nc=-1, n_blocks=6,
         upsample_mode="nearest", act_type="leakyrelu", upsample_output=True,
         size=16, level=1):

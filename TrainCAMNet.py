@@ -138,8 +138,8 @@ test_config = {
       64
     ],
     "num_blocks": 6,
-    "in_nc": 1,
-    "out_nc": 2,
+    "in_nc": 3,
+    "out_nc": 3,
     "code_nc": 5,
     "map_nc": 128,
     "latent_nc": 512,
