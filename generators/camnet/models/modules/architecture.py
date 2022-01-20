@@ -35,6 +35,7 @@ class CAMNet(nn.Module):
             self.add_module("level_%d_map" % (i + 1), B.sequential(*mapping_net))
 
             if i == 0:
+                print("AAAAA", in_nc, code_nc)
                 fea_conv = B.conv_block(in_nc + code_nc, cur_num_rc, kernel_size=3, act_type=None)
             else:
                 fea_conv = B.conv_block(in_nc + code_nc + num_residual_channels[i - 1], cur_num_rc, kernel_size=3,

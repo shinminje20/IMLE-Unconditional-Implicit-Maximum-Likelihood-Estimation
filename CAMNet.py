@@ -171,7 +171,7 @@ class CAMNetModule(nn.Module):
         self.mapping_net = MappingNet(map_nc, latent_nc, act_type)
 
 
-        print("AAAAA", in_nc + code_nc + prev_resid_nc)
+        print("AAAAA", in_nc, code_nc, prev_resid_nc)
 
         self.feat_net = B.conv_block(in_nc + code_nc + prev_resid_nc,
             resid_nc,
@@ -207,6 +207,7 @@ class CAMNetModule(nn.Module):
             feature * self.feat_scale], dim=1)
 
         print("CCCCC", level_input.shape)
+        print(self.feat_net)
 
         mapped_code = self.mapping_net(code[:, :self.map_nc])
         feature = self.feat_net(level_input)
