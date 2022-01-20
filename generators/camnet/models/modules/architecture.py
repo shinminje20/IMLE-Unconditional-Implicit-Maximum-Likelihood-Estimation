@@ -35,7 +35,6 @@ class CAMNet(nn.Module):
             self.add_module("level_%d_map" % (i + 1), B.sequential(*mapping_net))
 
             if i == 0:
-                print("AAAAA", in_nc, code_nc)
                 fea_conv = B.conv_block(in_nc + code_nc, cur_num_rc, kernel_size=3, act_type=None)
             else:
                 fea_conv = B.conv_block(in_nc + code_nc + num_residual_channels[i - 1], cur_num_rc, kernel_size=3,
@@ -97,9 +96,7 @@ class CAMNet(nn.Module):
         for i, code in enumerate(codes):
             if i == 0:
                 bs, _, w, h = net_input[0].shape
-                print("CODE SHAPE", code.shape, self.map_nc, code[:, self.map_nc:].shape, bs, self.code_nc, w, h)
                 x = torch.cat((net_input[0], code[:, self.map_nc:].reshape(bs, self.code_nc, w, h)), dim=1)
-                print("SHAPE", x.shape)
             else:
                 bs, _, w, h = out.shape
                 # concat with the previous level output and feature
@@ -112,8 +109,6 @@ class CAMNet(nn.Module):
             out = getattr(self, "level_%d_out" % (i + 1))(feature)
             outputs.append(self.out_layer(out))
 
-        print( getattr(self, "level_%d_feat" % (i + 1)))
-        assert False
         return outputs
 
     def forward_colorization(self, net_input, codes):
