@@ -193,7 +193,7 @@ class CAMNetModule(nn.Module):
         """
         bs, _, w, h = level_input.shape
 
-        print("CODE SHAPE", code.shape, code[:, self.map_nc:])
+        print("CODE SHAPE", code.shape, self.map_nc, code[:, self.map_nc:].shape)
 
 
         level_input = torch.cat([
@@ -266,5 +266,9 @@ if __name__ == "__main__":
 
     loader = DataLoader(data_tr, batch_size=4)
     for x,ys in loader:
-        code = torch.rand(x.shape[0], 16, 16)
-        fx = G(x, code)
+
+
+        s = (x.shape[0], 128 + 5 * 16 * (2 ** 0) * 16 * (2 ** 0))
+        print(s)
+        code = torch.rand(*s)
+        fx = G(x, [code])

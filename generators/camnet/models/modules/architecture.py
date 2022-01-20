@@ -96,6 +96,7 @@ class CAMNet(nn.Module):
         for i, code in enumerate(codes):
             if i == 0:
                 bs, _, w, h = net_input[0].shape
+                print("CODE SHAPE", code.shape, self.map_nc, code[:, self.map_nc:].shape)
                 x = torch.cat((net_input[0], code[:, self.map_nc:].reshape(bs, self.code_nc, w, h)), dim=1)
             else:
                 bs, _, w, h = out.shape
