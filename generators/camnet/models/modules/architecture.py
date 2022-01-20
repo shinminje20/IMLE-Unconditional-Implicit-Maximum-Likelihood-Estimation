@@ -111,6 +111,7 @@ class CAMNet(nn.Module):
             out = getattr(self, "level_%d_out" % (i + 1))(feature)
             outputs.append(self.out_layer(out))
 
+        print( getattr(self, "level_%d_feat" % (i + 1)))
         assert False
         return outputs
 
