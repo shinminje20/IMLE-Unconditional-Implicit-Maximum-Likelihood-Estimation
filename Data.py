@@ -130,40 +130,39 @@ def get_simclr_augs(crop_size=32, gaussian_blur=False, color_s=.5, strong=True):
 
     return augs_tr, augs_tr, augs_te
 
-class RandomHorizontalFlips(nn.Module):
-    """transforms.RandomHorizontalFlip but can be applied to multiple images."""
-    def __init__(self, p=0.5):
-        super(RandomHorizontalFlips, self).__init__()
-        self.p = p
-
-    def forward(self, images):
-        """Returns [images] but with all elements flipped in the same direction,
-        with the direction chosen randomly.
-
-        Args:
-        images  -- list of (PIL Image or Tensor): Images to be flipped
-        """
-        if torch.rand(1) < self.p:
-            return [hflip(img) for img in images]
-        return images
-
-    def __repr__(self): return f"{self.__class__.__name__}(p={self.p})"
-
-class ToTensors(nn.Module):
-    def __init__(self):
-        super(ToTensors, self).__init__()
-        self.to_tensor = transforms.ToTensor()
-
-    def forward(self, images): return [self.to_tensor(x) for x in images]
-
-    def __repr__(self): return self.__class__.__name__
-
-
 def get_gen_augs():
     """Returns a list of base transforms for image generation. Each should be
     able to accept multiple input images and be deterministic between any two
     images input at the same time, and return a list of the transformed images.
     """
+    class RandomHorizontalFlips(nn.Module):
+        """RandomHorizontalFlip but can be applied to multiple images."""
+        def __init__(self, p=0.5):
+            super(RandomHorizontalFlips, self).__init__()
+            self.p = p
+
+        def forward(self, images):
+            """Returns [images] but with all elements flipped in the same
+            direction, with the direction chosen randomly.
+
+            Args:
+            images  -- list of (PIL Image or Tensor): Images to be flipped
+            """
+            if torch.rand(1) < self.p:
+                return [hflip(img) for img in images]
+            return images
+
+        def __repr__(self): return f"{self.__class__.__name__}(p={self.p})"
+
+    class ToTensors(nn.Module):
+        def __init__(self):
+            super(ToTensors, self).__init__()
+            self.to_tensor = transforms.ToTensor()
+
+        def forward(self, images): return [self.to_tensor(x) for x in images]
+
+        def __repr__(self): return self.__class__.__name__
+
     return transforms.Compose([
         RandomHorizontalFlips(),
         ToTensors()
@@ -237,117 +236,76 @@ class GeneratorDataset(Dataset):
     transform   -- transformation applied deterministically to both input and
                     target images
     """
-    def __init__(self, datasets, transform):
+    def __init__(self, datasets, transform, validate=False, return_idxs=False):
         self.datasets = datasets
         self.transform = transform
+        self.return_idxs = False
 
         ########################################################################
         # Validate the sequence of datasets. The H and W dimensions of
         ########################################################################
-        tqdm.write("----- Validating GeneratorDataset -----")
-        if not all([len(d) == len(self.datasets[0]) for d in self.datasets]):
-            raise ValueError(f"All input datasets must have the same shape, but shapes were {[len(d) for d in self.datasets]}")
+        if validate:
+            tqdm.write("----- Validating GeneratorDataset -----")
+            if not all([len(d) == len(self.datasets[0]) for d in self.datasets]):
+                raise ValueError(f"All input datasets must have the same shape, but shapes were {[len(d) for d in self.datasets]}")
 
-        shapes = [d[0][0].size for d in self.datasets]
-        if len(self.datasets) > 2:
-            for s1,s2 in zip(shapes[:-1], shapes[1:]):
-                if not s1[1] == s2[1] / 2 and  s1[2] == s2[2] / 2:
-                    raise ValueError(f"Got sequential resolutions of {s1} and {s2}")
-        else:
-            tqdm.write(f"Shape sequence is {shapes}. Ensure that the generative model is correctly configred to use these.")
+            shapes = [d[0][0].size for d in self.datasets]
+            if len(self.datasets) > 2:
+                for s1,s2 in zip(shapes[:-1], shapes[1:]):
+                    if not s1[1] == s2[1] / 2 and  s1[2] == s2[2] / 2:
+                        raise ValueError(f"Got sequential resolutions of {s1} and {s2}")
+            else:
+                tqdm.write(f"Shape sequence is {shapes}. Ensure that the generative model is correctly configred to use these.")
 
-        self.shapes = [s[0] for s in shapes]
-        tqdm.write(f"Validated source datasets: lengths {[len(d) for d in self.datasets]} | shape sequence {shapes}")
+            self.shapes = [s[0] for s in shapes]
+            tqdm.write(f"Validated source datasets: lengths {[len(d) for d in self.datasets]} | shape sequence {shapes}")
 
     def __len__(self): return len(self.datasets[0])
 
     def __getitem__(self, idx):
         images = [d[idx][0] for d in self.datasets]
-        print("IIIII", type(images[0]))
         images = self.transform(images)
-        return images[0], images[1:]
+
+        if self.return_idxs:
+            return idx, images[0], images[1:]
+        else:
+            return images[0], images[1:]
 
     def __repr__(self): return f"GeneratorDataset\n\tshapes {self.shapes}"
 
-
-
-
-
-
-
-#
-# class MultiTaskDataset(Dataset):
-#     """A dataset for forcing a model a generative model to perform multiple
-#     tasks. Returned images are as follows. Suppose x_1, x_2, ... x_N are
-#     versions of an image x at different (typically increasing) resolutions. Then
-#     this dataset can return
-#
-#         [corruption(transform(x_2)),
-#          transform(x_1),
-#          ...
-#          transform(x_N)
-#         ]
-#
-#     Args:
-#     data                        -- list of input datasets. The first item in
-#                                     the list is a dataset giving that will be
-#                                     corrupted; the rest should be sequentially
-#                                     higher resolutions of the original
-#                                     (uncorrupted) image
-#     corruption                  -- transform giving the (x, (y1 ... yn))
-#                                     images—the model must decorrupt [x] to
-#                                     the sequence of ys
-#     transform                   -- transform applied to all images in the
-#                                     (x, (y1 ... yn)) sequence returned from
-#                                     __getitem__(). This transform must be
-#                                     able to apply to a list of images, and
-#                                     be deterministic across this list.
-#     intermediate_supervision    -- whether to return targets for supervising
-#                                     the model at different resolutions
-#     """
-#     def __init__(self, res2data, b
-#         intermediate_supervision=True):
-#         assert all([len(d) == len(data[0]) for d in data]), f"All input datasets must have equal length, but lengths were {[len(d) for d in data]}"
-#         self.data = data
-#         self.corruption = corruption
-#         self.transform = transform
-#         self.intermediate_supervision = intermediate_supervision
-#
-#     def __len__(self): return len(self.data[0])
-#
-#     def __getitem(self, idx):
-#         if self.intermediate_supervision:
-#             images = [d[idx][0] for d in self.data]
-#         else:
-#             images = [self.data[0][idx][0], self.data[-1][idx][0]]
-#
-#         images = [self.transform(image) for image in images]
-#         return self.corruption(images[0]), images[1:]
-
-class ImagesFromTransformsDataset(Dataset):
-    """Wraps an internal dataset for which queries produce a tuple in which an
-    image is the first result. This dataset computes transformations [x] and
-    [y]; the object for a neural net using the generated data is to generate [y]
-    conditioned on [x] and a random vector z, or to contrast [x] and [y].
-
-    [x] might be a downsampled and greyscaled version of the image, while [y]
-    might be a random crop. This trains a generator to simulteneously do
-    super-resolution, colorization, and cropping.
+class ManyTransformsDataset(Dataset):
+    """A dataset that wraps a single source dataset, but returns a tuple of
+    transformed items from it, with the ith item coming from the ith transform
+    in [transforms].
 
     Args:
-    data        -- the wrapped dataset, should return tuples wherein the
-                    first element is an image
-    x_transform -- the transform giving input images
-    y_transform -- the transform giving targets
+    source_dataset  -- the source dataset
+    *transforms     -- the transforms to use
     """
-    def __init__(self, data, x_transform, y_transform):
-        super(ImagesFromTransformsDataset, self).__init__()
-        self.data = data
-        self.x_transform = x_transform
-        self.y_transform = y_transform
+    def __init__(self, source_dataset, *transforms):
+        super(ManyTransformsDataset, self).__init__()
+        self.source_dataset = source_dataset
+        self.transforms = transforms
 
-    def __len__(self): return len(self.data)
+    def __len__(self): return len(self.source_dataset)
 
     def __getitem__(self, idx):
-        image = self.data[idx][0]
-        return self.x_transform(image), self.y_transform(image)
+        x = self.source_dataset[idx][0]
+        return tuple([t(x) for t in self.transforms])
+
+class ZippedDataset(Dataset):
+    """A Dataset that zips together iterables. Its transform should be
+
+    Args:
+    *datasets   -- the wrapped iterables. All must be of the same length
+    """
+    def __init__(self, *datasets):
+        super(ZippedDataset, self).__init__()
+        self.datasets = datasets
+
+        if not all([len(d) == len(datasets[0]) for d in datasets]):
+            raise ValueError(f"All constituent datasets must have same length, but got lengths {[len(d) for d in datasets]}")
+
+    def __len__(self): return len(self.datasets[0])
+
+    def __getitem__(self, idx): return [d[idx] for d in self.datasets]

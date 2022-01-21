@@ -21,7 +21,7 @@ def get_lpips_weights():
     file = f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth"
     if not path.exists(file):
         url = "https://drive.google.com/u/0/uc?id=1IQCDHxO-cYnFMx1hATjgSGQdO-_pB9nb&export=download"
-        file = f"{path.dirname(f'{__file__}')}/data/vgg_lpips_weights.pth"
+        file = f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth"
         gdown.download(url, file, quiet=False)
 
 def normalize_tensor(x, eps=1e-10):

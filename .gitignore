@@ -2,6 +2,7 @@
 *.tsv
 
 *.pt
+*.pth
 *.pkl
 *.npy
 

@@ -80,8 +80,8 @@ def get_non_learnable_batch_corruption(
         corruptions.append(RandomPixelMask(pixel_mask_frac))
     if grayscale:
         corruptions.append(transforms.Grayscale(num_output_channels=3))
-    if mask_prob > 0:
-        corruptions.append(transforms.RandomErasing(p=mask_prob))
+    # if mask_prob > 0:
+    #     corruptions.append(transforms.RandomErasing(p=mask_prob))
     return transforms.Compose(corruptions)
 
 class RandomPixelMask(nn.Module):
@@ -94,8 +94,9 @@ class RandomPixelMask(nn.Module):
         self.size = size
 
     def forward(self, x):
+        s = x.shape[-1] // self.size
         mask = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size))
-        mask = F.interpolate(mask, scale_factor=(16, 16), mode="nearest")
+        mask = F.interpolate(mask, scale_factor=(s, s), mode="nearest")
         x[mask < self.pixel_mask_frac] = 0
         return x
 
@@ -106,7 +107,7 @@ class RandomIllumination(nn.Module):
         self.sigma = sigma
 
     def forward(self, x):
-        sigmas = (torch.rand(x.shape[0]) - .5) * 2 * self.sigma
+        sigmas = (torch.rand(x.shape[0], device=device) - .5) * 2 * self.sigma
         expanded_shape = tuple([len(x)] + ([1] * (len(tuple(x.shape)) - 1)))
         sigmas = sigmas.view(expanded_shape)
         return torch.clamp(x + sigmas.expand(x.shape), 0, 1)

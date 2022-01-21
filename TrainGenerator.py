@@ -1,137 +1,101 @@
+import argparse
+from tqdm import tqdm
+
 import torch.nn as nn
-from GeneratorArchitectures import *
+from torch.optim import Adam
+from torch.utils.data import DataLoader, Subset
 
-def show_results(generator, images):
-    
+from CAMNet import CAMNet
 
-class CodeGetter:
-    """Class for maintaining the state of the latent codes used in IMLE. This
-    wraps a bunch of functionality together so that we can
+from Corruptions import get_non_learnable_batch_corruption
+from Data import *
+from utils.Utils import *
+from utils.UtilsLPIPS import LPIPSFeats
 
-    Args:
-    iters       -- the number of iterations between new code generations
-    hiearchical -- whether or not to use CAMNet's hierarchical sampling
-    """
+class BatchMSELoss(nn.Module):
+    """MSELoss but with the reduction leaving the batch dimension intact."""
+    def __init__(self):
+        super(BatchMSELoss, self).__init__()
 
-    def __init__(self, iters=1, num_samples=120, code_bs=1, hierarchical=False):
-        self.num_samples = num_samples
-        self.code_bs = code_bs
-        self.iters = iters
-        self.hierarchical = hierarchical
-        self.cur_iter = 0
-        self.cur_code = None
-
-    def get_codes(z_dims, x_batch, y_batch, backbone, loss_fn):
-        """Updates CodeGetter state and returns the correct latent code to use.
-
-        Args:
-        z_dims      -- list of shapes describing a latent code
-        x_batch     -- the input of a batch wrapped in a list [BSxCxHxW]
-        y_batch     -- the target of a batch wrapped in a list
-                        [BSxCxH1xW1 ... BSxCxHNxWN]
-        backbone    -- model backbone
-        loss_fn     -- the means of determining distance
-        """
-        if self.cur_iter == iter or self.cur_iter == 0:
-            self.cur_iter = 0
-
-            bs = x_batch[0].shape[0]
-
-            if self.hierarchical:
-                raise NotImplementedError()
-            else:
-                best_codes = {i: torch.randn((bs,) + z_dim)
-                    for i,z_dim in enumerate(z_dims)}
-
-                for level,y_ in enumerate(y_batch):
-                    for j in range(0, len(y_), self.code_bs):
-                        with torch.no_grad():
-                            x = [x[j:j+self.code_bs].to(device) for x in x_batch]
-                            y = [y[j:j+self.code_bs].to(device) for y in y_]
-                            c = [c[j:j+self.code_bs].to(device) for c in best_codes]
-                            fx = backbone(x, c)
-                            losses =
-
-
-
-
-
-
-
-
-
-
-
-                self.cur_code = torch.randn(size=dim)
-
-        self.cur_iter += 1
-        return self.cur_code
+    def forward(self, fx, y):
+        unreduced_loss = F.mse_loss(fx, y, reduction="none")
+        return torch.sum(unreduced_loss.view(len(fx), -1), axis=1)
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self):
-        self.l_feats = LPIPSFeatsNet()
-        self.mse = nn.MSELoss(reduction="mean")
+    def __init__(self, reduction="mean"):
+        super(LPIPSLoss, self).__init__()
+        self.l_feats = LPIPSFeats()
+        self.reduction = reduction
+        if reduction == "mean":
+            self.loss = nn.MSELoss(reduction="mean")
+        elif reduction == "batch":
+            self.loss = BatchMSELoss()
+        else:
+            raise ValueError(f"Unknown reduction '{reduction}'")
 
     def forward(self, fx, y):
         """Returns the loss between generated images [fx] and real images [y].
         [fx] and [y] can either be lists of images and loss is the sum of the
         loss computed on their pairwise elements, or simply batches of images.
         """
-        get_loss = lambda fx_, y_: self.mse(self.l_feats(fx_), self.l_feats(y_))
         if isinstance(fx, list) and isinstance(y, list):
-            return torch.sum([self.get_loss(fx_, y_) for fx_,y_ in zip(fx, y)])
+            if self.reduction == "mean":
+                losses = [self.loss(self.l_feats(fx_), self.l_feats(y_)) for fx_,y_ in zip(fx, y)]
+                return torch.mean(torch.stack(losses))
         else:
-            return self.get_loss(fx, y)
+            return self.loss(self.l_feats(fx), self.l_feats(y))
 
-class GeneratorBackbone(nn.Module):
-    """Base class for the architecture of any generator."""
-    def __init__(self): pass
-    def forward(self, x, code): pass
-    def get_z_dims(self, x): pass
-
-class Generator(nn.Module):
-    """A generative model which undoes corruptions.
-
-    Wraps a CodeGetter for use in getting latent codes and a Corruptor for
-    getting corrupted versions of images. The intent is for the Generator to be
-    the only thing that need be saved.
+def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", code_bs=6, num_samples=120):
+    """Returns new latent codes via hierarchical sampling.
 
     Args:
-    corruptor   -- a Corruptor
-    backbone    -- a GeneratorBackbone
-    code_getter -- a CodeGetter
+    z_dims      -- list of shapes describing a latent code
+    data_subset -- a Subset of the training dataset
+    backbone    -- model backbone. Must support a 'loi' argument
+    loss_fn     -- the means of determining distance. For inputs of size Nx...,
+                    it should return a tensor of N losses.
+    code_bs     -- batch size to test codes in
+    num_samples -- number of times we try to find a better code for each image
     """
-    def __init__(self, corruptor, code_getter, backbone):
-        if arch_config["arch"] == "camnet":
-            raise NotImplementedError()
-        elif arch_config["arch"] == "rrdb_stacks":
-            self.corruptor = corruptor
-            self.backbone = backbone
-            self.code_getter = code_getter
-        else:
-            raise ValueError(f"Unknown architecture '{arch}'")
+    if loss_fn == "lpips":
+        loss_fn = LPIPSLoss(reduction="batch").to(device)
+    elif loss_fn == "mse":
+        loss_fn = nn.MSELoss(reduction="none").to(device)
+    else:
+        raise ValueError(f"Unknown loss type {loss_fn}")
 
-    def forward(self, x):
-        x = self.corruptor(x)
-        codes = self.code_getter.get_codes(self.bacbone.get_z_dims(x))
-        return self.backbone(x, codes)
+    bs = len(data_subset)
+    level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
+    loader = DataLoader(data_subset, batch_size=code_bs, shuffle=False,
+                        num_workers=num_workers)
+    for level_idx in tqdm(range(len(z_dims)), desc="levels", leave=False):
+        least_losses = torch.ones(bs, device=device) * float("inf")
 
-def one_epoch_gen_imle(generator, optimizer, loader, loss_fn,
-    iters_per_code_per_ex=1000, mini_bs=32):
+        for _ in tqdm(range(num_samples), desc="sampling", leave=False):
+            for idx,(x,ys) in enumerate(loader):
+                start_idx = code_bs * idx
+                end_idx = code_bs * (idx + 1)
+                least_losses_batch = least_losses[start_idx:end_idx]
+
+                old_codes = [l[start_idx:end_idx] for l in level_codes[level_idx:]]
+                new_codes = torch.randn((code_bs,) + z_dims[level_idx], device=device)
+                test_codes = old_codes + [new_codes]
+
+                with torch.no_grad():
+                    cx = corruptor(x.to(device))
+                    fx = backbone(cx, test_codes, loi=level_idx)
+                    losses = loss_fn(fx, ys[level_idx].to(device))
+
+                change_idxs = losses < least_losses_batch
+                level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
+
+    return [l.cpu() for l in level_codes]
+
+def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, bs=1,
+    mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12):
     """Trains [generator] and optionally [corruptor] for one epoch on data from
     [loader] via cIMLE.
-
-    This is slightly weird because for every batch of data returned from
-    [loader], there is exactly one code. We train with mini batch size [mini_bs]
-    for [iters_per_code_per_ex] iterations on the code before moving on to the
-    next batch. Therefore, the actual number of steps against the gradient is
-
-        len(loader) * iters_per_code_per_ex / mini_bs
-
-    This means that for a fixed [iters_per_code_per_ex], each example will be
-    included in training exactly the same number of times, and the degree of
-    parallelization is controlled by [mini_bs].
 
     ****************************************************************************
     Note that in the typical terminology, a 'minibatch' and a 'batch' are
@@ -150,46 +114,163 @@ def one_epoch_gen_imle(generator, optimizer, loader, loss_fn,
     mini_bs                 -- the batch size to run per iteration. Must evenly
                                 divide the batch size of [loader]
     """
-    loss_fn = LPIPSLoss()
+    loss_fn = LPIPSLoss(reduction="mean").to(device)
     total_loss = 0
 
-    for x_batch,y_batch in tqdm(loader, desc="Batches"):
+    rand_idxs = random.sample(range(len(dataset)), len(dataset))
+    for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False):
+        images_dataset = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
+        codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
+                                                     images_dataset, corruptor,
+                                                     generator, code_bs=code_bs,
+                                                     num_samples=num_samples))
+        batch_dataset = ZippedDataset(codes_dataset, images_dataset)
+        loader = DataLoader(batch_dataset, batch_size=mini_bs,
+                            num_workers=num_workers, shuffle=True)
+        for _ in tqdm(range(iters_per_code_per_ex), desc="inner loop", leave=False):
 
-        for j in tqdm(range(0, iters_per_code_per_ex, mini_bs), desc="Iterations"):
-            x = [input[j:j+mini_bs].to(device) for input in x_batch]
-            y = [target[j:j+mini_bs].to(device) for input in y_batch]
+            for codes,(x,ys) in tqdm(loader, desc="Minibatches", leave=False):
 
-            generator.zero_grad()
-            fx = generator(x)
-            loss = loss_fn(fx, y)
-            loss.backward()
-            total_loss += loss.item()
+                generator.zero_grad()
+                cx = corruptor(x.to(device))
+                fx = generator(cx, [c.to(device) for c in codes])
+                loss = loss_fn(fx, [y.to(device) for y in ys])
+                loss.backward()
+                optimizer.step()
 
-    return generator, optimizer, total_loss / len(loader)
+                total_loss += loss.item()
+
+    return corruptor, generator, optimizer, total_loss / len(loader)
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--task", choices=["Colorization", "ColorizationSuperResolution"],
-        default="ColorizationSuperResolution",
-        help="task for training CAMNet")
-    P.add_argument("--data", default="camnet_three",
-        choices=["camnet_three"],
+    P.add_argument("--data", default="cifar10", choices=["cifar10", "camnet3"],
         help="data to train on")
+    P.add_argument("--eval", default="cv", choices=["cv", "eval", "test"],
+        help="data for validation")
+    P.add_argument("--res", nargs="+", required=True, type=int,
+        default=[16, 32],
+        help="resolutiosn to see data at")
 
+    # Model hyperparameters are parsed later
+    P.add_argument("--arch", default="camnet", choices=["camnet"],
+        help="generator architecture to use.")
+
+    ############################################################################
+    # Corruption hyperparameters
+    ############################################################################
+    P.add_argument("--grayscale", default=1, choices=[0, 1],
+        help="grayscale corruption")
+    P.add_argument("--pixel_mask_frac", default=.5, type=float,
+        help="fraction of pixels to mask at 16x16 resolution")
+    P.add_argument("--rand_illumination", default=.2, type=float,
+        help="amount by which the illumination of an image can change")
+
+    ############################################################################
+    # Training hyperparameters
+    ############################################################################
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
-    P.add_argument("--num_days", default=1e4, type=int,
-        help="number of days per month. This is the number of iterations per minibatch, and may be larger than --bs / --bs_day, in which case training will loop over each batch multiple times.")
-    P.add_argument("--bs", default=400, type=int,
-        help="batch size. Across any minibatch, the latent code is constant"),
-    P.add_argument("--bs_day", default=1, type=int,
-        help="batch size for each iteration")
+    P.add_argument("--n_ramp", default=1, type=int,
+        help="number of epochs to ramp learning rate")
+    P.add_argument("--bs", type=int, default=300,
+        help="batch size")
+    P.add_argument("--mini_bs", type=int, default=10,
+        help="minibatch size")
+    P.add_argument("--code_bs", type=int, default=6,
+        help="batch size to use for sampling codes")
+    P.add_argument("--num_samples", type=int, default=120,
+        help="number of samples for IMLE")
+    P.add_argument("--ipcpe", type=int, default=120,
+        help="iters_per_code_per_ex")
+    P.add_argument("--lr", type=float, default=1e-3,
+        help="learning rate")
+    P.add_argument("--wd", type=float, default=1e-6,
+        help="weight decay")
+    P.add_argument("--mm", nargs="+", default=(.9, .999), type=float,
+        help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
+
     P.add_argument("--suffix", default="",
         help="optional training suffix")
     P.add_argument("--options", default=[], nargs="+",
         help="options")
-    P.add_argument("--gpu_ids", nargs="+", type=int, default=[0, 1],
-        help="GPU IDs")
+    args, unparsed_args = P.parse_known_args()
 
-    P.add_argument("--use_dci", default=1, type=int,
-        help="whether or not to use DCI")
+    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
+        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
+    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
+        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
+
+    ############################################################################
+    # Create the dataset
+    ############################################################################
+    data_tr, data_eval = get_data_splits(args.data, args.eval, args.res)
+    base_transform = get_gen_augs()
+    data_tr = GeneratorDataset(data_tr, base_transform)
+
+    if not evenly_divides(args.bs, len(data_tr)):
+        raise ValueError(f"--bs {args.bs} must evenly divide the length of the dataset {len(data_tr)}")
+
+    ############################################################################
+    # Create the corruption
+    ############################################################################
+    corruptor = get_non_learnable_batch_corruption(
+        grayscale=args.grayscale,
+        rand_illumination=args.rand_illumination,
+        pixel_mask_frac=args.pixel_mask_frac)
+
+    ############################################################################
+    # Create the generator and its optimizer
+    ############################################################################
+    if args.arch == "camnet":
+        camnet_args, _ = CAMNet.parse_args_to_dict(unparsed_args, args.res)
+        generator = CAMNet(**camnet_args).to(device)
+        core_params = [v for name,v in generator.named_parameters()
+                               if not "map" in name]
+        map_params = [v for name,v in generator.named_parameters()
+                               if "map" in name]
+        optimizer = Adam([{"params": core_params},
+                           {"params": map_params, "lr": 1e-2 * args.lr}],
+                          lr=args.lr, weight_decay=args.wd, betas=args.mm)
+    else:
+        raise ValueError(f"Unknown architecture '{args.arch}'")
+
+    last_epoch = -1
+    schedulers = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
+        last_epoch=last_epoch)
+    loss_fn = LPIPSLoss(reduction="mean").to(device)
+    ############################################################################
+    # Begin training!
+    ############################################################################
+
+    for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
+        corruptor, generator, optimizer, loss_tr = one_epoch_imle(corruptor,
+            generator, optimizer, data_tr, loss_fn, bs=args.bs,
+            code_bs=args.code_bs, mini_bs=args.mini_bs,
+            num_samples=args.num_samples,
+            iters_per_code_per_ex=args.ipcpe)
+        #
+        # # Perform a classification cross validation if desired, and otherwise
+        # # print/log results or merely that the epoch happened.
+        # if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
+        #     val_acc_avg, val_acc_std = classification_eval(
+        #         model.backbone,
+        #         data_tr, data_eval,
+        #         augs_fn, augs_te,
+        #         data_name=args.data,
+        #         data_split=args.eval)
+        #     tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
+        #     tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
+        #     tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
+        #     tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f} | val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
+        # else:
+        #     tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
+        #     tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
+        #     tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f}")
+        #
+        # # Saved the model if desired
+        # if e % args.save_iter == 0 and not e == 0:
+        #     save_simclr(model, optimizer, e, args, tb_results, simclr_folder(args))
+        #     tqdm.write("Saved training state")
+
+        scheduler.step()
