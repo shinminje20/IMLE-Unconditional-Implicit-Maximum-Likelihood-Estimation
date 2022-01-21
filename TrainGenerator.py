@@ -143,6 +143,8 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, bs=1,
 
                 total_loss += loss.item()
 
+            tqdm.write(f"Cur loss {loss.item()}")
+
     return corruptor, generator, optimizer, total_loss / len(loader)
 
 if __name__ == "__main__":
