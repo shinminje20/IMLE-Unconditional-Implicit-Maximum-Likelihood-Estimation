@@ -127,7 +127,10 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, bs=1,
         batch_dataset = ZippedDataset(codes_dataset, images_dataset)
         loader = DataLoader(batch_dataset, batch_size=mini_bs,
                             num_workers=num_workers, shuffle=True)
-        for _ in tqdm(range(iters_per_code_per_ex), desc="inner loop", leave=False):
+
+        inner_loop_iters = int(iters_per_code_per_ex * len(batch_dataset) / mini_bs)
+
+        for _ in tqdm(range(inner_loop_iters), desc="inner loop", leave=False):
 
             for codes,(x,ys) in tqdm(loader, desc="Minibatches", leave=False):
 
@@ -181,7 +184,7 @@ if __name__ == "__main__":
         help="batch size to use for sampling codes")
     P.add_argument("--num_samples", type=int, default=120,
         help="number of samples for IMLE")
-    P.add_argument("--ipcpe", type=int, default=120,
+    P.add_argument("--ipcpe", type=int, default=10,
         help="iters_per_code_per_ex")
     P.add_argument("--lr", type=float, default=1e-3,
         help="learning rate")
