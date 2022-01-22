@@ -17,14 +17,21 @@ def flatten(xs):
 
 def get_smaller_dataset(source, splits=["train", "val", "test"],
     split_n_cls=[10, 10, 10], split_npc=[100, 100, 100], seed=0):
-    """
+    """Creates and returns the path to a smaller dataset containing a subsample
+    of [source].
 
     Args:
-    source      --
-    splits      --
-    split_n_cls --
-    split_npc   --
-    seed        --
+    source      -- path to the data source. Images in [source] should be found
+                    via the paths like source/split/class/image.
+    splits      -- names of splits to subsample
+    split_n_cls -- list of integers where the ith integer is the number of
+                    classes to include when subsampling from the ith split, or
+                    'all' to include all classes in the ith split
+    split_npc   -- list of integers where the ith integer is the number of
+                    imags per class to include when subsampling from the ith
+                    split, or 'all' to include all images in a class for the ith
+                    split
+    seed        -- seed for subsampling
     """
     def get_images(class_path, n):
         """Returns a list of [n] images sampled randomly from [class_path]."""
@@ -73,7 +80,7 @@ def get_smaller_dataset(source, splits=["train", "val", "test"],
             for split,n_cls,npc in zip(splits, split_n_cls, split_npc)]
     new_source = f"{source.replace(source_size, '')}-{'-'.join(desc)}_{source_size}"
     new_source = fix_data_path(new_source)
-    
+
     for split in splits:
         for path in split2paths[split]:
             path_class = os.path.basename(os.path.dirname(path))
