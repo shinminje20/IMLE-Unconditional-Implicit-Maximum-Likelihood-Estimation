@@ -7,7 +7,60 @@ from tqdm import tqdm
 
 data_dir = os.path.dirname(os.path.abspath(__file__))
 
-def get_all_files(path, extensions=[], acc=[]):
+def fix_data_path(path):
+    """Corrects errors in a path that can happen due to data renaming."""
+    return path.replace("__", "_").replace("_-", "-").replace("--", "-")
+
+def find_data_res(data_name):
+    """Returns the size of images in [data_name]. Concretely, this is the
+    first instance of a substring 'A1...AnxB1...Bm' where 'A1...An' and
+    'B1...Bm'can be interpreted as digits to an integer.
+    """
+    def is_integer(x):
+        """Returns if input [x] can be interpreted as an integer."""
+        try:
+            if float(x) == int(x):
+                return True
+            else:
+                return False
+        except:
+            return False
+
+    def get_leading_integer(s, tail=False):
+        """Returns the string of integer at the start or end of string [s].
+
+        Args:
+        s       -- the string containing the integer
+        tail    -- whether to look for the integer at the tail fo [s] or not
+        """
+        s = reversed(s) if tail else s
+        digits = []
+        for c in s:
+            if is_integer(c):
+                digits.append(c)
+            else:
+                break
+
+        if digits == []:
+            raise ValueError(f"Found no leading digits in {s}")
+        else:
+            return "".join(list(reversed(digits)) if tail else digits)
+
+    if len(data_name) < 3:
+        raise ValueError(f"'{data_name}' is too short to contain a size")
+
+    for i,c2 in enumerate(data_name[1:-1]):
+        index = i+1
+        c1, c3 = data_name[index - 1], data_name[index + 1]
+        if is_integer(c1) and c2 == "x" and is_integer(c3):
+            first_int = get_leading_integer(data_name[:index], tail=True)
+            second_int = get_leading_integer(data_name[index + 1:])
+            return f"{first_int}x{second_int}"
+
+    raise ValueError(f"Could not find size in '{data_name}'")
+
+
+def get_all_files(path, extensions=[], acc=set()):
     """Returns a list of all files under [path] with an extension in
     [extensions] or simply all the files if [extensions] is empty.
     """
@@ -15,14 +68,14 @@ def get_all_files(path, extensions=[], acc=[]):
         for f in os.listdir(path):
             get_all_files(f"{path}/{f}", extensions=extensions, acc=acc)
     else:
-        acc.append(path)
+        acc.add(path)
     return acc
 
 def resize_dataset(path, new_size):
     """Generates a new dataset matching that under [path] but with the images
     resized to [new_size].
     """
-    new_path = f"{path}_{new_size}"
+    new_path = f"{path}_{new_size}x{new_size}"
     tqdm.write(f"\nWill output new dataset to {new_path}")
 
     files_list = get_all_files(path)
@@ -90,3 +143,55 @@ def make_cls_first(data_folder, cls_first_folder=f"{data_dir}/cls_first"):
                 shutil.copy(image_file, f"{folder}/{os.path.basename(image_file)}")
 
     return f"{cls_first_folder}/{os.path.basename(data_folder)}"
+
+def get_smaller_dataset(dataset, n_cls_tr=10, n_cls_val=5, npc_tr=100,
+    npc_val=100, seed=0):
+    """Creates a dataset in the same folder as [dataset] that is a subset of
+    [dataset], and returns the absolute path to the new dataset.
+
+    Args:
+    dataset         -- absolute path to the dataset to create from
+    n_classes_tr    -- number of classes in the training split
+    n_classes_val   -- number of classes in the val split
+    npc_tr          -- number of images per class in the training split, or
+                        'all' for all of them
+    npc_val         -- number of images per class in the validation split, or
+                        'all' for all of them
+    seed            -- random seed to use
+    """
+    def get_images(class_path, n):
+        """Returns a list of [n] images sampled randomly from [class_path]."""
+        n = len(list(os.listdir(class_path))) if n == "all" else n
+        selected_images = random.sample(os.listdir(class_path), n)
+        return [f"{class_path}/{s}" for s in selected_images]
+
+    # If [dataset] isn't an absolute path, correct it! Then, make sure it exists
+    dataset = f"{data_dir}/{dataset}" if not "/" in dataset else dataset
+    if not os.path.exists(dataset):
+        raise FileNotFoundError(f"Couldn't find specified dataset {dataset}")
+
+    # Subsample the training and validation images
+    random.seed(seed)
+    cls_tr = random.sample(os.listdir(f"{dataset}/train"), n_cls_tr)
+    images_tr = [get_images(f"{dataset}/train/{c}", npc_tr) for c in cls_tr]
+    cls_val = random.sample(os.listdir(f"{dataset}/val"), n_cls_val)
+    images_val = [get_images(f"{dataset}/val/{c}", npc_val) for c in cls_val]
+
+    # Name the dataset and make a folder for it
+    new_dataset = f"{dataset}-{n_cls_tr}-{npc_tr}-{n_cls_val}-{npc_val}-{seed}"
+    if os.path.exists(new_dataset): shutil.rmtree(new_dataset)
+    os.makedirs(new_dataset)
+
+    # Copy the image files to the locations for the new dataset
+    for cls,images in zip(cls_tr, images_tr):
+        cls_path = f"{new_dataset}/train/{cls}"
+        os.makedirs(cls_path)
+        for image in images:
+            shutil.copy(image, f"{cls_path}/{os.path.basename(image)}")
+    for cls,images in zip(cls_val, images_val):
+        cls_path = f"{new_dataset}/val/{cls}"
+        os.makedirs(cls_path)
+        for image in images:
+            shutil.copy(image, f"{cls_path}/{os.path.basename(image)}")
+
+    return new_dataset
