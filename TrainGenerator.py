@@ -92,6 +92,27 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", cod
 
     return [l.cpu() for l in level_codes]
 
+def validate_qualitative(corruptor, generator, dataset, idxs):
+    images_dataset = Subset(dataset, idxs)
+    codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
+                                                 images_dataset, corruptor,
+                                                 generator, code_bs=1,
+                                                 num_samples=0))
+    batch_dataset = ZippedDataset(codes_dataset, images_dataset)
+    loader = DataLoader(batch_dataset, batch_size=len(idxs),
+                        num_workers=num_workers, shuffle=True)
+
+    result = []
+    with torch.no_grad():
+        for codes,(x,ys) in loader:
+            cx = corruptor(x.to(device))
+            fx = generator(cx, [c.to(device) for c in codes])
+
+            result += [y[-1].cpu(), f[-1].cpu()] for y,f in zip(fx, ys)]
+
+    return result
+
+
 def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, bs=1,
     mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12):
     """Trains [generator] and optionally [corruptor] for one epoch on data from
@@ -254,6 +275,9 @@ if __name__ == "__main__":
             code_bs=args.code_bs, mini_bs=args.mini_bs,
             num_samples=args.num_samples,
             iters_per_code_per_ex=args.ipcpe)
+
+        results = validate_qualitative(corruptor, generator, optimizer,
+                                       data_val, bs=args.bs, mini_bs=args.mini_bs,)
         #
         # # Perform a classification cross validation if desired, and otherwise
         # # print/log results or merely that the epoch happened.

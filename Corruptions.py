@@ -10,6 +10,7 @@ import torch.nn.functional as F
 from torchvision import transforms
 
 from Data import *
+from utils.NestedNamespace import NestedNamespace
 from utils.Utils import *
 
 ################################################################################

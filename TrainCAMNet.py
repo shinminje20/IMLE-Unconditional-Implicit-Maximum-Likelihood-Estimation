@@ -1,5 +1,8 @@
-"""Script for training a CAMNet model. Mostly, this is just a wrapper over
-having to deal with annoying JSONs.
+"""Script for training a CAMNet model. It interprets command-line arguments to
+generate training and test config JSONs, which are saved to the model's folder.
+
+Because CAMNet's code base is written very differently from that of ISICLE, the
+command line arguments don't work quite the same way.
 """
 import argparse
 from tqdm import tqdm
@@ -169,14 +172,17 @@ def get_camnet_data_names_tr(args):
     else:
         raise ValueError("Unknown dataset")
 
+def get_res_string(resolution): return f"{resolution}x{resolution}"
+
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
     P.add_argument("--task", choices=["Colorization", "ColorizationSuperResolution"],
         default="ColorizationSuperResolution",
         help="task for training CAMNet")
-    P.add_argument("--data", default="camnet_three",
-        choices=["camnet_three"],
-        help="data to train on")
+    P.add_argument("--data", required=True, type=str,
+        help="path to folder containing training and validation LMDB data, not including resolution")
+    P.add_argument("--res", required=True, nargs="+", type=int,
+        help="resolutions to get data at")
 
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
