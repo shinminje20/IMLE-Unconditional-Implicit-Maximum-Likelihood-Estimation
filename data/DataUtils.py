@@ -11,7 +11,7 @@ def fix_data_path(path):
     """Corrects errors in a path that can happen due to data renaming."""
     return path.replace("__", "_").replace("_-", "-").replace("--", "-")
 
-def find_data_res(data_name):
+def find_data_res(data_name, return_int=False):
     """Returns the size of images in [data_name]. Concretely, this is the
     first instance of a substring 'A1...AnxB1...Bm' where 'A1...An' and
     'B1...Bm'can be interpreted as digits to an integer.
@@ -55,7 +55,13 @@ def find_data_res(data_name):
         if is_integer(c1) and c2 == "x" and is_integer(c3):
             first_int = get_leading_integer(data_name[:index], tail=True)
             second_int = get_leading_integer(data_name[index + 1:])
-            return f"{first_int}x{second_int}"
+
+            if return_int and first_int == second_int:
+                return int(first_int)
+            elif return_int and not first_int == second_int:
+                raise ValueError("Can not return two ints")
+            else:
+                return f"{first_int}x{second_int}"
 
     raise ValueError(f"Could not find size in '{data_name}'")
 

@@ -16,7 +16,7 @@ def flatten(xs):
         return [xs]
 
 def get_smaller_dataset(source, splits=["train", "val", "test"],
-    split_n_cls=[10, 10, 10], split_npc=[100, 100, 100], seed=0):
+    split_n_cls=[10, 10, 10], split_npc=[100, 100, 100], seed=0, new_name=None):
     """Creates and returns the path to a smaller dataset containing a subsample
     of [source].
 
@@ -35,7 +35,7 @@ def get_smaller_dataset(source, splits=["train", "val", "test"],
     """
     def get_images(class_path, n):
         """Returns a list of [n] images sampled randomly from [class_path]."""
-        n = len(list(os.listdir(class_path))) if n == "all" else n
+        n = len(list(os.listdir(class_path))) if n == "all" else int(n)
         selected_images = random.sample(os.listdir(class_path), n)
         return [f"{class_path}/{s}" for s in selected_images]
 
@@ -78,7 +78,12 @@ def get_smaller_dataset(source, splits=["train", "val", "test"],
     source_size = find_data_res(source)
     desc = [f"{split}_{n_cls}_{npc}"
             for split,n_cls,npc in zip(splits, split_n_cls, split_npc)]
-    new_source = f"{source.replace(source_size, '')}-{'-'.join(desc)}_{source_size}"
+
+    if new_name is None:
+        new_source = f"{source.replace(source_size, '')}-{'-'.join(desc)}_{source_size}"
+    else:
+        new_source = f"{data_dir}/{new_name}_{source_size}"
+
     new_source = fix_data_path(new_source)
 
     for split in splits:
@@ -103,6 +108,8 @@ if __name__ == "__main__":
         help="number of images per class, one number per split")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
+    P.add_argument("--new_name", type=str,
+        help="new name if desired")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
     args = P.parse_args()
@@ -115,7 +122,8 @@ if __name__ == "__main__":
         all_datasets.append(get_smaller_dataset(dataset, splits=args.splits,
                                                 split_npc=args.npc,
                                                 split_n_cls=args.n_cls,
-                                                seed=args.seed))
+                                                seed=args.seed,
+                                                new_name=args.new_name))
 
     if args.also_cls_first:
         for dataset in all_datasets:
