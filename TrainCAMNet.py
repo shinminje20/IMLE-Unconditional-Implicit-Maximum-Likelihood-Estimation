@@ -248,6 +248,7 @@ if __name__ == "__main__":
     test_opts["path"]["root"] = camnet_folder(args)
     test_opts["path"]["model"] = f"{camnet_folder(args)}/models/latest.pth"
     test_opts["datasets"]["val"] = build_data_config_eval(args.data, args.task)
+    test_opts["network_G"]["in_nc"] = 1 if args.task == "Colorization" else 3
 
     config_save_path = f"{camnet_folder(args)}/train_config.json"
     dict_to_json(train_opts, config_save_path)
