@@ -82,6 +82,16 @@ def suffix_str(args):
 def load_camnet(file):
     pass
 
+def new_camnet_folder(args):
+    """Returns the folder for saving a CAMNet model trained with [args].
+
+    Due to CAMNet's existing workings, models will actually be saved to
+    project_directory/models/camnet/camnet_folder(args)
+    """
+    folder = f"{project_dir}/models/new_camnet/{args.data}{opts_str(args)}{suffix_str(args)}"
+    if not os.path.exists(folder): os.makedirs(folder)
+    return folder
+
 def camnet_folder(args):
     """Returns the folder for saving a CAMNet model trained with [args].
 

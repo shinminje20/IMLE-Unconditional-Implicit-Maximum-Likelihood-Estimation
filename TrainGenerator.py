@@ -30,7 +30,7 @@ class LPIPSLoss(nn.Module):
         if reduction == "mean":
             self.loss = nn.MSELoss(reduction="mean")
         elif reduction == "batch":
-            self.loss = BatchMSELoss()
+            self.loss = BatchMSELoss().to(device)
         else:
             raise ValueError(f"Unknown reduction '{reduction}'")
 
@@ -61,7 +61,7 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", cod
     if loss_fn == "lpips":
         loss_fn = LPIPSLoss(reduction="batch").to(device)
     elif loss_fn == "mse":
-        loss_fn = nn.MSELoss(reduction="none").to(device)
+        loss_fn = BatchMSELoss().to(device)
     else:
         raise ValueError(f"Unknown loss type {loss_fn}")
 
@@ -97,23 +97,25 @@ def validate_qualitative(corruptor, generator, dataset, idxs):
     codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
                                                  images_dataset, corruptor,
                                                  generator, code_bs=1,
-                                                 num_samples=0))
+                                                 num_samples=0,
+                                                 loss_fn="mse"))
     batch_dataset = ZippedDataset(codes_dataset, images_dataset)
-    loader = DataLoader(batch_dataset, batch_size=len(idxs),
+    loader = DataLoader(batch_dataset, batch_size=1,
                         num_workers=num_workers, shuffle=True)
 
     result = []
     with torch.no_grad():
         for codes,(x,ys) in loader:
             cx = corruptor(x.to(device))
-            fx = generator(cx, [c.to(device) for c in codes])
-
-            result += [y[-1].cpu(), f[-1].cpu()] for y,f in zip(fx, ys)]
+            fx = generator(cx, [c.to(device) for c in codes])[-1]
+            ys = ys[-1]
+            result += [[y.cpu(), f.cpu()] for y,f in zip(ys, fx)]
 
     return result
 
 
-def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, bs=1,
+def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, scheduler,
+    bs=1,
     mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12):
     """Trains [generator] and optionally [corruptor] for one epoch on data from
     [loader] via cIMLE.
@@ -144,7 +146,7 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, bs=1,
         codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
                                                      images_dataset, corruptor,
                                                      generator, code_bs=code_bs,
-                                                     num_samples=num_samples))
+                                                     num_samples=num_samples,))
         batch_dataset = ZippedDataset(codes_dataset, images_dataset)
         loader = DataLoader(batch_dataset, batch_size=mini_bs,
                             num_workers=num_workers, shuffle=True)
@@ -166,13 +168,15 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, bs=1,
 
             tqdm.write(f"Cur loss {loss.item()}")
 
+        scheduler.step()
+
     return corruptor, generator, optimizer, total_loss / len(loader)
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--data", default="cifar10", choices=["cifar10", "camnet3"],
+    P.add_argument("--data", default="cifar10", choices=["cifar10", "camnet3", "camnet3_deci", "camnet3_centi"],
         help="data to train on")
-    P.add_argument("--eval", default="cv", choices=["cv", "eval", "test"],
+    P.add_argument("--eval", default="cv", choices=["cv", "val", "test"],
         help="data for validation")
     P.add_argument("--res", nargs="+", required=True, type=int,
         default=[16, 32],
@@ -233,6 +237,7 @@ if __name__ == "__main__":
     data_tr, data_eval = get_data_splits(args.data, args.eval, args.res)
     base_transform = get_gen_augs()
     data_tr = GeneratorDataset(data_tr, base_transform)
+    data_eval = GeneratorDataset(data_eval, base_transform)
 
     if not evenly_divides(args.bs, len(data_tr)):
         raise ValueError(f"--bs {args.bs} must evenly divide the length of the dataset {len(data_tr)}")
@@ -262,22 +267,25 @@ if __name__ == "__main__":
         raise ValueError(f"Unknown architecture '{args.arch}'")
 
     last_epoch = -1
-    schedulers = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
+    scheduler = CosineAnnealingLinearRampLR(optimizer,
+        args.epochs * (len(data_tr) // args.bs),
+        args.n_ramp,
         last_epoch=last_epoch)
     loss_fn = LPIPSLoss(reduction="mean").to(device)
+
     ############################################################################
     # Begin training!
     ############################################################################
-
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
         corruptor, generator, optimizer, loss_tr = one_epoch_imle(corruptor,
-            generator, optimizer, data_tr, loss_fn, bs=args.bs,
+            generator, optimizer, data_tr, loss_fn, scheduler, bs=args.bs,
             code_bs=args.code_bs, mini_bs=args.mini_bs,
             num_samples=args.num_samples,
             iters_per_code_per_ex=args.ipcpe)
 
-        results = validate_qualitative(corruptor, generator, optimizer,
-                                       data_val, bs=args.bs, mini_bs=args.mini_bs,)
+        results = validate_qualitative(corruptor, generator, data_eval,
+                                       random.sample(range(len(data_eval)), 10))
+        torch.save(results, f"{new_camnet_folder(args)}/{generated_images}/{e}.pt")
         #
         # # Perform a classification cross validation if desired, and otherwise
         # # print/log results or merely that the epoch happened.
@@ -301,5 +309,3 @@ if __name__ == "__main__":
         # if e % args.save_iter == 0 and not e == 0:
         #     save_simclr(model, optimizer, e, args, tb_results, simclr_folder(args))
         #     tqdm.write("Saved training state")
-
-        scheduler.step()

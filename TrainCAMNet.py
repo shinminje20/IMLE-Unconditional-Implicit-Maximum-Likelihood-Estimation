@@ -196,7 +196,7 @@ if __name__ == "__main__":
         help="batch size. Across any minibatch, the latent code is constant"),
     P.add_argument("--mini_bs", default=1, type=int,
         help="batch size for each iteration")
-    P.add_argument("--iters_per_example", default=4, type=int,
+    P.add_argument("--iters_per_example", default=2, type=int,
         help="iterations per example on each epoch")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
     config_save_path = f"{camnet_folder(args)}/train_config.json"
     dict_to_json(train_opts, config_save_path)
-    os.system(f"python generators/camnet/train.py -opt {config_save_path}")
-
     config_save_path = f"{camnet_folder(args)}/test_config.json"
     dict_to_json(test_opts, config_save_path)
+
+    os.system(f"python generators/camnet/train.py -opt {config_save_path}")

@@ -83,10 +83,10 @@ def get_data_splits(data_str, eval_str, res=None):
         data_paths_tr = f"{data_path}/train"
         data_paths_eval = f"{data_path}/{eval_split_specifier}"
     else:
-        data_paths_tr = [f"{data_path}_{r}/train" for r in res]
+        data_paths_tr = [f"{data_path}_{r}x{r}/train" for r in res]
         data_paths_eval = [
-             f"{data_path}_{min(res)}/{eval_split_specifier}",
-             f"{data_path}_{max(res)}/{eval_split_specifier}"
+             f"{data_path}_{min(res)}x{min(res)}/{eval_split_specifier}",
+             f"{data_path}_{max(res)}x{max(res)}/{eval_split_specifier}"
         ]
 
     check_paths_exist([data_paths_tr, data_paths_eval])
@@ -260,7 +260,8 @@ class GeneratorDataset(Dataset):
             self.shapes = [s[0] for s in shapes]
             tqdm.write(f"Validated source datasets: lengths {[len(d) for d in self.datasets]} | shape sequence {shapes}")
 
-    def __len__(self): return len(self.datasets[0])
+    def __len__(self):
+        return len(self.datasets[0])
 
     def __getitem__(self, idx):
         images = [d[idx][0] for d in self.datasets]

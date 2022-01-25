@@ -36,7 +36,7 @@ data2url = {
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="Dataset downloading and creation")
     P.add_argument("--data",
-        choices=["tinyImagenet", "miniImagenet", "camnet3", "cifar10"],
+        choices=["tinyImagenet", "miniImagenet", "camnet3", "cifar10", "camnet3_lmdb", "camnet3_deci_lmdb", "camnet3_centi_lmdb"],
         help="also make a class-first dataset split")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
@@ -56,7 +56,7 @@ if __name__ == "__main__":
         all_datasets = [dataset_dir] + [resize_dataset(dataset_dir, s)
             for s in tqdm(args.sizes)]
 
-    if args.also_cls_first:
+    if args.also_cls_first and not "lmdb" in args.data:
         tqdm.write(f"----- Making class-first copies -----")
         for dataset in all_datasets:
             make_cls_first(dataset)
