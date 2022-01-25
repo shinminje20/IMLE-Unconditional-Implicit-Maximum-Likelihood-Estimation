@@ -8,6 +8,9 @@ import numpy as np
 from PIL import Image
 import PIL
 
+import os
+from tqdm import tqdm
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.progress_bar import ProgressBar
 
@@ -18,7 +21,7 @@ def chunks(lst, n):
         yield lst[i:i + n]
 
 
-def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, width_check=84):
+def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, width_check=256):
     img_list = sorted(glob.glob(_img_folder))
     images = []
     _count_correct_images = 0
@@ -34,6 +37,11 @@ def creat_lmdb_per_category(_img_folder, _lmdb_save_paths, _scales, _map_sizes, 
             continue
         images.append(img)
         _count_correct_images += 1
+
+
+    if _count_correct_images == 0:
+        tqdm.write("Found no 'correct images', so will not create dataset for this split.")
+        return 0, 0
 
     for j, scale in enumerate(_scales):
         down_lmdb_save_path = _lmdb_save_paths[j]
@@ -154,7 +162,7 @@ for db_mode in dataset_modes:
     map_sizes = []
 
     for scale in scales:
-        lmdb_save_paths.append(root_save_lmdb + dataset_name + "_{}_{}.lmdb".format(db_mode, int(width * scale)))
+        lmdb_save_paths.append(root_save_lmdb + dataset_name + f"_{db_mode}_{int(width * scale)}x{int(width * scale)}.lmdb")
         map_sizes.append(0)
 
     for counter, category_path in enumerate(categories_list):
@@ -182,8 +190,10 @@ print("Finish...")
 print("Check lmdb datasets integrity")
 for scale in scales:
     for db_mode in dataset_modes:
-        lmdb_save_path = root_save_lmdb + dataset_name + "_{}_{}.lmdb".format(db_mode, int(width * scale))
+
+        lmdb_save_path = root_save_lmdb + dataset_name + f"_{db_mode}_{int(width * scale)}x{int(width * scale)}.lmdb"
         print(lmdb_save_path)
-        lmdb_env = lmdb.open(lmdb_save_path, readonly=True)
-        print(lmdb_env.stat())
-        print("----------------")
+        if os.path.exists(lmdb_save_path):
+            lmdb_env = lmdb.open(lmdb_save_path, readonly=True)
+            print(lmdb_env.stat())
+            print("----------------")

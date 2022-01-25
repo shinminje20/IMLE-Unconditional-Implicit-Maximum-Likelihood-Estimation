@@ -108,8 +108,8 @@ def generate_code_samples(model, data, opt):
                 # clear the db
                 dci_db.clear()
 
-            print_without_newline('\rFinding level %d code: Processed %d out of %d instances\n' % (
-                level_num, num_instances, num_instances))
+            # print_without_newline('\rFinding level %d code: Processed %d out of %d instances\n' % (
+            #     level_num, num_instances, num_instances))
             sampled_codes.append(cur_sampled_code)
             dci_db.free()
 

@@ -64,8 +64,8 @@ for test_loader in test_loaders:
         need_HR = False if test_loader.dataset.opt[HR_key] is None else True
         multiple = 1 if "multiple" not in opt else opt["multiple"]
 
-        if not all(data['is_valid']):
-            continue
+        # if not all(data['is_valid']):
+        #    continue
         # For generating multiple samples of the same input image
         for run_index in range(multiple):
             code = model.gen_code(data['network_input'][0].shape[0],

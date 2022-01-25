@@ -143,27 +143,6 @@ def main():
     tqdm.write('---------- Start training -------------')
     validate(val_loader, opt, model, current_step, 0, logger)
 
-    # The loops below are confusing, but I don't want to change the code too
-    # much. Here's what's going on:
-    #
-    # A) Like normal, on each of many epochs, we iterate over the entire
-    #   training dataset—this is the outermost loop.
-    # B) The data is fed to us in minibatches—like normal—and on each batch, we
-    #   generate a bunch of latent codes that we will use for the batch.
-    # C) In the innermost loop, we actually train with "mini-minibatches" of
-    #   data and the corresponding codes. Thus, on an given minibatch, we take
-    #   take multiple steps against the (probably changing each time) gradient!
-    #
-    # The number of iterations in the innermost loop is determined by the value
-    # of the 'num_days' key of [opt]. It should be a function of the size of the
-    # minibatch since `drop_last` isn't set, and is confusing anyways.
-    # --------------------------------------------------------------------------
-    # Therefore, I've included `iters_per_example` in the configuration that
-    # becomes `opt`; the inner loop has
-    #
-    #   iters_per_example * minibatch size / batch_size_per_day
-    #
-    # iterations!
     for epoch in tqdm(range(num_months), desc="Epochs"):
         for i, train_data in tqdm(enumerate(train_loader), desc="Batches", total=len(train_loader), leave=False):
             # Sample the codes used for training of the month
@@ -192,11 +171,7 @@ def main():
                 else:
                     cur_day_batch_idx = slice(cur_day_batch_start_idx, cur_day_batch_end_idx)
 
-                try:
-                    cur_day_train_data = {key: val[cur_day_batch_idx] for key, val in train_data.items()}
-                except:
-                    print("    ", cur_day_batch_idx, type(cur_day_batch_idx))
-                    assert False
+                cur_day_train_data = {key: val[cur_day_batch_idx] for key, val in train_data.items()}
                 code = [gen_code[cur_day_batch_idx] for gen_code in cur_month_code]
 
                 cur_day_train_data['network_input'] = []
@@ -215,30 +190,23 @@ def main():
                 time_elapsed = time.time() - start_time
                 start_time = time.time()
 
-                # log
-                if current_step % opt['logger']['print_freq'] == 0 or current_step == 1:
-                    logs = model.get_current_log()
-                    print_rlt = OrderedDict()
-                    print_rlt['model'] = opt['model']
-                    print_rlt['epoch'] = epoch
-                    print_rlt['iters'] = current_step
-                    print_rlt['time'] = time_elapsed
-                    for k, v in logs.items():
-                        print_rlt[k] = v
-                    print_rlt['lr'] = model.get_current_learning_rate()
-                    logger.print_format_results('train', print_rlt)
-
-                # save models
-                if current_step % opt['logger']['save_checkpoint_freq'] == 0:
-                    tqdm.write(f"Saving the model at the end of iter {current_step:d}.")
-                    model.save(current_step)
-
-                # validation
-                if current_step % opt['train']['val_freq'] == 0:
-                    validate(val_loader, opt, model, current_step, epoch, logger)
-
                 # update learning rate
                 model.update_learning_rate()
+
+            logs = model.get_current_log()
+            print_rlt = OrderedDict()
+            print_rlt['model'] = opt['model']
+            print_rlt['epoch'] = epoch
+            print_rlt['iters'] = current_step
+            print_rlt['time'] = time_elapsed
+            for k, v in logs.items():
+                print_rlt[k] = v
+            print_rlt['lr'] = model.get_current_learning_rate()
+            logger.print_format_results('train', print_rlt)
+
+        validate(val_loader, opt, model, current_step, epoch, logger)
+        tqdm.write(f"Saving the model at the end of iter {current_step:d}.")
+        model.save(current_step)
 
     tqdm.write('Saving the final model.')
     model.save('latest')
