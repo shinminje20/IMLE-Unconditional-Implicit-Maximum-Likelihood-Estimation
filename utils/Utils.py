@@ -160,6 +160,31 @@ def show_image_grid(images):
 
     plt.show()
 
+def save_images_grid(images, path):
+    if isinstance(images, torch.Tensor):
+        images = [[images]]
+    elif isinstance(images, list) and isinstance(images[0], torch.Tensor):
+        images = [images]
+    elif isinstance(images, list) and isinstance(images[0], list):
+        images = images
+    else:
+        raise ValueError("Unknown collection of types in 'images'")
+
+    fix, axs = plt.subplots(ncols=max([len(image_row) for image_row in images]),
+                            nrows=len(images),
+                            squeeze=False)
+
+    for i,images_row in enumerate(images):
+        for j,image in enumerate(images_row):
+            axs[i, j].imshow(np.asarray(functional_TF.to_pil_image(image.detach())), cmap='Greys_r')
+            axs[i, j].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+
+    if not os.path.exists(os.path.dirname(path)):
+        os.makedirs(os.path.dirname(path))
+    plt.savefig(path)
+    tqdm.write(f"Saved image grid to {path}")
+
+
 ################################################################################
 # Miscellaneous
 ################################################################################

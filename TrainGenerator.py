@@ -3,6 +3,7 @@ from tqdm import tqdm
 
 import torch.nn as nn
 from torch.optim import Adam
+from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader, Subset
 
 from CAMNet import CAMNet
@@ -11,6 +12,8 @@ from Corruptions import get_non_learnable_batch_corruption
 from Data import *
 from utils.Utils import *
 from utils.UtilsLPIPS import LPIPSFeats
+
+
 
 class BatchMSELoss(nn.Module):
     """MSELoss but with the reduction leaving the batch dimension intact."""
@@ -46,7 +49,7 @@ class LPIPSLoss(nn.Module):
         else:
             return self.loss(self.l_feats(fx), self.l_feats(y))
 
-def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", code_bs=6, num_samples=120):
+def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", code_bs=6, num_samples=120, verbose=1):
     """Returns new latent codes via hierarchical sampling.
 
     Args:
@@ -72,7 +75,7 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", cod
     for level_idx in tqdm(range(len(z_dims)), desc="levels", leave=False):
         least_losses = torch.ones(bs, device=device) * float("inf")
 
-        for _ in tqdm(range(num_samples), desc="sampling", leave=False):
+        for i in tqdm(range(num_samples), desc="sampling", leave=False):
             for idx,(x,ys) in enumerate(loader):
                 start_idx = code_bs * idx
                 end_idx = code_bs * (idx + 1)
@@ -89,10 +92,23 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", cod
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
+                least_losses[start_idx:end_idx][change_idxs][change_idxs] = losses[change_idxs]
+
+            if verbose == 1 and i % 20 == 0:
+                tqdm.write(f"    least_losses avg {torch.mean(least_losses)}")
 
     return [l.cpu() for l in level_codes]
 
-def validate_qualitative(corruptor, generator, dataset, idxs):
+def get_images(corruptor, generator, dataset, idxs=None, samples_per_image=1):
+    """Returns a list of lists, where each sublist contains first a ground-truth
+    image and then [samples_per_image] images conditioned on that one.
+
+    Args:
+    corruptor   -- a corruptor to remove information from images
+    generator   -- a generator to fix corrupted images
+    dataset     -- GeneratorDataset to load images from
+    idxs        -- the indices to [dataset] to get images for
+    """
     images_dataset = Subset(dataset, idxs)
     codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
                                                  images_dataset, corruptor,
@@ -107,16 +123,16 @@ def validate_qualitative(corruptor, generator, dataset, idxs):
     with torch.no_grad():
         for codes,(x,ys) in loader:
             cx = corruptor(x.to(device))
-            fx = generator(cx, [c.to(device) for c in codes])[-1]
+            fx = generator(cx, [c.to(device) for c in codes])[-1].cpu()
             ys = ys[-1]
-            result += [[y.cpu(), f.cpu()] for y,f in zip(ys, fx)]
+            result += [[y, f] for y,f in zip(ys, fx)]
 
     return result
 
 
 def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, scheduler,
     bs=1,
-    mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12):
+    mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12, verbose=1):
     """Trains [generator] and optionally [corruptor] for one epoch on data from
     [loader] via cIMLE.
 
@@ -166,7 +182,8 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, scheduler,
 
                 total_loss += loss.item()
 
-            tqdm.write(f"Cur loss {loss.item()}")
+        if verbose == 1:
+            tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5f}")
 
         scheduler.step()
 
@@ -174,7 +191,7 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, scheduler,
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--data", default="cifar10", choices=["cifar10", "camnet3", "camnet3_deci", "camnet3_centi"],
+    P.add_argument("--data", default="cifar10", choices=["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi"],
         help="data to train on")
     P.add_argument("--eval", default="cv", choices=["cv", "val", "test"],
         help="data for validation")
@@ -226,10 +243,7 @@ if __name__ == "__main__":
         help="options")
     args, unparsed_args = P.parse_known_args()
 
-    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
-        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
-    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
-        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
+
 
     ############################################################################
     # Create the dataset
@@ -239,8 +253,17 @@ if __name__ == "__main__":
     data_tr = GeneratorDataset(data_tr, base_transform)
     data_eval = GeneratorDataset(data_eval, base_transform)
 
+    if len(data_tr) < args.bs:
+        tqdm.write(f"Setting batch size to {len(data_tr)} to match dataset length")
+        args.bs = len(data_tr)
     if not evenly_divides(args.bs, len(data_tr)):
         raise ValueError(f"--bs {args.bs} must evenly divide the length of the dataset {len(data_tr)}")
+    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
+        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
+    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
+        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
+    if not int(args.bs / args.code_bs) == float(args.bs / args.code_bs):
+         raise ValueError(f"--code_bs {args.code_bs} must evenly divide --bs {args.bs}")
 
     ############################################################################
     # Create the corruption
@@ -267,9 +290,9 @@ if __name__ == "__main__":
         raise ValueError(f"Unknown architecture '{args.arch}'")
 
     last_epoch = -1
-    scheduler = CosineAnnealingLinearRampLR(optimizer,
-        args.epochs * (len(data_tr) // args.bs),
-        args.n_ramp,
+    scheduler = MultiStepLR(optimizer,
+        range(args.epochs * (len(data_tr) // args.bs)),
+        gamma=1e-10 ** (1 / (args.epochs * (len(data_tr) // args.bs))),
         last_epoch=last_epoch)
     loss_fn = LPIPSLoss(reduction="mean").to(device)
 
@@ -283,9 +306,9 @@ if __name__ == "__main__":
             num_samples=args.num_samples,
             iters_per_code_per_ex=args.ipcpe)
 
-        results = validate_qualitative(corruptor, generator, data_eval,
+        results = get_images(corruptor, generator, data_eval,
                                        random.sample(range(len(data_eval)), 10))
-        torch.save(results, f"{new_camnet_folder(args)}/{generated_images}/{e}.pt")
+        save_images_grid(results, f"{new_camnet_folder(args)}/generated_images/epoch{e}.png")
         #
         # # Perform a classification cross validation if desired, and otherwise
         # # print/log results or merely that the epoch happened.

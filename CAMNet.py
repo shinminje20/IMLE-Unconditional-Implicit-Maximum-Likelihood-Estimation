@@ -26,6 +26,11 @@ def flatten(xs):
 
     return result
 
+# class SimpleNet(nn.Module):
+#
+#     def __init__(self, num_):
+
+
 class CAMNet(nn.Module):
     """CAMNet rewritten to be substantially stateless, better-documented, and
     optimized for ISICLE.

@@ -43,10 +43,20 @@ if __name__ == "__main__":
     P.add_argument("--sizes", default=[16, 32, 64, 128, 256], type=int,
         nargs="+",
         help="sizes to make the images. -1 or zero for no resizing")
+    P.add_argument("--use_existing", type=str,
+        help="use existing dataset instead of downloading one")
     args = P.parse_args()
 
-    tqdm.write(f"----- Downloading base dataset -----")
-    dataset_dir = gdown_unzip(data2url[args.data], args.data)
+    if args.use_existing is None:
+        tqdm.write(f"----- Downloading base dataset -----")
+        dataset_dir = gdown_unzip(data2url[args.data], args.data)
+    else:
+        tqdm.write(f"----- Using existing dataset {args.use_existing} -----")
+        if not args.use_existing.startswith(data_dir):
+            raise ValueError(f"Existing datasets should already be in {data_dir}")
+        
+        args.data = args.use_existing
+        dataset_dir = args.use_existing
 
     if len(args.sizes) == 1 and args.sizes[0] <= 0:
         tqmd.write("----- Not resizing dataset -----")
