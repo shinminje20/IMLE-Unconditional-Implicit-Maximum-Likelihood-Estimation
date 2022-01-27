@@ -96,10 +96,10 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips",
     loader = DataLoader(data_subset, batch_size=code_bs, shuffle=False,
                         num_workers=num_workers)
 
-    for level_idx in tqdm(range(len(z_dims)), desc="Resolutions", leave=False):
+    for level_idx in tqdm(range(len(z_dims)), desc="Resolutions", leave=False, dynamic_ncols=True):
         least_losses = torch.ones(bs, device=device) * float("inf")
 
-        for i in tqdm(range(num_samples), desc="Sampling", leave=False):
+        for i in tqdm(range(num_samples), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(x,ys) in enumerate(loader):
                 start_idx = code_bs * idx
                 end_idx = code_bs * (idx + 1)
@@ -134,25 +134,27 @@ def get_images(corruptor, generator, dataset, idxs=None, samples_per_image=1):
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
-    images_dataset = Subset(dataset, idxs)
-    codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
-                                                 images_dataset, corruptor,
-                                                 generator, code_bs=1,
-                                                 num_samples=0,
-                                                 loss_fn="mse"))
-    batch_dataset = ZippedDataset(codes_dataset, images_dataset)
-    loader = DataLoader(batch_dataset, batch_size=1,
-                        num_workers=num_workers, shuffle=True)
-
     result = []
-    with torch.no_grad():
-        for zs,(x,ys) in loader:
-            cx = corruptor(x.to(device))
-            fx = generator(cx, [z.to(device) for z in zs])[-1].cpu()
-            ys = ys[-1]
-            result += [[y, c.cpu(), f] for y,c,f in zip(ys, cx, fx)]
+    images_dataset = Subset(dataset, idxs)
 
-    return result
+    for _ in range(samples_per_image):
+        codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
+                                                     images_dataset, corruptor,
+                                                     generator, code_bs=1,
+                                                     num_samples=0,
+                                                     loss_fn="mse"))
+        batch_dataset = ZippedDataset(codes_dataset, images_dataset)
+        loader = DataLoader(batch_dataset, batch_size=1,
+                            num_workers=num_workers, shuffle=False)
+
+        with torch.no_grad():
+            for zs,(x,ys) in loader:
+                cx = corruptor(x.to(device))
+                fx = generator(cx, [z.to(device) for z in zs])[-1].cpu()
+                ys = ys[-1]
+                result += [[y, c.cpu(), f] for y,c,f in zip(ys, cx, fx)]
+
+        return result
 
 
 def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
@@ -182,7 +184,7 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
     total_loss = 0
 
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
-    for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False):
+    for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
         images_dataset = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
         codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
             images_dataset, corruptor, generator, loss_fn=loss_fn,
@@ -193,9 +195,9 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
 
         inner_loop_iters = int(iters_per_code_per_ex * len(batch_dataset) / mini_bs)
 
-        for _ in tqdm(range(inner_loop_iters), desc="inner loop", leave=False):
+        for _ in tqdm(range(inner_loop_iters), desc="inner loop", leave=False, dynamic_ncols=True):
 
-            for codes,(x,ys) in tqdm(loader, desc="Minibatches", leave=False):
+            for codes,(x,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
 
                 generator.zero_grad()
                 cx = corruptor(x.to(device))
@@ -325,7 +327,7 @@ if __name__ == "__main__":
     ############################################################################
     # Begin training!
     ############################################################################
-    for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
+    for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, generator, optimizer, loss_tr = one_epoch_imle(
             corruptor,
             generator,
