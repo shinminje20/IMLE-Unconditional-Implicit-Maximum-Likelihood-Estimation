@@ -13,41 +13,49 @@ from Data import *
 from utils.Utils import *
 from utils.UtilsLPIPS import LPIPSFeats
 
+def compute_loss(fx, y, loss_fn, reduction="none", list_reduction="none"):
+    """Returns the loss of output [fx] against target [y] using loss function
+    [loss_fn] and reduction strategies [reduction] and [list_reduction].
 
+    Args:
+    fx              -- list of or single BSxCxHxW generated images
+    y               -- list of or single BSxCxHxW ground-truth image
+    loss_fn         -- unreduced loss function that acts on 4D tensors
+    reduction       -- how to reduce across the images
+    list_reduction  -- how to reduce across the list if inputs include lists
+    """
+    if not loss_fn.reduction == "none":
+        raise ValueError(f"Wrapped loss function's reduction must be 'none' but was '{loss_fn.reduction}'")
 
-class BatchMSELoss(nn.Module):
-    """MSELoss but with the reduction leaving the batch dimension intact."""
-    def __init__(self):
-        super(BatchMSELoss, self).__init__()
-
-    def forward(self, fx, y):
-        unreduced_loss = F.mse_loss(fx, y, reduction="none")
-        return torch.sum(unreduced_loss.view(len(fx), -1), axis=1)
-
-class LPIPSLoss(nn.Module):
-    """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean"):
-        super(LPIPSLoss, self).__init__()
-        self.l_feats = LPIPSFeats()
-        self.reduction = reduction
-        if reduction == "mean":
-            self.loss = nn.MSELoss(reduction="mean")
+    if isinstance(fx, list) and isinstance(y, list):
+        losses = [compute_loss(f, t, loss_fn, reduction) for f,t in zip(fx, y)]
+        if list_reduction == "none":
+            return torch.stack(losses, axis=0)
+        elif list_reduction == "mean":
+            return torch.mean(torch.stack(losses), axis=0)
+        elif list_reduction == "sum":
+            return torch.sum(torch.stack(losses), axis=0)
+        else:
+            raise ValueError(f"Unknown list_reduction '{list_reduction}'")
+    else:
+        if reduction == "none":
+            return loss_fn(fx, y)
+        elif reduction == "mean":
+            return torch.mean(loss_fn(fx, y))
         elif reduction == "batch":
-            self.loss = BatchMSELoss().to(device)
+            return loss_fn(fx, y).view(fx.shape[0], -1)
         else:
             raise ValueError(f"Unknown reduction '{reduction}'")
 
-    def forward(self, fx, y):
-        """Returns the loss between generated images [fx] and real images [y].
-        [fx] and [y] can either be lists of images and loss is the sum of the
-        loss computed on their pairwise elements, or simply batches of images.
-        """
-        if isinstance(fx, list) and isinstance(y, list):
-            if self.reduction == "mean":
-                losses = [self.loss(self.l_feats(fx_), self.l_feats(y_)) for fx_,y_ in zip(fx, y)]
-                return torch.mean(torch.stack(losses))
-        else:
-            return self.loss(self.l_feats(fx), self.l_feats(y))
+class UnreducedLPIPSLoss(nn.Module):
+    """Returns loss between LPIPS features of generated and target images."""
+    def __init__(self, reduction="mean"):
+        super(LPIPSLoss, self).__init__()
+        self.lpips = LPIPSFeats()
+        self.reduction = "none"
+        self.loss = nn.MSELoss(reduction=self.reduction)
+
+    def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
 
 def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", code_bs=6, num_samples=120, verbose=1):
     """Returns new latent codes via hierarchical sampling.
@@ -130,9 +138,9 @@ def get_images(corruptor, generator, dataset, idxs=None, samples_per_image=1):
     return result
 
 
-def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, scheduler,
-    bs=1,
-    mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12, verbose=1):
+def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
+    bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
+    verbose=1):
     """Trains [generator] and optionally [corruptor] for one epoch on data from
     [loader] via cIMLE.
 
@@ -153,7 +161,13 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, scheduler,
     mini_bs                 -- the batch size to run per iteration. Must evenly
                                 divide the batch size of [loader]
     """
-    loss_fn = LPIPSLoss(reduction="mean").to(device)
+    if loss_fn == "lpips":
+        list_loss_fn =
+    elif loss_fn == "mse":
+        list_loss_fn =
+    else:
+        raise ValueError(f"Unknown loss_fn '{loss_fn}'")
+
     total_loss = 0
 
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
@@ -184,8 +198,6 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn, scheduler,
 
         if verbose == 1:
             tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5f}")
-
-        scheduler.step()
 
     return corruptor, generator, optimizer, total_loss / len(loader)
 
@@ -289,20 +301,27 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Unknown architecture '{args.arch}'")
 
+    ############################################################################
+    # Set up remaining training utilities
+    ############################################################################
     last_epoch = -1
-    scheduler = MultiStepLR(optimizer,
-        range(args.epochs * (len(data_tr) // args.bs)),
-        gamma=1e-10 ** (1 / (args.epochs * (len(data_tr) // args.bs))),
+    scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs,
+        min(10, max(1, int(args.epochs / 10))),
         last_epoch=last_epoch)
-    loss_fn = LPIPSLoss(reduction="mean").to(device)
 
     ############################################################################
     # Begin training!
     ############################################################################
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
-        corruptor, generator, optimizer, loss_tr = one_epoch_imle(corruptor,
-            generator, optimizer, data_tr, loss_fn, scheduler, bs=args.bs,
-            code_bs=args.code_bs, mini_bs=args.mini_bs,
+        corruptor, generator, optimizer, loss_tr = one_epoch_imle(
+            corruptor,
+            generator,
+            optimizer,
+            data_tr,
+            loss_fn=args.loss_fn,
+            bs=args.bs,
+            mini_bs=args.mini_bs,
+            code_bs=args.code_bs,
             num_samples=args.num_samples,
             iters_per_code_per_ex=args.ipcpe)
 
