@@ -77,7 +77,7 @@ def compute_loss(fx, y, loss_fn, reduction="none", list_reduction="mean"):
 # IMLE whatnot
 ################################################################################
 
-def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips",
+def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="mse",
     code_bs=6, num_samples=120, verbose=1):
     """Returns new latent codes via hierarchical sampling.
 
@@ -124,7 +124,7 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips",
 
     return [l.cpu() for l in level_codes]
 
-def get_images(corruptor, generator, dataset, idxs=None, samples_per_image=1):
+def get_images(corruptor, generator, dataset, idxs=[0], samples_per_image=1):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 
@@ -134,27 +134,31 @@ def get_images(corruptor, generator, dataset, idxs=None, samples_per_image=1):
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
-    result = []
     images_dataset = Subset(dataset, idxs)
+    loader = DataLoader(images_dataset, batch_size=1, num_workers=num_workers)
 
-    for _ in range(samples_per_image):
-        codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
-                                                     images_dataset, corruptor,
-                                                     generator, code_bs=1,
-                                                     num_samples=0,
-                                                     loss_fn="mse"))
-        batch_dataset = ZippedDataset(codes_dataset, images_dataset)
-        loader = DataLoader(batch_dataset, batch_size=1,
-                            num_workers=num_workers, shuffle=False)
+    expanded_shape = (samples_per_image,) + images_dataset[0][0].shape
+    corrupted = [corruptor(x.to(device)).cpu() for x,_ in loader]
+    corrupted = [[c_ for c_ in c.expand(expanded_shape)] for c in corrupted]
+    corrupted = XDataset(flatten(corrupted))
 
-        with torch.no_grad():
-            for zs,(x,ys) in loader:
-                cx = corruptor(x.to(device))
-                fx = generator(cx, [z.to(device) for z in zs])[-1].cpu()
-                ys = ys[-1]
-                result += [[y, c.cpu(), f] for y,c,f in zip(ys, cx, fx)]
+    codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
+        corrupted, corruptor, generator, num_samples=0, verbose=False))
+    dataset = ZippedDataset(corrupted, codes_dataset)
+    loader = DataLoader(dataset, batch_size=1, num_workers=num_workers)
 
-        return result
+    results = [[]] * len(idxs)
+    for idx,(cx,codes) in enumerate(loader):
+        y = images_dataset[idx // samples_per_image][1][-1]
+        results[idx // samples_per_image] = [y, cx.squeeze(0).cpu()]
+
+    with torch.no_grad():
+        for idx,(cx,codes) in enumerate(loader):
+            y = images_dataset[idx // samples_per_image][1][-1]
+            fx = generator(cx.to(device), [c.to(device) for c in codes])[-1]
+            results[idx // samples_per_image].append(fx.squeeze(0).cpu())
+
+    return results
 
 
 def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
@@ -233,7 +237,7 @@ if __name__ == "__main__":
     ############################################################################
     P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
         help="grayscale corruption")
-    P.add_argument("--pixel_mask_frac", default=.5, type=float,
+    P.add_argument("--pix_mask_frac", default=.5, type=float,
         help="fraction of pixels to mask at 16x16 resolution")
     P.add_argument("--rand_illumination", default=.2, type=float,
         help="amount by which the illumination of an image can change")
@@ -241,7 +245,7 @@ if __name__ == "__main__":
     ############################################################################
     # Training hyperparameters
     ############################################################################
-    P.add_argument("--loss_fn", default="lpips", choices=["mse", "lpips"],
+    P.add_argument("--loss", default="lpips", choices=["mse", "lpips"],
         help="loss function to use")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
@@ -273,7 +277,8 @@ if __name__ == "__main__":
     args, unparsed_args = P.parse_known_args()
 
     ############################################################################
-    # Create the dataset
+    # Create the dataset and options, and check that various batch types have
+    # okay sizes
     ############################################################################
     data_tr, data_eval = get_data_splits(args.data, args.eval, args.res)
     base_transform = get_gen_augs()
@@ -285,12 +290,23 @@ if __name__ == "__main__":
         args.bs = len(data_tr)
     if not evenly_divides(args.bs, len(data_tr)):
         raise ValueError(f"--bs {args.bs} must evenly divide the length of the dataset {len(data_tr)}")
-    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
-        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
-    if not int(args.bs / args.mini_bs) == float(args.bs / args.mini_bs):
-        raise ValueError(f"--mini_bs {args.mini_bs} must evenly divide --bs {args.bs}")
-    if not int(args.bs / args.code_bs) == float(args.bs / args.code_bs):
-         raise ValueError(f"--code_bs {args.code_bs} must evenly divide --bs {args.bs}")
+    if not evenly_divides(args.mini_bs, args.bs) or args.bs < args.mini_bs:
+        raise ValueError(f"--mini_bs {args.mini_bs} must be at most and evenly divide --bs {args.bs}")
+    if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
+         raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
+
+    args.options = sorted([
+        f"bs{args.bs}",
+        f"code_bs{args.code_bs}",
+        f"grayscale{args.grayscale}",
+        f"ipcpe{args.ipcpe}",
+        f"loss{args.loss}",
+        f"lr{args.lr}",
+        f"mini_bs{args.mini_bs}",
+        f"mm{'_'.join([str(m) for m in list(args.mm)])}",
+        f"pix_mask_frac{args.pix_mask_frac}"
+        f"wd{args.wd}",
+    ])
 
     ############################################################################
     # Create the corruption
@@ -298,7 +314,7 @@ if __name__ == "__main__":
     corruptor = get_non_learnable_batch_corruption(
         grayscale=args.grayscale,
         rand_illumination=args.rand_illumination,
-        pixel_mask_frac=args.pixel_mask_frac)
+        pixel_mask_frac=args.pix_mask_frac)
 
     ############################################################################
     # Create the generator and its optimizer
@@ -321,12 +337,13 @@ if __name__ == "__main__":
     ############################################################################
     last_epoch = -1
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs,
-        min(10, max(1, int(args.epochs / 10))),
+        args.n_ramp,
         last_epoch=last_epoch)
 
     ############################################################################
     # Begin training!
     ############################################################################
+
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, generator, optimizer, loss_tr = one_epoch_imle(
             corruptor,
@@ -342,30 +359,8 @@ if __name__ == "__main__":
             verbose=args.verbose)
 
         results = get_images(corruptor, generator, data_eval,
-                                       random.sample(range(len(data_eval)), 10))
+            idxs=random.sample(range(len(data_eval)), 10),
+            samples_per_image=5)
         save_images_grid(results, f"{new_camnet_folder(args)}/generated_images/epoch{e}.png")
         tqdm.write(f"loss_tr {loss_tr:.5f} | lr {scheduler.get_last_lr()[0]:.5e}")
         scheduler.step()
-        #
-        # # Perform a classification cross validation if desired, and otherwise
-        # # print/log results or merely that the epoch happened.
-        # if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
-        #     val_acc_avg, val_acc_std = classification_eval(
-        #         model.backbone,
-        #         data_tr, data_eval,
-        #         augs_fn, augs_te,
-        #         data_name=args.data,
-        #         data_split=args.eval)
-        #     tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
-        #     tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
-        #     tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
-        #     tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f} | val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
-        # else:
-        #     tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
-        #     tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
-        #     tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f}")
-        #
-        # # Saved the model if desired
-        # if e % args.save_iter == 0 and not e == 0:
-        #     save_simclr(model, optimizer, e, args, tb_results, simclr_folder(args))
-        #     tqdm.write("Saved training state")

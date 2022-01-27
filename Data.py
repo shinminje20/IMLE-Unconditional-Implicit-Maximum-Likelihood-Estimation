@@ -171,6 +171,22 @@ def get_gen_augs():
 ################################################################################
 # Datasets
 ################################################################################
+
+class XDataset(Dataset):
+    """A wrapper over an iterable."""
+    def __init__(self, data, transform=None):
+        super(XDataset, self).__init__()
+        self.data = data
+        self.transform = transform
+
+    def __len__(self): return len(self.data)
+
+    def __getitem__(self, idx):
+        if self.transform is None:
+            return self.data[idx]
+        else:
+            return self.transform(self.data[idx])
+
 class XYDataset(Dataset):
     """A simple dataset returning examples of the form (transform(x), y)."""
 
