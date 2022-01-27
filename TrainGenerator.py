@@ -350,7 +350,7 @@ if __name__ == "__main__":
             generator,
             optimizer,
             data_tr,
-            loss_fn=args.loss_fn,
+            loss_fn=args.loss,
             bs=args.bs,
             mini_bs=args.mini_bs,
             code_bs=args.code_bs,
