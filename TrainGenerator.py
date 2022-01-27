@@ -13,7 +13,33 @@ from Data import *
 from utils.Utils import *
 from utils.UtilsLPIPS import LPIPSFeats
 
-def compute_loss(fx, y, loss_fn, reduction="none", list_reduction="none"):
+################################################################################
+# Loss finageling
+################################################################################
+class LPIPSLoss(nn.Module):
+    """Returns loss between LPIPS features of generated and target images."""
+    def __init__(self, reduction="mean"):
+        super(LPIPSLoss, self).__init__()
+        self.lpips = LPIPSFeats()
+        self.reduction = reduction
+        self.loss = nn.MSELoss(reduction=self.reduction)
+
+    def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
+
+def get_loss_fn(loss_fn):
+    """Returns an unreduced loss function of type [loss_fn], or [loss_fn] itself
+    if [loss_fn] is an nn.Module (this allows LPIPS networks to be reused).
+    """
+    if loss_fn == "lpips":
+        return LPIPSLoss(reduction="none").to(device)
+    elif loss_fn == "mse":
+        return nn.MSELoss(reduction="none")
+    elif isinstance(loss_fn, nn.Module):
+        return loss_fn
+    else:
+        raise ValueError(f"Unknown loss type {loss_fn}")
+
+def compute_loss(fx, y, loss_fn, reduction="none", list_reduction="mean"):
     """Returns the loss of output [fx] against target [y] using loss function
     [loss_fn] and reduction strategies [reduction] and [list_reduction].
 
@@ -43,21 +69,16 @@ def compute_loss(fx, y, loss_fn, reduction="none", list_reduction="none"):
         elif reduction == "mean":
             return torch.mean(loss_fn(fx, y))
         elif reduction == "batch":
-            return loss_fn(fx, y).view(fx.shape[0], -1)
+            return torch.mean(loss_fn(fx, y).view(fx.shape[0], -1), axis=1)
         else:
             raise ValueError(f"Unknown reduction '{reduction}'")
 
-class UnreducedLPIPSLoss(nn.Module):
-    """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean"):
-        super(LPIPSLoss, self).__init__()
-        self.lpips = LPIPSFeats()
-        self.reduction = "none"
-        self.loss = nn.MSELoss(reduction=self.reduction)
+################################################################################
+# IMLE whatnot
+################################################################################
 
-    def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
-
-def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", code_bs=6, num_samples=120, verbose=1):
+def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips",
+    code_bs=6, num_samples=120, verbose=1):
     """Returns new latent codes via hierarchical sampling.
 
     Args:
@@ -69,41 +90,37 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="lpips", cod
     code_bs     -- batch size to test codes in
     num_samples -- number of times we try to find a better code for each image
     """
-    if loss_fn == "lpips":
-        loss_fn = LPIPSLoss(reduction="batch").to(device)
-    elif loss_fn == "mse":
-        loss_fn = BatchMSELoss().to(device)
-    else:
-        raise ValueError(f"Unknown loss type {loss_fn}")
-
+    loss_fn = get_loss_fn(loss_fn)
     bs = len(data_subset)
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
     loader = DataLoader(data_subset, batch_size=code_bs, shuffle=False,
                         num_workers=num_workers)
-    for level_idx in tqdm(range(len(z_dims)), desc="levels", leave=False):
+
+    for level_idx in tqdm(range(len(z_dims)), desc="Resolutions", leave=False):
         least_losses = torch.ones(bs, device=device) * float("inf")
 
-        for i in tqdm(range(num_samples), desc="sampling", leave=False):
+        for i in tqdm(range(num_samples), desc="Sampling", leave=False):
             for idx,(x,ys) in enumerate(loader):
                 start_idx = code_bs * idx
                 end_idx = code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
-                old_codes = [l[start_idx:end_idx] for l in level_codes[level_idx:]]
+                old_codes = [l[start_idx:end_idx] for l in level_codes[max(0, level_idx - 1):]]
                 new_codes = torch.randn((code_bs,) + z_dims[level_idx], device=device)
                 test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
                     cx = corruptor(x.to(device))
                     fx = backbone(cx, test_codes, loi=level_idx)
-                    losses = loss_fn(fx, ys[level_idx].to(device))
+                    losses = compute_loss(fx, ys[level_idx].to(device), loss_fn,
+                        reduction="batch")
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
-                least_losses[start_idx:end_idx][change_idxs][change_idxs] = losses[change_idxs]
+                least_losses[start_idx:end_idx][change_idxs] = losses[change_idxs]
 
             if verbose == 1 and i % 20 == 0:
-                tqdm.write(f"    least_losses avg {torch.mean(least_losses)}")
+                tqdm.write(f"    least_losses avg {torch.mean(least_losses):.5f}")
 
     return [l.cpu() for l in level_codes]
 
@@ -129,11 +146,11 @@ def get_images(corruptor, generator, dataset, idxs=None, samples_per_image=1):
 
     result = []
     with torch.no_grad():
-        for codes,(x,ys) in loader:
+        for zs,(x,ys) in loader:
             cx = corruptor(x.to(device))
-            fx = generator(cx, [c.to(device) for c in codes])[-1].cpu()
+            fx = generator(cx, [z.to(device) for z in zs])[-1].cpu()
             ys = ys[-1]
-            result += [[y, f] for y,f in zip(ys, fx)]
+            result += [[y, c.cpu(), f] for y,c,f in zip(ys, cx, fx)]
 
     return result
 
@@ -161,22 +178,15 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
     mini_bs                 -- the batch size to run per iteration. Must evenly
                                 divide the batch size of [loader]
     """
-    if loss_fn == "lpips":
-        list_loss_fn =
-    elif loss_fn == "mse":
-        list_loss_fn =
-    else:
-        raise ValueError(f"Unknown loss_fn '{loss_fn}'")
-
+    loss_fn = get_loss_fn(loss_fn)
     total_loss = 0
 
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False):
         images_dataset = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
         codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
-                                                     images_dataset, corruptor,
-                                                     generator, code_bs=code_bs,
-                                                     num_samples=num_samples,))
+            images_dataset, corruptor, generator, loss_fn=loss_fn,
+            code_bs=code_bs, num_samples=num_samples, verbose=verbose))
         batch_dataset = ZippedDataset(codes_dataset, images_dataset)
         loader = DataLoader(batch_dataset, batch_size=mini_bs,
                             num_workers=num_workers, shuffle=True)
@@ -190,22 +200,23 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
                 generator.zero_grad()
                 cx = corruptor(x.to(device))
                 fx = generator(cx, [c.to(device) for c in codes])
-                loss = loss_fn(fx, [y.to(device) for y in ys])
+                loss = compute_loss(fx, [y.to(device) for y in ys], loss_fn,
+                    reduction="mean", list_reduction="mean")
                 loss.backward()
                 optimizer.step()
 
                 total_loss += loss.item()
 
         if verbose == 1:
-            tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5f}")
+            tqdm.write(f"    current loss {loss.item():.5f}")
 
     return corruptor, generator, optimizer, total_loss / len(loader)
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--data", default="cifar10", choices=["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi"],
+    P.add_argument("--data", default="cifar10", choices=["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi", "camnet3_milli"],
         help="data to train on")
-    P.add_argument("--eval", default="cv", choices=["cv", "val", "test"],
+    P.add_argument("--eval", default="val", choices=["cv", "val", "test"],
         help="data for validation")
     P.add_argument("--res", nargs="+", required=True, type=int,
         default=[16, 32],
@@ -218,7 +229,7 @@ if __name__ == "__main__":
     ############################################################################
     # Corruption hyperparameters
     ############################################################################
-    P.add_argument("--grayscale", default=1, choices=[0, 1],
+    P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
         help="grayscale corruption")
     P.add_argument("--pixel_mask_frac", default=.5, type=float,
         help="fraction of pixels to mask at 16x16 resolution")
@@ -228,6 +239,8 @@ if __name__ == "__main__":
     ############################################################################
     # Training hyperparameters
     ############################################################################
+    P.add_argument("--loss_fn", default="lpips", choices=["mse", "lpips"],
+        help="loss function to use")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
     P.add_argument("--n_ramp", default=1, type=int,
@@ -240,9 +253,9 @@ if __name__ == "__main__":
         help="batch size to use for sampling codes")
     P.add_argument("--num_samples", type=int, default=120,
         help="number of samples for IMLE")
-    P.add_argument("--ipcpe", type=int, default=10,
+    P.add_argument("--ipcpe", type=int, default=2,
         help="iters_per_code_per_ex")
-    P.add_argument("--lr", type=float, default=1e-3,
+    P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
     P.add_argument("--wd", type=float, default=1e-6,
         help="weight decay")
@@ -253,9 +266,9 @@ if __name__ == "__main__":
         help="optional training suffix")
     P.add_argument("--options", default=[], nargs="+",
         help="options")
+    P.add_argument("--verbose", choices=[0, 1], default=1,
+        help="verbosity level")
     args, unparsed_args = P.parse_known_args()
-
-
 
     ############################################################################
     # Create the dataset
@@ -323,11 +336,14 @@ if __name__ == "__main__":
             mini_bs=args.mini_bs,
             code_bs=args.code_bs,
             num_samples=args.num_samples,
-            iters_per_code_per_ex=args.ipcpe)
+            iters_per_code_per_ex=args.ipcpe,
+            verbose=args.verbose)
 
         results = get_images(corruptor, generator, data_eval,
                                        random.sample(range(len(data_eval)), 10))
         save_images_grid(results, f"{new_camnet_folder(args)}/generated_images/epoch{e}.png")
+        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {scheduler.get_last_lr()[0]:.5e}")
+        scheduler.step()
         #
         # # Perform a classification cross validation if desired, and otherwise
         # # print/log results or merely that the epoch happened.

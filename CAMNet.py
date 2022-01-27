@@ -157,7 +157,7 @@ class CAMNet(nn.Module):
         feat = torch.tensor([], device=device)
         outputs = []
 
-        for idx,(code,level) in enumerate(zip(codes, self.levels.values())):
+        for idx,(code,(k,level)) in enumerate(zip(codes, self.levels.items())):
             feat, level_output = level(level_output, code, feature=feat)
             outputs.append(level_output)
 
@@ -168,7 +168,7 @@ class CAMNet(nn.Module):
 
 class CAMNetModule(nn.Module):
 
-    def __init__(self, map_nc=128, latent_nc=512, in_nc=3, out_nc=2, code_nc=5,
+    def __init__(self, map_nc=128, latent_nc=512, in_nc=3, out_nc=3, code_nc=5,
         feat_scale=1, prev_resid_nc=0, resid_nc=-1, dense_nc=-1, n_blocks=6,
         upsample_mode="nearest", act_type="leakyrelu", upsample_output=True,
         size=16, level=1):
