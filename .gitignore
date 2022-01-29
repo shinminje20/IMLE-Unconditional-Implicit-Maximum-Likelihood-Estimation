@@ -32,3 +32,5 @@ data/miniImagenet
 
 models/camnet/*
 models/simclr/*
+
+wandb

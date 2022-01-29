@@ -1,5 +1,7 @@
 import argparse
+from datetime import datetime
 from tqdm import tqdm
+import wandb
 
 import torch.nn as nn
 from torch.optim import Adam
@@ -7,7 +9,6 @@ from torch.optim.lr_scheduler import MultiStepLR
 from torch.utils.data import DataLoader, Subset
 
 from CAMNet import CAMNet
-
 from Corruptions import get_non_learnable_batch_corruption
 from Data import *
 from utils.Utils import *
@@ -124,13 +125,13 @@ def get_new_codes(z_dims, data_subset, corruptor, backbone, loss_fn="mse",
 
     return [l.cpu() for l in level_codes]
 
-def get_images(corruptor, generator, dataset, idxs=[0], samples_per_image=1):
+def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 
     Args:
     corruptor   -- a corruptor to remove information from images
-    generator   -- a generator to fix corrupted images
+    model       -- a model to fix corrupted images
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
@@ -142,8 +143,8 @@ def get_images(corruptor, generator, dataset, idxs=[0], samples_per_image=1):
     corrupted = [[c_ for c_ in c.expand(expanded_shape)] for c in corrupted]
     corrupted = XDataset(flatten(corrupted))
 
-    codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
-        corrupted, corruptor, generator, num_samples=0, verbose=False))
+    codes_dataset = ZippedDataset(*get_new_codes(model.get_z_dims(),
+        corrupted, corruptor, model, num_samples=0, verbose=False))
     dataset = ZippedDataset(corrupted, codes_dataset)
     loader = DataLoader(dataset, batch_size=1, num_workers=num_workers)
 
@@ -155,16 +156,16 @@ def get_images(corruptor, generator, dataset, idxs=[0], samples_per_image=1):
     with torch.no_grad():
         for idx,(cx,codes) in enumerate(loader):
             y = images_dataset[idx // samples_per_image][1][-1]
-            fx = generator(cx.to(device), [c.to(device) for c in codes])[-1]
+            fx = model(cx.to(device), [c.to(device) for c in codes], loi=-1)
             results[idx // samples_per_image].append(fx.squeeze(0).cpu())
 
     return results
 
 
-def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
+def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
     verbose=1):
-    """Trains [generator] and optionally [corruptor] for one epoch on data from
+    """Trains [model] and optionally [corruptor] for one epoch on data from
     [loader] via cIMLE.
 
     ****************************************************************************
@@ -173,9 +174,9 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
     ****************************************************************************
 
     Args:
-    generator               -- a generative model that can undo corruptions
+    model               -- a generative model that can undo corruptions
     optimizer               -- an optimizer for both the corruptor
-                                (if wanted) and generator
+                                (if wanted) and model
     loader                  -- DataLoader returning training and target data.
                                 The data for both inputs and targets should be
                                 a list of tensors
@@ -190,8 +191,8 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
         images_dataset = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
-        codes_dataset = ZippedDataset(*get_new_codes(generator.get_z_dims(),
-            images_dataset, corruptor, generator, loss_fn=loss_fn,
+        codes_dataset = ZippedDataset(*get_new_codes(model.get_z_dims(),
+            images_dataset, corruptor, model, loss_fn=loss_fn,
             code_bs=code_bs, num_samples=num_samples, verbose=verbose))
         batch_dataset = ZippedDataset(codes_dataset, images_dataset)
         loader = DataLoader(batch_dataset, batch_size=mini_bs,
@@ -203,9 +204,9 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
 
             for codes,(x,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
 
-                generator.zero_grad()
+                model.zero_grad()
                 cx = corruptor(x.to(device))
-                fx = generator(cx, [c.to(device) for c in codes])
+                fx = model(cx, [c.to(device) for c in codes])
                 loss = compute_loss(fx, [y.to(device) for y in ys], loss_fn,
                     reduction="mean", list_reduction="mean")
                 loss.backward()
@@ -216,21 +217,58 @@ def one_epoch_imle(corruptor, generator, optimizer, dataset, loss_fn="lpips",
         if verbose == 1:
             tqdm.write(f"    current loss {loss.item():.5f}")
 
-    return corruptor, generator, optimizer, total_loss / len(loader)
+    return corruptor, model, optimizer, total_loss / len(loader)
+
+def parse_camnet_args(unparsed_args):
+    """Returns an argparse Namespace and the remaining unparsed arguments after
+    parsing [unparsed_args].
+    """
+    P = argparse.ArgumentParser(description="CAMNet architecture argparsing")
+    P.add_argument("--code_nc", default=5, type=int,
+        help="number of code channels")
+    P.add_argument("--in_nc", default=3, type=int,
+        help="number of input channels")
+    P.add_argument("--out_nc", default=3, type=int,
+        help=" number of output channels")
+    P.add_argument("--map_nc", default=128, type=int,
+        help="number of input channels to mapping net")
+    P.add_argument("--latent_nc", default=512, type=int,
+        help="number of channels inside the mapping net")
+    P.add_argument("--resid_nc", default=[128, 64, 64, 64], type=int,
+        nargs="+",
+        help="list of numbers of residual channels in RRDB blocks for each CAMNet level")
+    P.add_argument("--dense_nc", default=[256, 192, 128, 64], type=int,
+        nargs="+",
+        help="list of numbers of dense channels in RRDB blocks for each CAMNet level")
+    P.add_argument("--n_blocks", default=6, type=int,
+        help="number of RRDB blocks inside each level")
+    P.add_argument("--act_type", default="leakyrelu",
+        choices=["leakyrelu"],
+        help="activation type")
+    P.add_argument("--feat_scales", default=None, type=int,
+        help="amount by which to scale features, or None")
+    return P.parse_known_args(unparsed_args)
+
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--data", default="cifar10", choices=["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi", "camnet3_milli"],
+    P.add_argument("--wandb", default=1, choices=[0, 1],
+        help="Use W&B logging")
+    P.add_argument("--data", default="cifar10", choices=datasets,
         help="data to train on")
     P.add_argument("--eval", default="val", choices=["cv", "val", "test"],
         help="data for validation")
     P.add_argument("--res", nargs="+", required=True, type=int,
         default=[16, 32],
-        help="resolutiosn to see data at")
-
-    # Model hyperparameters are parsed later
+        help="resolutions to see data at")
     P.add_argument("--arch", default="camnet", choices=["camnet"],
-        help="generator architecture to use.")
+        help="Model architecture to use. Architecture hyperparameters are parsed later based on this")
+    P.add_argument("--suffix", default="",
+        help="optional training suffix")
+    P.add_argument("--options", default=[], nargs="+",
+        help="options")
+    P.add_argument("--verbose", choices=[0, 1], default=1,
+        help="verbosity level")
 
     ############################################################################
     # Corruption hyperparameters
@@ -245,6 +283,10 @@ if __name__ == "__main__":
     ############################################################################
     # Training hyperparameters
     ############################################################################
+    P.add_argument("--init_type", choices=["kaiming", "normal"], default="kaiming",
+        help="NN weight initialization method")
+    P.add_argument("--init_scale", type=float, default=1,
+        help="Scale for weight initialization")
     P.add_argument("--loss", default="lpips", choices=["mse", "lpips"],
         help="loss function to use")
     P.add_argument("--epochs", default=20, type=int,
@@ -267,14 +309,15 @@ if __name__ == "__main__":
         help="weight decay")
     P.add_argument("--mm", nargs="+", default=(.9, .999), type=float,
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
-
-    P.add_argument("--suffix", default="",
-        help="optional training suffix")
-    P.add_argument("--options", default=[], nargs="+",
-        help="options")
-    P.add_argument("--verbose", choices=[0, 1], default=1,
-        help="verbosity level")
     args, unparsed_args = P.parse_known_args()
+
+    ############################################################################
+    # Collect the arguments for generating the model
+    ############################################################################
+    if args.arch == "camnet":
+        model_args, unparsed_args = parse_camnet_args(unparsed_args)
+    else:
+        raise ValueError(f"Unknown architecture '{args.arch}'")
 
     ############################################################################
     # Create the dataset and options, and check that various batch types have
@@ -285,28 +328,12 @@ if __name__ == "__main__":
     data_tr = GeneratorDataset(data_tr, base_transform)
     data_eval = GeneratorDataset(data_eval, base_transform)
 
-    if len(data_tr) < args.bs:
-        tqdm.write(f"Setting batch size to {len(data_tr)} to match dataset length")
-        args.bs = len(data_tr)
-    if not evenly_divides(args.bs, len(data_tr)):
-        raise ValueError(f"--bs {args.bs} must evenly divide the length of the dataset {len(data_tr)}")
+    if not evenly_divides(args.bs, len(data_tr)) or len(data_tr) < args.bs:
+        raise ValueError(f"--bs {args.bs} must be at most and evenly divide the length of the dataset {len(data_tr)}")
     if not evenly_divides(args.mini_bs, args.bs) or args.bs < args.mini_bs:
         raise ValueError(f"--mini_bs {args.mini_bs} must be at most and evenly divide --bs {args.bs}")
     if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
          raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
-
-    args.options = sorted([
-        f"bs{args.bs}",
-        f"code_bs{args.code_bs}",
-        f"grayscale{args.grayscale}",
-        f"ipcpe{args.ipcpe}",
-        f"loss{args.loss}",
-        f"lr{args.lr}",
-        f"mini_bs{args.mini_bs}",
-        f"mm{'_'.join([str(m) for m in list(args.mm)])}",
-        f"pix_mask_frac{args.pix_mask_frac}"
-        f"wd{args.wd}",
-    ])
 
     ############################################################################
     # Create the corruption
@@ -317,17 +344,16 @@ if __name__ == "__main__":
         pixel_mask_frac=args.pix_mask_frac)
 
     ############################################################################
-    # Create the generator and its optimizer
+    # Create the model and its optimizer. Any model specific
     ############################################################################
     if args.arch == "camnet":
-        camnet_args, _ = CAMNet.parse_args_to_dict(unparsed_args, args.res)
-        generator = CAMNet(**camnet_args).to(device)
-        core_params = [v for name,v in generator.named_parameters()
-                               if not "map" in name]
-        map_params = [v for name,v in generator.named_parameters()
-                               if "map" in name]
+        new_args = {"n_levels": len(args.res) - 1, "base_size": args.res[0]}
+        model = CAMNet(**(vars(model_args) | new_args)).to(device)
+        init_weights(model, init_type=args.init_type, scale=args.init_scale)
+        core_params = [p for n,p in model.named_parameters() if not "map" in n]
+        map_params = [p for n,p in model.named_parameters() if "map" in n]
         optimizer = Adam([{"params": core_params},
-                           {"params": map_params, "lr": 1e-2 * args.lr}],
+                          {"params": map_params, "lr": 1e-2 * args.lr}],
                           lr=args.lr, weight_decay=args.wd, betas=args.mm)
     else:
         raise ValueError(f"Unknown architecture '{args.arch}'")
@@ -336,18 +362,30 @@ if __name__ == "__main__":
     # Set up remaining training utilities
     ############################################################################
     last_epoch = -1
-    scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs,
-        args.n_ramp,
+    scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
+
+    ############################################################################
+    # Set up data logging
+    ############################################################################
+    save_dir = f"{project_dir}/models/{args.arch}/{args.data}/{datetime.now().strftime('%b-%d-%H:%M:%S')}"
+    if args.wandb:
+        wandb.init(
+            anonymous="allow",
+            name=f"{args.arch}/{args.data}/{datetime.now().strftime('%b-%d-%H:%M:%S')}",
+            project="ISICLE-generator-training",
+            notes=args.suffix,
+            config=vars(args) | vars(model_args))
+    else:
+        tqdm.write("--wandb not set; will not log data")
 
     ############################################################################
     # Begin training!
     ############################################################################
-
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
-        corruptor, generator, optimizer, loss_tr = one_epoch_imle(
+        corruptor, model, optimizer, loss_tr = one_epoch_imle(
             corruptor,
-            generator,
+            model,
             optimizer,
             data_tr,
             loss_fn=args.loss,
@@ -358,9 +396,29 @@ if __name__ == "__main__":
             iters_per_code_per_ex=args.ipcpe,
             verbose=args.verbose)
 
-        results = get_images(corruptor, generator, data_eval,
+        ########################################################################
+        # After each epoch, log data
+        ########################################################################
+        val_images = get_images(corruptor, model, data_eval,
             idxs=random.sample(range(len(data_eval)), 10),
             samples_per_image=5)
-        save_images_grid(results, f"{new_camnet_folder(args)}/generated_images/epoch{e}.png")
+        results_file = f"{save_dir}/val_images/epoch{e}.png"
         tqdm.write(f"loss_tr {loss_tr:.5f} | lr {scheduler.get_last_lr()[0]:.5e}")
+
+        save_images_grid(val_images, results_file)
+        wandb.log({
+            "epochs": e,
+            "loss_tr": loss_tr,
+            "lr": scheduler.get_last_lr()[0],
+            "results": wandb.Image(f"{save_dir}/val_images/epoch{e}.png"),
+        })
+
+        checkpoint = {
+            "model": model.cpu(),
+            "optimizer": optimizer,
+            "last_epoch": e,
+        }
+        model.to(device)
+        torch.save(checkpoint, f"{save_dir}/{e}.pt")
+        wandb.save(f"{save_dir}/{e}.pt")
         scheduler.step()

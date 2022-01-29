@@ -22,6 +22,19 @@ from torchvision.transforms.functional import hflip
 from Corruptions import *
 from utils.Utils import *
 
+################################################################################
+# Dataset medatata. In general, unless it's properly logged here, you can use a
+# new dataset. If it is logged here, using it should be easy!
+#
+# To make running on a dataset possible, ensure images in it can be accessed via
+# `data/dataset_name/split/class/image.png` where `dataset_name` doesn't include
+# resolution information, ie. an actual path would be
+#
+#   `data/cifar10_16x16/train/airplane/image.png`
+#
+# but only `cifar10` would be recorded here.
+################################################################################
+datasets = ["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi", "camnet3_milli"]
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
 data2split2n_class = {

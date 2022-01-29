@@ -26,11 +26,6 @@ def flatten(xs):
 
     return result
 
-# class SimpleNet(nn.Module):
-#
-#     def __init__(self, num_):
-
-
 class CAMNet(nn.Module):
     """CAMNet rewritten to be substantially stateless, better-documented, and
     optimized for ISICLE.
@@ -87,63 +82,6 @@ class CAMNet(nn.Module):
         return [(self.map_nc + self.code_nc * (self.base_size * (2 ** l)) ** 2,)
                 for l in range(len(self.levels))]
 
-    def parse_args_to_dict(args, resolutions):
-        """Returns a dictionary containing , and a list of unparsed arguments.
-
-        Args:
-        args        -- command line arguments, *some* of which may be relevant
-                        for CAMNet
-        resolutions -- list of resolutions, one for each level
-        """
-        P = argparse.ArgumentParser(description="CAMNet argument parsing")
-        P.add_argument("--code_nc", default=5, type=int,
-            help="number of code channels")
-        P.add_argument("--in_nc", default=3, type=int,
-            help="number of input channels")
-        P.add_argument("--out_nc", default=3, type=int,
-            help=" number of output channels")
-        P.add_argument("--map_nc", default=128, type=int,
-            help="number of input channels to mapping net")
-        P.add_argument("--latent_nc", default=512, type=int,
-            help="number of channels inside the mapping net")
-        P.add_argument("--resid_nc", default=[128, 64, 64, 64], type=int,
-            nargs="+",
-            help="list of numbers of residual channels in RRDB blocks for each CAMNet level")
-        P.add_argument("--dense_nc", default=[256, 192, 128, 64], type=int,
-            nargs="+",
-            help="list of numbers of dense channels in RRDB blocks for each CAMNet level")
-        P.add_argument("--n_blocks", default=6, type=int,
-            help="number of RRDB blocks inside each level")
-        P.add_argument("--act_type", default="leakyrelu",
-            choices=["leakyrelu"],
-            help="activation type")
-        P.add_argument("--feat_scales", default=None, type=int,
-            help="amount by which to scale features, or None")
-
-        args, unparsed_args = P.parse_known_args(args)
-
-
-        resolution_info = {
-            "n_levels": len(resolutions) - 1, # Note that every level upsamples
-            "base_size": resolutions[0]
-        }
-
-        args = NestedNamespace.leaf_union(args, resolution_info)
-
-        # Ensure the number of levels checks out with the given numbers of
-        # residual and dense channels
-        if args.n_levels > len(args.resid_nc):
-            raise ValueError(f"--resid_nc must contain {args.n_levels} values but contained {len(args.resid_nc)}")
-        if args.n_levels > len(args.dense_nc):
-            raise ValueError(f"--dense_nc must contain {args.n_levels} values but contained {len(args.dense_nc)}")
-        if not len(args.resid_nc) == len(args.dense_nc):
-            raise ValueError(f"Number of levels inconsistent between --resid_nc {len(args.resid_nc)} and --dense_nc {len(args.dense_nc)}")
-
-        args.resid_nc = args.resid_nc[:args.n_levels]
-        args.dense_nc = args.dense_nc[:args.n_levels]
-
-        return NestedNamespace.to_dict(args), unparsed_args
-
     def forward(self, net_input, codes, loi=float("inf")):
         """Returns a list of the outputs computed by each level.
 
@@ -164,7 +102,7 @@ class CAMNet(nn.Module):
             if idx == loi:
                 return outputs[-1]
 
-        return outputs
+        return outputs[-1] if loi == -1 else outputs
 
 class CAMNetModule(nn.Module):
 
