@@ -280,15 +280,6 @@ if __name__ == "__main__":
         help="options")
     P.add_argument("--verbose", choices=[0, 1], default=1,
         help="verbosity level")
-
-    ############################################################################
-    # Corruption hyperparameters
-    ############################################################################
-
-
-    ############################################################################
-    # Training hyperparameters
-    ############################################################################
     P.add_argument("--init_type", choices=["kaiming", "normal"], default="kaiming",
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=1,

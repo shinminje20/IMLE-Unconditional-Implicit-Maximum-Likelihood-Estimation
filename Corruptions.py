@@ -20,7 +20,7 @@ from utils.Utils import *
 ################################################################################
 
 # class LearnablePerPixelMaskCorruption(nn.Module):
-#     """Learns a pixel-wise mask through gradients propagated back through the
+#     """Learns a pix-wise mask through gradients propagated back through the
 #     network.
 #
 #     Args:
@@ -65,20 +65,20 @@ def get_non_learnable_image_corruption(size=256, mask_prob=0):
 
 def get_non_learnable_batch_corruption(
     rand_illumination=0,
-    pixel_mask_frac=0,
+    pix_mask_frac=0,
     mask_prob=0,
     grayscale=False,
     ):
     """
     Args:
-    pixel_mask_frac    -- the fraction of an image to randomly mask
+    pix_mask_frac    -- the fraction of an image to randomly mask
     grayscale          -- whether or not to grayscale an image
     """
     corruptions = []
     if rand_illumination > 0:
         corruptions.append(RandomIllumination(sigma=rand_illumination))
-    if pixel_mask_frac > 0:
-        corruptions.append(RandomPixelMask(pixel_mask_frac))
+    if pix_mask_frac > 0:
+        corruptions.append(RandomPixelMask(pix_mask_frac))
     if grayscale:
         corruptions.append(transforms.Grayscale(num_output_channels=3))
     # if mask_prob > 0:
@@ -86,19 +86,19 @@ def get_non_learnable_batch_corruption(
     return transforms.Compose(corruptions)
 
 class RandomPixelMask(nn.Module):
-    """Returns images with [pixel_mask_frac] of the pixels set to zero. (Feed
+    """Returns images with [pix_mask_frac] of the pixs set to zero. (Feed
     images to this at 16x16 resolution.)
     """
-    def __init__(self, pixel_mask_frac, size=16):
+    def __init__(self, pix_mask_frac, size=16):
         super(RandomPixelMask, self).__init__()
-        self.pixel_mask_frac = pixel_mask_frac
+        self.pix_mask_frac = pix_mask_frac
         self.size = size
 
     def forward(self, x):
         s = x.shape[-1] // self.size
         mask = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size))
         mask = F.interpolate(mask, scale_factor=(s, s), mode="nearest")
-        x[mask < self.pixel_mask_frac] = 0
+        x[mask < self.pix_mask_frac] = 0
         return x
 
 class RandomIllumination(nn.Module):
@@ -125,7 +125,7 @@ if __name__ == "__main__":
         help="dataset to load images from")
     P.add_argument("--rand_illumination", default=0, type=float,
         help="amount of random illumination")
-    P.add_argument("--pixel_mask_frac", default=0, type=float,
+    P.add_argument("--pix_mask_frac", default=0, type=float,
         help="amount of random masking")
     P.add_argument("--grayscale", action="store_true",
         help="whether or not to grayscale images")
@@ -159,7 +159,7 @@ if __name__ == "__main__":
     corruption = get_non_learnable_batch_corruption(
         rand_illumination=args.rand_illumination,
         grayscale=args.grayscale,
-        pixel_mask_frac=args.pixel_mask_frac,
+        pix_mask_frac=args.pix_mask_frac,
         mask_prob=args.mask_prob)
 
     images = [data[idx][0] for idx in idxs]
