@@ -30,11 +30,6 @@ def set_seed(seed):
     tqdm.write(f"Set the PyTorch and Random modules seeds to {seed}")
 
 ################################################################################
-# Interactive I/O Utils
-################################################################################
-
-
-################################################################################
 # File I/O Utils
 ################################################################################
 def check_paths_exist(paths):
@@ -54,7 +49,7 @@ def strip_slash(s):
     """Returns string [s] without a trailing slash.
 
     This project uses rather basic path-handling, which makes for slightly
-    clunky but easier-to-debug code. Generally, paths CAN NOT end in slashes or
+    clunky but easy-to-debug code. Generally, paths CAN NOT end in slashes or
     f-strings using them will break!
     """
     return s if not s[-1] == "/" else s[:-1]
@@ -131,6 +126,14 @@ def simclr_folder(args):
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
+def generator_folder(args):
+    """
+
+    Because there are so many arguments to a generator, it's impossible to get
+    them all into a file name, so we need to use times to keep track of things.
+    """
+    return f"{project_dir}/models/{args.arch}/{args.data}/{args.suffix}_{datetime.now().strftime('%b-%d-%H:%M:%S')}"
+
 ################################################################################
 # Image I/O Utilities
 ################################################################################
@@ -151,8 +154,7 @@ def show_image_grid(images):
         raise ValueError("Unknown collection of types in 'images'")
 
     fix, axs = plt.subplots(ncols=max([len(image_row) for image_row in images]),
-                            nrows=len(images),
-                            squeeze=False)
+        nrows=len(images), squeeze=False)
 
     for i,images_row in enumerate(images):
         for j,image in enumerate(images_row):
@@ -162,6 +164,9 @@ def show_image_grid(images):
     plt.show()
 
 def save_images_grid(images, path):
+    """Builds a grid of images out of [images] and saves the image containing
+    the grid to [path].
+    """
     if isinstance(images, torch.Tensor):
         images = [[images]]
     elif isinstance(images, list) and isinstance(images[0], torch.Tensor):
@@ -172,8 +177,7 @@ def save_images_grid(images, path):
         raise ValueError("Unknown collection of types in 'images'")
 
     fix, axs = plt.subplots(ncols=max([len(image_row) for image_row in images]),
-                            nrows=len(images),
-                            squeeze=False)
+        nrows=len(images), squeeze=False)
 
     for i,images_row in enumerate(images):
         for j,image in enumerate(images_row):
@@ -187,9 +191,8 @@ def save_images_grid(images, path):
 
 
 ################################################################################
-# Miscellaneous
+# Miscellaneous training and model utilities
 ################################################################################
-
 
 class CosineAnnealingLinearRampLR(_LRScheduler):
     """Cosine Annealing scheduler with a linear ramp."""
