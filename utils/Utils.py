@@ -139,46 +139,40 @@ def generator_folder(args):
 ################################################################################
 plt.rcParams["savefig.bbox"] = "tight"
 
+def make_2d_list_of_tensor(x):
+    """Returns [x] as a 2D list where inner element is a Tensor."""
+    if isinstance(x, torch.Tensor):
+        return [[x]]
+    elif isinstance(x, list) and isinstance(x[0], torch.Tensor):
+        return [x]
+    elif isinstance(images, list) and isinstance(images[0], list):
+        return x
+    else:
+        raise ValueError("Unknown collection of types in 'images'")
+
 def show_image_grid(images):
     """Shows list of images [images], either a Tensor giving one image, a List
     where each element is a Tensors giving one images, or a 2D List where each
     element is a Tensor giving an image.
     """
-    if isinstance(images, torch.Tensor):
-        images = [[images]]
-    elif isinstance(images, list) and isinstance(images[0], torch.Tensor):
-        images = [images]
-    elif isinstance(images, list) and isinstance(images[0], list):
-        images = images
-    else:
-        raise ValueError("Unknown collection of types in 'images'")
+    images = make_2d_list_of_tensor(images)
 
     fix, axs = plt.subplots(ncols=max([len(image_row) for image_row in images]),
         nrows=len(images), squeeze=False)
-
     for i,images_row in enumerate(images):
         for j,image in enumerate(images_row):
             axs[i, j].imshow(np.asarray(functional_TF.to_pil_image(image.detach())), cmap='Greys_r')
             axs[i, j].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
-
     plt.show()
 
 def save_images_grid(images, path):
     """Builds a grid of images out of [images] and saves the image containing
     the grid to [path].
     """
-    if isinstance(images, torch.Tensor):
-        images = [[images]]
-    elif isinstance(images, list) and isinstance(images[0], torch.Tensor):
-        images = [images]
-    elif isinstance(images, list) and isinstance(images[0], list):
-        images = images
-    else:
-        raise ValueError("Unknown collection of types in 'images'")
+    images = make_2d_list_of_tensor(images)
 
     fix, axs = plt.subplots(ncols=max([len(image_row) for image_row in images]),
         nrows=len(images), squeeze=False)
-
     for i,images_row in enumerate(images):
         for j,image in enumerate(images_row):
             axs[i, j].imshow(np.asarray(functional_TF.to_pil_image(image.detach())), cmap='Greys_r')
