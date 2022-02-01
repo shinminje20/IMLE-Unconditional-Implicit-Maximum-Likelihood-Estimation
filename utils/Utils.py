@@ -156,7 +156,7 @@ def generator_folder(args):
     Because there are so many arguments to a generator, it's impossible to get
     them all into a file name, so we need to use times to keep track of things.
     """
-    return f"{project_dir}/models/{args.arch}/{args.data}/{args.suffix}_{datetime.now().strftime('%b-%d-%H:%M:%S')}"
+    return f"{project_dir}/models/{args.arch}/{args.data}/{datetime.now().strftime('%b-%d-%H:%M:%S')}{suffix_str(args)}"
 
 ################################################################################
 # Image I/O Utilities

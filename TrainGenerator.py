@@ -323,14 +323,16 @@ if __name__ == "__main__":
     # separate functions
     ############################################################################
     if args.arch == "camnet":
-        args.model_args, unparsed_args = parse_camnet_args(unparsed_args)
+        model_args, unparsed_args = parse_camnet_args(unparsed_args)
     else:
         raise ValueError(f"Unknown architecture '{args.arch}'")
 
-    args.corruptor_args, unparsed_args = get_corruptor_args(unparsed_args)
+    corruptor_args, unparsed_args = get_corruptor_args(unparsed_args)
 
     if len(unparsed_args) > 0:
         raise ValueError(f"Got unknown arguments. Unparseable arguments:\n    {' '.join(unparsed_args)}")
+    else:
+        args.__dict__ |= vars(model_args) | vars(corruptor_args)
     ############################################################################
     # Create the dataset and options, and check that various batch types have
     # okay sizes
@@ -351,11 +353,11 @@ if __name__ == "__main__":
     ############################################################################
     # Create the corruption, mode,l and its optimizer. Any model specific
     ############################################################################
-    corruptor = get_non_learnable_batch_corruption(**vars(args.corruptor_args))
+    corruptor = get_non_learnable_batch_corruption(**vars(corruptor_args))
 
     if args.arch == "camnet":
         new_args = {"n_levels": len(args.res) - 1, "base_size": args.res[0]}
-        model = CAMNet(**(vars(args.model_args) | new_args)).to(device)
+        model = CAMNet(**(vars(model_args) | new_args)).to(device)
         init_weights(model, init_type=args.init_type, scale=args.init_scale)
         core_params = [p for n,p in model.named_parameters() if not "map" in n]
         map_params = [p for n,p in model.named_parameters() if "map" in n]
