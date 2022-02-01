@@ -345,6 +345,7 @@ if __name__ == "__main__":
     if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
          raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
 
+    tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps")
     ############################################################################
     # Create the corruption, mode,l and its optimizer. Any model specific
     ############################################################################
