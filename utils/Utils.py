@@ -29,7 +29,6 @@ num_workers = 6
 # Turn off WandB console logging, since we don't need it and it breaks TQDM.
 os.environ["WANDB_CONSOLE"] = "off"
 
-
 # Make non-determinism work out. This function should be called first
 def set_seed(seed):
     """Seeds the program to use seed [seed]."""

@@ -113,7 +113,3 @@ class LPIPSFeats(nn.Module):
         vgg_feats = [normalize_tensor(v) for v in self.vgg(x)]
         feats = [l(v) for l,v in zip(self.lin_layers, vgg_feats)]
         return torch.cat([l.flatten(start_dim=1) for l in feats], axis=1)
-
-if __name__ == "__main__":
-    tqdm.write("----- Unit testing -----")
-    from CAMNet.utils.util import *

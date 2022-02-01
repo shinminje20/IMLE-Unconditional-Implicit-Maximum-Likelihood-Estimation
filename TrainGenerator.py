@@ -423,7 +423,7 @@ if __name__ == "__main__":
             "optimizer": optimizer,
             "last_epoch": e,
         }, f"{save_dir}/{e}.pt")
-        wandb.save(f"{save_dir}/{e}.pt")
+        wandb.save(f"{save_dir}/{e}", base_path=f"{save_dir}", policy="end")
         model.to(device)
 
         scheduler.step()
