@@ -382,11 +382,6 @@ if __name__ == "__main__":
     # Begin training!
     ############################################################################
 
-    val_images = get_images(corruptor, model, data_eval,
-        idxs=random.sample(range(len(data_eval)), 10),
-        samples_per_image=5)
-    show_image_grid(val_images)
-
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, loss_tr = one_epoch_imle(
             corruptor,
