@@ -49,45 +49,15 @@ from utils.Utils import *
 #         x[mask] = 0
 #         return x
 
-def get_non_learnable_image_corruption(size=256, mask_prob=0):
-    corruptions = []
-    corruptions.append(transforms.Resize((256, 256)))
-    corruptions.append(transforms.ToTensor())
-    if mask_prob > 0:
-        corruptions.append(transforms.RandomErasing(p=mask_prob))
-    c = transforms.Compose(corruptions)
-
-    def f(x):
-        print(type(x))
-        return c(x)
-
-    return f
-
-def get_non_learnable_batch_corruption(
-    rand_illumination=0,
-    pix_mask_frac=0,
-    mask_prob=0,
-    grayscale=False,
-    ):
-    """
-    Args:
-    pix_mask_frac    -- the fraction of an image to randomly mask
-    grayscale          -- whether or not to grayscale an image
-    """
-    corruptions = []
-    if rand_illumination > 0:
-        corruptions.append(RandomIllumination(sigma=rand_illumination))
-    if pix_mask_frac > 0:
-        corruptions.append(RandomPixelMask(pix_mask_frac))
-    if grayscale:
-        corruptions.append(transforms.Grayscale(num_output_channels=3))
-    # if mask_prob > 0:
-    #     corruptions.append(transforms.RandomErasing(p=mask_prob))
-    return transforms.Compose(corruptions)
-
 class RandomPixelMask(nn.Module):
-    """Returns images with [pix_mask_frac] of the pixs set to zero. (Feed
-    images to this at 16x16 resolution.)
+    """Returns images with in expectation [pix_mask_frac] of the pixels set to
+    zero.
+
+    Args:
+    pix_mask_frac   -- expected fraction of pixels to mask out
+    size            -- resolution (SIZExSIZE) at which to set pixels to zero.
+                        Decreasing this makes for larger blotches of erased
+                        image.
     """
     def __init__(self, pix_mask_frac, size=16):
         super(RandomPixelMask, self).__init__()
@@ -102,7 +72,6 @@ class RandomPixelMask(nn.Module):
         return x
 
 class RandomIllumination(nn.Module):
-
     def __init__(self, sigma=.1):
         super(RandomIllumination, self).__init__()
         self.sigma = sigma
@@ -112,6 +81,26 @@ class RandomIllumination(nn.Module):
         expanded_shape = tuple([len(x)] + ([1] * (len(tuple(x.shape)) - 1)))
         sigmas = sigmas.view(expanded_shape)
         return torch.clamp(x + sigmas.expand(x.shape), 0, 1)
+
+def get_non_learnable_batch_corruption(rand_illumination=0, pix_mask_frac=0,
+    pix_mask_size=8, grayscale=False):
+    """
+    Args:
+    pix_mask_frac    -- the fraction of an image to randomly mask
+    grayscale          -- whether or not to grayscale an image
+    """
+    corruptions = []
+    if rand_illumination > 0:
+        corruptions.append(RandomIllumination(sigma=rand_illumination))
+    if pix_mask_frac > 0:
+        corruptions.append(RandomPixelMask(pix_mask_frac, size=pix_mask_size))
+    if grayscale:
+        corruptions.append(transforms.Grayscale(num_output_channels=3))
+    return transforms.Compose(corruptions)
+
+
+
+
 
 ################################################################################
 # CONTRASTIVE LEARNING CORRUPTIONS. These corruptions can be applied to images

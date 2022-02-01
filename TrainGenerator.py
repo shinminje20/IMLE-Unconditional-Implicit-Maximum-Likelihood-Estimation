@@ -262,9 +262,11 @@ def get_corruptor_args(unparsed_args):
     P = argparse.ArgumentParser(description="Corruptor argparsing")
     P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
         help="grayscale corruption")
-    P.add_argument("--pix_mask_frac", default=.5, type=float,
+    P.add_argument("--pix_mask_size", default=8, type=int,
         help="fraction of pixels to mask at 16x16 resolution")
-    P.add_argument("--rand_illumination", default=.2, type=float,
+    P.add_argument("--pix_mask_frac", default=.1, type=float,
+        help="fraction of pixels to mask at 16x16 resolution")
+    P.add_argument("--rand_illumination", default=.1, type=float,
         help="amount by which the illumination of an image can change")
     return P.parse_known_args(unparsed_args)
 
