@@ -5,7 +5,7 @@ import wandb
 
 import torch.nn as nn
 from torch.optim import Adam
-from torch.optim.lr_scheduler import MultiStepLR
+from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader, Subset
 
 from CAMNet import CAMNet
@@ -371,8 +371,8 @@ if __name__ == "__main__":
     # Set up remaining training utilities and data logging
     ############################################################################
     last_epoch = -1
-    scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
-        last_epoch=last_epoch)
+    scheduler = CosineAnnealingLR(optimizer, args.epochs,
+        last_epoch=last_epoch, verbose=True)
 
     save_dir = generator_folder(args)
     wandb.init(anonymous="allow",
