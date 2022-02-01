@@ -2,6 +2,7 @@
 
 # The SBATCH directives must appear before any executable line in this script.
 
+#SBATCH --array=1-3
 #SBATCH --time=3-0:0:0  # Time: D-H:M:S
 #SBATCH --account={account-name} # Account: def-keli/rrg-keli
 #SBATCH --mem=50G           # Memory in total
@@ -35,10 +36,10 @@ pwd
 hostname
 date
 
-echo "Starting job..."
+echo "Starting job number $SLURM_ARRAY_TASK_ID"
 
 source ~/.bashrc
-source ~/
+conda activate py39ISICLE
 
 # Python will buffer output of your script unless you set this.
 # If you're not using python, figure out how to turn off output
@@ -47,9 +48,18 @@ source ~/
 export PYTHONUNBUFFERED=1
 
 # Do all the research.
-source ../py39ISICLE/bin/activate
-python TrainCAMNet.py --task Colorization --data camnet3_centi --epochs 100 --code_bs 120 --mini_bs 6 --bs 12
-python generators/camnet/test.py -opt models/camnet/Colorization/camnet3_centi-bs12-code_bs120-epochs10-gpus_0-ipe2-mini_bs2/test_config.json
+if [ "$SLURM_ARRAY_TASK_ID" = 1 ]
+then
+    python TrainGenerator.py --res 32 64 --data camnet3_deci --bs 32 --code_bs 32 --mini_bs 8 --ipcpe 4 --suffix mse
+elif [ "$SLURM_ARRAY_TASK_ID" = 2 ]
+then
+    python TrainGenerator.py --res 32 64 --data camnet3_deci --bs 32 --code_bs 32 --mini_bs 8 --ipcpe 16 --suffix mse_more_learning
+elif [ "$SLURM_ARRAY_TASK_ID" = 3 ]
+then
+    python TrainGenerator.py --res 32 64 --data camnet3_deci --bs 32 --code_bs 32 --mini_bs 8 --ipcpe 16 --suffix lpips_more_learning
+else
+    echo "No case here"
+fi
 
 # Print completion time.
 date
