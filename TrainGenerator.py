@@ -13,6 +13,7 @@ from Corruptions import get_non_learnable_batch_corruption
 from Data import *
 from utils.Utils import *
 from utils.UtilsLPIPS import LPIPSFeats
+from utils.UtilsNN import *
 
 ################################################################################
 # Loss whatnot
@@ -136,27 +137,33 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
-    images_dataset = Subset(dataset, idxs)
-    loader = DataLoader(images_dataset, batch_size=1, num_workers=num_workers)
-
-    expanded_shape = (samples_per_image,) + images_dataset[0][0].shape
-    corrupted = [corruptor(x.to(device)).cpu() for x,_ in loader]
-    corrupted = [[c_ for c_ in c.expand(expanded_shape)] for c in corrupted]
-    corrupted = XDataset(flatten(corrupted))
-
-    codes_dataset = ZippedDataset(*get_new_codes(model.get_z_dims(),
-        corrupted, corruptor, model, num_samples=0, verbose=False))
-    dataset = ZippedDataset(corrupted, codes_dataset)
-    loader = DataLoader(dataset, batch_size=1, num_workers=num_workers)
-
-    results = [[]] * len(idxs)
-    for idx,(cx,codes) in enumerate(loader):
-        y = images_dataset[idx // samples_per_image][1][-1]
-        results[idx // samples_per_image] = [y, cx.squeeze(0).cpu()]
-
     with torch.no_grad():
+        images_dataset = Subset(dataset, idxs)
+        loader = DataLoader(images_dataset, batch_size=1, num_workers=num_workers)
+
+        # Build a dataset of corrupted images that where each image in [dataset]
+        # contains [samples_per_image] corrupted versions. The corrupted images
+        # from the same base image occur sequentially in [corrupted]
+        expanded_shape = (samples_per_image,) + images_dataset[0][0].shape
+        corrupted = [corruptor(x.to(device)).cpu() for x,_ in loader]
+        corrupted = [[c for c in cor.expand(expanded_shape)] for cor in corrupted]
+        corrupted = XDataset(flatten(corrupted))
+
+        # Get codes for each image in [corrupted]
+        codes_dataset = ZippedDataset(*get_new_codes(model.get_z_dims(),
+            corrupted, corruptor, model, num_samples=0, verbose=False))
+        dataset = ZippedDataset(corrupted, codes_dataset)
+        loader = DataLoader(dataset, batch_size=1, num_workers=num_workers)
+
+        # Build the non-generated-image part of the results
+        results = [[]] * len(idxs)
         for idx,(cx,codes) in enumerate(loader):
-            y = images_dataset[idx // samples_per_image][1][-1]
+            results[idx // samples_per_image] = [
+                images_dataset[idx // samples_per_image][1][-1],
+                cx.squeeze(0).cpu()
+            ]
+
+        for idx,(cx,codes) in enumerate(loader):
             fx = model(cx.to(device), [c.to(device) for c in codes], loi=-1)
             results[idx // samples_per_image].append(fx.squeeze(0).cpu())
 
@@ -263,7 +270,7 @@ def get_corruptor_args(unparsed_args):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--wandb", default=1, choices=[0, 1],
+    P.add_argument("--wandb", default=1, choices=[0, 1], type=int,
         help="Use W&B logging")
     P.add_argument("--data", default="cifar10", choices=datasets,
         help="data to train on")
@@ -308,6 +315,7 @@ if __name__ == "__main__":
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
     args, unparsed_args = P.parse_known_args()
 
+
     ############################################################################
     # Collect the arguments for generating the model and corruptor from
     # separate functions
@@ -319,6 +327,8 @@ if __name__ == "__main__":
 
     args.corruptor_args, unparsed_args = get_corruptor_args(unparsed_args)
 
+    if len(unparsed_args) > 0:
+        raise ValueError(f"Got unknown arguments. Unparseable arguments:\n    {' '.join(unparsed_args)}")
     ############################################################################
     # Create the dataset and options, and check that various batch types have
     # okay sizes
@@ -360,15 +370,22 @@ if __name__ == "__main__":
         last_epoch=last_epoch)
 
     save_dir = generator_folder(args)
-    if args.wandb:
-        wandb.init(anonymous="allow", name=save_dir.replace("/", "-"),
-            project="ISICLE generator training", notes=args.suffix, config=args)
-    else:
-        tqdm.write("--wandb not set; will not log data")
+    wandb.init(anonymous="allow",
+               mode="online" if args.wandb else "disabled",
+               name=save_dir.replace(f"{project_dir}/models/", "").replace("/", "-"),
+               project="ISICLE generator training",
+               notes=args.suffix,
+               config=args)
 
     ############################################################################
     # Begin training!
     ############################################################################
+
+    val_images = get_images(corruptor, model, data_eval,
+        idxs=random.sample(range(len(data_eval)), 10),
+        samples_per_image=5)
+    show_image_grid(val_images)
+
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, loss_tr = one_epoch_imle(
             corruptor,
