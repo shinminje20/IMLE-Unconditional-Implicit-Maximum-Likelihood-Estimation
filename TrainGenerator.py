@@ -12,6 +12,7 @@ from CAMNet import CAMNet
 from Corruptions import get_non_learnable_batch_corruption
 from Data import *
 from utils.Utils import *
+from utils.UtilsColorSpace import *
 from utils.UtilsLPIPS import LPIPSFeats
 from utils.UtilsNN import *
 
@@ -79,7 +80,39 @@ def compute_loss(fx, y, loss_fn, reduction="none", list_reduction="mean"):
 # IMLE whatnot
 ################################################################################
 
-def get_new_codes(z_dims, data, corruptor, backbone, loss_fn="mse",
+def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
+    """Returns a list of lists, where each sublist contains first a ground-truth
+    image and then [samples_per_image] images conditioned on that one.
+
+    Args:
+    corruptor   -- a corruptor to remove information from images
+    model       -- a model to fix corrupted images
+    dataset     -- GeneratorDataset to load images from
+    idxs        -- the indices to [dataset] to get images for
+    """
+    with torch.no_grad():
+        images_dataset = Subset(dataset, idxs)
+        corrupted_data = CorruptedDataset(images_dataset, corruptor,
+            color_space_convert=color_space_convert_tr, bs=len(idxs))
+
+        results = [[ys[-1], cx] for cx,ys in corrupted_data]
+
+        corrupted_data = ExpandedDataset(corrupted_data,
+            expand_factor=samples_per_image)
+        codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
+            corrupted_data, model, num_samples=0))
+        batch_dataset = ZippedDataset(codes_data, corrupted_data)
+
+        for idx,(codes,(cx,_)) in enumerate(batch_dataset):
+            codes = [c.unsqueeze(0) for c in make_device(codes)]
+            fx = model(cx.to(device).unsqueeze(0), codes, loi=-1).cpu()
+            results[idx // samples_per_image].append(fx)
+
+    results = make_cpu(make_3dim(color_space_convert_view(results)))
+    return results
+
+
+def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
     code_bs=6, num_samples=120, verbose=1):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
@@ -96,15 +129,15 @@ def get_new_codes(z_dims, data, corruptor, backbone, loss_fn="mse",
     num_samples -- number of times we try to find a better code for each image
     """
     loss_fn = get_loss_fn(loss_fn)
-    bs = len(data)
+    bs = len(corrupted_data)
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
-    loader = DataLoader(data, batch_size=code_bs, num_workers=num_workers)
+    loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers)
 
     for level_idx in tqdm(range(len(z_dims)), desc="Resolutions", leave=False, dynamic_ncols=True):
         least_losses = torch.ones(bs, device=device) * float("inf")
 
         for i in tqdm(range(num_samples), desc="Sampling", leave=False, dynamic_ncols=True):
-            for idx,(x,ys) in enumerate(loader):
+            for idx,(cx,ys) in enumerate(loader):
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
@@ -113,8 +146,7 @@ def get_new_codes(z_dims, data, corruptor, backbone, loss_fn="mse",
                 test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
-                    cx = corruptor(x.to(device))
-                    fx = backbone(cx, test_codes, loi=level_idx)
+                    fx = backbone(cx.to(device), test_codes, loi=level_idx)
                     losses = compute_loss(fx, ys[level_idx].to(device), loss_fn,
                         reduction="batch")
 
@@ -125,53 +157,12 @@ def get_new_codes(z_dims, data, corruptor, backbone, loss_fn="mse",
             if verbose == 1 and i % 20 == 0:
                 tqdm.write(f"    Current average per-image loss {torch.mean(least_losses):.5f}")
 
-    return [l.cpu() for l in level_codes]
+    return make_cpu(level_codes)
 
-def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
-    """Returns a list of lists, where each sublist contains first a ground-truth
-    image and then [samples_per_image] images conditioned on that one.
-
-    Args:
-    corruptor   -- a corruptor to remove information from images
-    model       -- a model to fix corrupted images
-    dataset     -- GeneratorDataset to load images from
-    idxs        -- the indices to [dataset] to get images for
-    """
-    with torch.no_grad():
-        images_dataset = Subset(dataset, idxs)
-        loader = DataLoader(images_dataset, batch_size=1, num_workers=num_workers)
-
-        # Build a dataset of corrupted images that where each image in [dataset]
-        # contains [samples_per_image] corrupted versions. The corrupted images
-        # from the same base image occur sequentially in [corrupted]
-        expanded_shape = (samples_per_image,) + images_dataset[0][0].shape
-        corrupted = [corruptor(x.to(device)).cpu() for x,_ in loader]
-        corrupted = [[c for c in cor.expand(expanded_shape)] for cor in corrupted]
-        corrupted = XDataset(flatten(corrupted))
-
-        # Get codes for each image in [corrupted]
-        codes_dataset = ZippedDataset(*get_new_codes(model.get_z_dims(),
-            corrupted, corruptor, model, num_samples=0, verbose=False))
-        dataset = ZippedDataset(corrupted, codes_dataset)
-        loader = DataLoader(dataset, batch_size=1, num_workers=num_workers)
-
-        # Build the non-generated-image part of the results
-        results = [[]] * len(idxs)
-        for idx,(cx,codes) in enumerate(loader):
-            results[idx // samples_per_image] = [
-                images_dataset[idx // samples_per_image][1][-1],
-                cx.squeeze(0).cpu()
-            ]
-
-        for idx,(cx,codes) in enumerate(loader):
-            fx = model(cx.to(device), [c.to(device) for c in codes], loi=-1)
-            results[idx // samples_per_image].append(fx.squeeze(0).cpu())
-
-    return results
 
 def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
-    verbose=1):
+    verbose=1, color_space_convert=lambda x: x):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
@@ -198,22 +189,31 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
 
-        images_dataset = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
-        codes_dataset = ZippedDataset(*get_new_codes(model.get_z_dims(),
-            images_dataset, corruptor, model, loss_fn=loss_fn, code_bs=code_bs,
+        # Get a dataset of corrupted images and their targets
+        images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
+        corrupted_data = CorruptedDataset(images_data, corruptor, bs=mini_bs,
+            color_space_convert=color_space_convert)
+
+        # Get codes for the corrupted images. This takes the place of the min()
+        # function in IMLE, since we return the best (minimum loss) codes for
+        # each image from the function
+        codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
+            corrupted_data, model, loss_fn=loss_fn, code_bs=code_bs,
             num_samples=num_samples, verbose=verbose))
-        batch_dataset = ZippedDataset(codes_dataset, images_dataset)
+
+        # Zip the codes and the corrupted images and their targets together
+        batch_dataset = ZippedDataset(codes_data, corrupted_data)
         loader = DataLoader(batch_dataset, batch_size=mini_bs, shuffle=True,
             num_workers=num_workers)
 
+        # Train the model
         inner_loop_iters = int(iters_per_code_per_ex * len(batch_dataset) / mini_bs)
-        for _ in tqdm(range(inner_loop_iters), desc="inner loop", leave=False, dynamic_ncols=True):
-            for codes,(x,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
+        for _ in tqdm(range(inner_loop_iters), desc="Inner loop", leave=False, dynamic_ncols=True):
+            for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
 
                 model.zero_grad()
-                cx = corruptor(x.to(device))
-                fx = model(cx, [c.to(device) for c in codes])
-                loss = compute_loss(fx, [y.to(device) for y in ys], loss_fn,
+                fx = model(cx.to(device), make_device(codes))
+                loss = compute_loss(fx, make_device(ys), loss_fn,
                     reduction="mean", list_reduction="mean")
                 loss.backward()
                 optimizer.step()
@@ -224,6 +224,23 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
             tqdm.write(f"    current loss {loss.item():.5f}")
 
     return corruptor, model, optimizer, total_loss / len(loader)
+
+
+def rgb2lab_with_dims(input):
+    if isinstance(input, list):
+        return [rgb2lab_with_dims(x) for x in input]
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 4:
+        return rgb2lab(input.to(device))
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 3:
+        return rgb2lab(input.to(device).unsqueeze(0)).squeeze(0)
+
+def lab2rgb_with_dims(input):
+    if isinstance(input, list):
+        return [lab2rgb_with_dims(x) for x in input]
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 4:
+        return lab2rgb(input.to(device))
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 3:
+        return lab2rgb(input.to(device).unsqueeze(0)).squeeze(0)
 
 def parse_camnet_args(unparsed_args):
     """Returns an argparse Namespace and the remaining unparsed arguments after
@@ -315,6 +332,8 @@ if __name__ == "__main__":
         help="weight decay")
     P.add_argument("--mm", nargs="+", default=(.9, .999), type=float,
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
+    P.add_argument("--color_space", choices=["rgb", "lab"], default="lab",
+        help="Color space to use during training")
     args, unparsed_args = P.parse_known_args()
 
 
@@ -370,9 +389,16 @@ if __name__ == "__main__":
     ############################################################################
     # Set up remaining training utilities and data logging
     ############################################################################
+    if args.color_space == "lab":
+        color_space_convert_tr = rgb2lab_with_dims
+        color_space_convert_view = lab2rgb_with_dims
+    else:
+        color_space_convert_tr = lambda x: x
+        color_space_convert_view = lambda x: x
+
     last_epoch = -1
     scheduler = CosineAnnealingLR(optimizer, args.epochs,
-        last_epoch=last_epoch, verbose=True)
+        last_epoch=last_epoch, verbose=args.verbose)
 
     save_dir = generator_folder(args)
     wandb.init(anonymous="allow",
@@ -387,6 +413,15 @@ if __name__ == "__main__":
     ############################################################################
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
+
+
+        val_images = get_images(corruptor, model, data_eval,
+            idxs=random.sample(range(len(data_eval)), 10),
+            samples_per_image=5)
+        results_file = f"{save_dir}/val_images/epoch{e}.png"
+        show_image_grid(val_images)
+
+
         corruptor, model, optimizer, loss_tr = one_epoch_imle(
             corruptor,
             model,
@@ -398,7 +433,8 @@ if __name__ == "__main__":
             code_bs=args.code_bs,
             num_samples=args.num_samples,
             iters_per_code_per_ex=args.ipcpe,
-            verbose=args.verbose)
+            verbose=args.verbose,
+            color_space_convert=color_space_convert_tr)
 
         ########################################################################
         # After each epoch, log results and data

@@ -40,6 +40,28 @@ def set_seed(seed):
 # Miscellaneous utilities
 ################################################################################
 
+def make_cpu(input):
+    if isinstance(input, list):
+        return [make_cpu(x) for x in input]
+    else:
+        return input.cpu()
+
+def make_device(input):
+    if isinstance(input, list):
+        return [make_device(x) for x in input]
+    else:
+        return input.to(device)
+
+def make_3dim(input):
+    if isinstance(input, list):
+        return [make_3dim(x) for x in input]
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 4 and input.shape[0] == 1:
+        return input.squeeze(0)
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 3:
+        return input
+    else:
+        raise ValueError()
+
 def evenly_divides(x, y):
     """Returns if [x] evenly divides [y]."""
     return int(y / x) == y / x

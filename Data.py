@@ -265,10 +265,9 @@ class GeneratorDataset(Dataset):
     transform   -- transformation applied deterministically to both input and
                     target images
     """
-    def __init__(self, datasets, transform, validate=False, return_idxs=False):
+    def __init__(self, datasets, transform, validate=False):
         self.datasets = datasets
         self.transform = transform
-        self.return_idxs = False
 
         ########################################################################
         # Validate the sequence of datasets. The H and W dimensions of
@@ -289,19 +288,62 @@ class GeneratorDataset(Dataset):
             self.shapes = [s[0] for s in shapes]
             tqdm.write(f"Validated source datasets: lengths {[len(d) for d in self.datasets]} | shape sequence {shapes}")
 
-    def __len__(self):
-        return len(self.datasets[0])
+    def __len__(self): return len(self.datasets[0])
 
     def __getitem__(self, idx):
         images = [d[idx][0] for d in self.datasets]
         images = self.transform(images)
-
-        if self.return_idxs:
-            return idx, images[0], images[1:]
-        else:
-            return images[0], images[1:]
+        return images[0], images[1:]
 
     def __repr__(self): return f"GeneratorDataset\n\tshapes {self.shapes}"
+
+def collate_fn(data):
+    """Collate function for batching data."""
+    return torch.stack([d[0] for d in data], axis=0), [d[1] for d in data]
+
+class CorruptedDataset(Dataset):
+    """Dataset for returning corrupted images and their targets. The main
+    difference from loading images from a GeneratorDataset and corrupting images
+    on the fly is that this keeps the corruptions static, which is useful due to
+    how we find the best codes for each image. Corrupted images don't change in
+    between different iterations of code sampling.
+
+    Args:
+    source      -- source dataset, should be a GeneratorDataset
+    corruptor   -- corruptor to corrupt a batch of images
+    bs          -- batch size for getting corrupted versions of images
+    """
+    def __init__(self, source, corruptor, color_space_convert=lambda x: x, bs=1):
+        super(CorruptedDataset, self).__init__()
+        loader = DataLoader(source, num_workers=num_workers, batch_size=bs,
+            collate_fn=collate_fn)
+        self.corrupted_xs = []
+        self.ys = []
+
+        for x,y in tqdm(loader, desc="Building corrupted dataset", dynamic_ncols=True, leave=False):
+            x = corruptor(color_space_convert(x.to(device, non_blocking=True)))
+            self.corrupted_xs.append(x)
+            self.ys += color_space_convert(y)
+
+        self.ys = make_cpu(self.ys)
+        self.corrupted_xs = torch.cat(self.corrupted_xs, axis=0).cpu()
+
+    def __len__(self): return len(self.corrupted_xs)
+    def __getitem__(self, idx): return self.corrupted_xs[idx], self.ys[idx]
+
+class ExpandedDataset(Dataset):
+    """Provides a view of [source_data] expanded by a factor of [expand_factor].
+    More formally, the indices i * expand_factor ... (i+1) * expand_factor - 1
+    map to the ith example of [source_data].
+    """
+    def __init__(self, source_data, expand_factor=1):
+        self.source = source_data
+        self.expand_factor = expand_factor
+
+    def __len__(self): return self.expand_factor * len(self.source)
+
+    def __getitem__(self, idx): return self.source[idx // self.expand_factor]
+
 
 class ManyTransformsDataset(Dataset):
     """A dataset that wraps a single source dataset, but returns a tuple of
