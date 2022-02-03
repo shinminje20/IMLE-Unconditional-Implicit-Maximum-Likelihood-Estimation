@@ -108,6 +108,8 @@ def get_data_splits(data_str, eval_str, res=None):
 ################################################################################
 # Augmentations
 ################################################################################
+
+
 def get_simclr_augs(crop_size=32, gaussian_blur=False, color_s=.5, strong=True):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
@@ -321,7 +323,7 @@ class CorruptedDataset(Dataset):
         self.ys = []
 
         for x,y in tqdm(loader, desc="Building corrupted dataset", dynamic_ncols=True, leave=False):
-            x = corruptor(color_space_convert(x.to(device, non_blocking=True)))
+            x = color_space_convert(corruptor(x.to(device, non_blocking=True)))
             self.corrupted_xs.append(x)
             self.ys += color_space_convert(y)
 

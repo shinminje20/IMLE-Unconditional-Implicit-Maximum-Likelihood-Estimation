@@ -144,6 +144,22 @@ class RerangeLayer(nn.Module):
     def forward(self, inp):
         return (inp + 1.) / 2.
 
+class LABOutputLayer(nn.Module):
+    """
+    """
+    def __init__(self):
+        super(LABOutputLayer, self).__init__()
+
+    def forward(self, x):
+        """
+        Args:
+        x   -- a BSxCxHxW tensor where the C channels are L then A then B
+        """
+        x[:, 0, :, :] = torch.clamp(x[:, 1, :, :], min=0, max=100)
+        x[:, 1, :, :] = torch.clamp(x[:, 1, :, :], min=-127, max=127)
+        x[:, 2, :, :] = torch.clamp(x[:, 2, :, :], min=-127, max=127)
+
+
 
 class NetLinLayer(nn.Module):
     ''' A single linear layer used as placeholder for LPIPS learnt weights '''

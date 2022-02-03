@@ -178,7 +178,7 @@ class CAMNetModule(nn.Module):
             out = self.out_conv(feature)
             feature = self.upsample(feature)
 
-        return feature, self.rerange_output(out)
+        return feature, self.rerange_output(out) # FIX THIS
 
 class MappingNet(nn.Module):
     """A mapping network for one block of CAMNet."""
@@ -220,19 +220,3 @@ class CAMNetUpsampling(nn.Module):
                 B.conv_block(resid_nc, resid_nc, kernel_size=3, act_type=act_type)]))
 
     def forward(self, x): return self.model(x)
-
-# if __name__ == "__main__":
-#     data_tr, data_eval = get_data_splits("cifar10", "test", [16, 32])
-#     corruption = get_non_learnable_batch_corruption(grayscale=True)
-#     transform = get_gen_augs()
-#     data_tr = GeneratorDataset(data_tr, transform)
-#     G = CAMNet(n_levels=1)
-#
-#     loader = DataLoader(data_tr, batch_size=4)
-#     for x,ys in loader:
-#
-#
-#         s = (x.shape[0], 128 + 5 * 16 * (2 ** 0) * 16 * (2 ** 0))
-#         print(s)
-#         code = torch.rand(*s)
-#         fx = G(x, [code])

@@ -82,8 +82,23 @@ class RandomIllumination(nn.Module):
         sigmas = sigmas.view(expanded_shape)
         return torch.clamp(x + sigmas.expand(x.shape), 0, 1)
 
+class GrayScale(nn.Module):
+
+    def __init__(self, color_space="rgb"):
+        super(GrayScale, self).__init__()
+        self.color_space = color_space
+
+    def forward(self, x):
+        expanded_shape = x.shape
+        if self.color_space == "rgb":
+            return torch.mean(x, axis=1).unsqueeze(1).expand(x.shape)
+        elif self.color_space == "lab":
+            return x[:, 0].unsqueeze(1).expand(x.shape)
+        else:
+            raise ValueError(f"Unknown color space '{self.color_space}'")
+
 def get_non_learnable_batch_corruption(rand_illumination=0, pix_mask_frac=0,
-    pix_mask_size=8, grayscale=False):
+    pix_mask_size=8, grayscale=False, color_space="rgb"):
     """
     Args:
     pix_mask_frac    -- the fraction of an image to randomly mask
