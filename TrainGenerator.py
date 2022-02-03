@@ -143,7 +143,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
                 least_losses_batch = least_losses[start_idx:end_idx]
 
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:max(0, level_idx - 1)]]
-                new_codes = torch.randn((code_bs,) + z_dims[level_idx], device=device) * 1000
+                new_codes = torch.randn((code_bs,) + z_dims[level_idx], device=device)
                 test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
