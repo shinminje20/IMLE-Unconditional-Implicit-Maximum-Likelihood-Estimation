@@ -13,7 +13,7 @@
 # Uncomment this to have Slurm cd to a directory before running the script.
 # You can also just run the script from the directory you want to be in.
 # Change the folder below to your code directory
-#SBATCH -D ~/projects/6054857/tme3/ISICLE
+#SBATCH -D /projects/def-keli/tme3/ISICLE
 
 # Uncomment to control the output files. By default stdout and stderr go to
 # the same place, but if you use both commands below they'll be split up.
@@ -46,6 +46,11 @@ conda activate py39ISICLE
 # buffering when stdout is a file, or else when watching your output
 # script you'll only get updated every several lines printed.
 export PYTHONUNBUFFERED=1
+
+wandb login 90d0248dd4a9fde052b760cdb131373d49b4dad8
+
+
+
 
 # Do all the research.
 if [ "$SLURM_ARRAY_TASK_ID" = 1 ]
