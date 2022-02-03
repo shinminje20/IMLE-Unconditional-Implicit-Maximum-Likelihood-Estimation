@@ -139,7 +139,7 @@ class CAMNetModule(nn.Module):
             kernel_size=3, act_type=None)
 
         self.style_block = B.ShortcutBlock(B.StyleBlock(
-            [B.RRDB(resid_nc, gc=dense_nc, act_type=act_type) for _ in range(n_blocks)],
+            [B.RRDB(resid_nc, kernel_size=3, gc=dense_nc, act_type=act_type, bias=True, pad_type="zero") for _ in range(n_blocks)],
             [nn.Linear(latent_nc, 2 * resid_nc) for _ in range(n_blocks)],
             B.conv_block(resid_nc, resid_nc, kernel_size=3, act_type=None)
         ))
@@ -178,7 +178,7 @@ class CAMNetModule(nn.Module):
             out = self.out_conv(feature)
             feature = self.upsample(feature)
 
-        return feature, self.rerange_output(out) # FIX THIS
+        return feature, self.rerange_output(out)
 
 class MappingNet(nn.Module):
     """A mapping network for one block of CAMNet."""
