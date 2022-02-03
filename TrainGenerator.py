@@ -305,13 +305,13 @@ if __name__ == "__main__":
         help="optional training suffix")
     P.add_argument("--options", default=[], nargs="+",
         help="options")
-    P.add_argument("--verbose", choices=[0, 1], default=0,
+    P.add_argument("--verbose", choices=[0, 1], default=0, type=int,
         help="verbosity level")
     P.add_argument("--init_type", choices=["kaiming", "normal"], default="kaiming",
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=1,
         help="Scale for weight initialization")
-    P.add_argument("--loss", default="lpips", choices=["mse", "lpips"],
+    P.add_argument("--loss", default="mse", choices=["mse", "lpips"],
         help="loss function to use")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
