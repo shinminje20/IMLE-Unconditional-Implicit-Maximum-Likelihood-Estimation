@@ -348,7 +348,6 @@ if __name__ == "__main__":
 
     args, unparsed_args = P.parse_known_args()
 
-    args.sp = args.sp[0] if len(args.sp) == 1 else args.sp
     ############################################################################
     # Collect the arguments for generating the model and corruptor from
     # separate functions
