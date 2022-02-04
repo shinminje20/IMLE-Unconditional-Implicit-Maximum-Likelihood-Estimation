@@ -66,7 +66,7 @@ class RandomPixelMask(nn.Module):
 
     def forward(self, x):
         s = x.shape[-1] // self.size
-        mask = torch.zeros(size=(x.shape[0], x.shape[1], self.size, self.size))
+        mask = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size))
         mask = F.interpolate(mask, scale_factor=(s, s), mode="nearest")
         x[mask < self.pix_mask_frac] = 0
         return x
