@@ -136,39 +136,40 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 
     for level_idx in tqdm(range(len(z_dims)), desc="Resolutions", leave=False, dynamic_ncols=True):
         least_losses = torch.ones(bs, device=device) * float("inf")
+        sp = sample_parallelism[level_idx] if isinstance(sample_parallelism, list) else sample_parallelism
 
-        for i in tqdm(range(num_samples // sample_parallelism), desc="Sampling", leave=False, dynamic_ncols=True):
+        for i in tqdm(range(num_samples // sp), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:max(0, level_idx - 1)]]
-                new_codes = torch.randn((code_bs * sample_parallelism,) + z_dims[level_idx], device=device)
+                new_codes = torch.randn((code_bs * sp,) + z_dims[level_idx], device=device)
                 test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
                     fx = backbone(cx.to(device), test_codes, loi=level_idx)
-                    ys = expand_across_zero_dim(ys[level_idx].to(device), sample_parallelism)
+                    ys = expand_across_zero_dim(ys[level_idx].to(device), sp)
                     losses = compute_loss(fx, ys, loss_fn,
                         reduction="batch")
 
-                if sample_parallelism > 1:
-                    losses, idxs = torch.min(losses.view(-1, sample_parallelism), axis=1)
+                if sp > 1:
+                    losses, idxs = torch.min(losses.view(-1, sp), axis=1)
                     new_codes = new_codes[idxs]
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
                 least_losses[start_idx:end_idx][change_idxs] = losses[change_idxs]
 
-            if verbose == 1 and i % 20 == 0:
-                tqdm.write(f"    Current average per-image loss {torch.mean(least_losses):.5f}")
+            if verbose == 1 and i % 20 == 0 and i > 0:
+                tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
 
     return make_cpu(level_codes)
 
 
 def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
-    sample_parallelism=sample_parallelism, verbose=1,
+    sample_parallelism=1, verbose=1,
     color_space_convert=lambda x: x):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
@@ -342,7 +343,7 @@ if __name__ == "__main__":
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="lab",
         help="Color space to use during training")
-    P.add_argument("--sp", type=int, default=1,
+    P.add_argument("--sp", type=int, default=[1], nargs="+",
         help="parallelism across samples during code training")
     args, unparsed_args = P.parse_known_args()
 
@@ -377,8 +378,10 @@ if __name__ == "__main__":
         raise ValueError(f"--mini_bs {args.mini_bs} must be at most and evenly divide --bs {args.bs}")
     if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
          raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
-    if not evenly_divides(args.sp, args.num_samples) or args.bs < args.code_bs:
-        raise ValueError(f"--sp {args.sp} evenly divide --num_samples {args.num_samples}")
+
+    for sp in args.sp:
+        if not evenly_divides(sp, args.num_samples):
+            raise ValueError(f"--sp {args.sp} evenly divide --num_samples {args.num_samples} on all indices")
 
     tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps")
     ############################################################################
