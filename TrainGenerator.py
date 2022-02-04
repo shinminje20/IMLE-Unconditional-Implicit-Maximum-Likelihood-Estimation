@@ -168,7 +168,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 
 def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
-    verbose=1, color_space_convert=lambda x: x):
+    sample_parallelism=sample_parallelism, verbose=1,
+    color_space_convert=lambda x: x):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
@@ -205,7 +206,8 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
         # each image from the function
         codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
             corrupted_data, model, loss_fn=loss_fn, code_bs=code_bs,
-            num_samples=num_samples, verbose=verbose))
+            num_samples=num_samples, sample_parallelism=sample_parallelism,
+            verbose=verbose))
 
         # Zip the codes and the corrupted images and their targets together
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
@@ -340,6 +342,8 @@ if __name__ == "__main__":
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="lab",
         help="Color space to use during training")
+    P.add_argument("--sp", type=int, default=1,
+        help="parallelism across samples during code training")
     args, unparsed_args = P.parse_known_args()
 
 
@@ -373,6 +377,8 @@ if __name__ == "__main__":
         raise ValueError(f"--mini_bs {args.mini_bs} must be at most and evenly divide --bs {args.bs}")
     if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
          raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
+    if not evenly_divides(args.sp, args.num_samples) or args.bs < args.code_bs:
+        raise ValueError(f"--sp {args.sp} evenly divide --num_samples {args.num_samples}")
 
     tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps")
     ############################################################################
@@ -432,7 +438,8 @@ if __name__ == "__main__":
             num_samples=args.num_samples,
             iters_per_code_per_ex=args.ipcpe,
             verbose=args.verbose,
-            color_space_convert=color_space_convert_tr)
+            color_space_convert=color_space_convert_tr,
+            sample_parallelism=args.sp)
 
         ########################################################################
         # After each epoch, log results and data
