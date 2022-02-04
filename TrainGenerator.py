@@ -143,7 +143,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
-                old_codes = [l[start_idx:end_idx] for l in level_codes[:max(0, level_idx - 1)]]
+                old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
                 new_codes = torch.randn((code_bs * sp,) + z_dims[level_idx], device=device)
                 test_codes = old_codes + [new_codes]
 
@@ -163,6 +163,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 
             if verbose == 1 and i % 20 == 0 and i > 0:
                 tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
+
+        print("---------------------------------------")
 
     return make_cpu(level_codes)
 
@@ -345,9 +347,10 @@ if __name__ == "__main__":
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=[1], nargs="+",
         help="parallelism across samples during code training")
+
     args, unparsed_args = P.parse_known_args()
 
-
+    args.sp = args.sp[0] if len(args.sp) == 1 else args.sp
     ############################################################################
     # Collect the arguments for generating the model and corruptor from
     # separate functions
