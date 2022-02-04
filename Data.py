@@ -322,7 +322,7 @@ class CorruptedDataset(Dataset):
         self.corrupted_xs = []
         self.ys = []
 
-        for x,y in tqdm(loader, desc="Building corrupted dataset", dynamic_ncols=True, leave=False):
+        for x,y in loader:
             x = color_space_convert(corruptor(x.to(device, non_blocking=True)))
             self.corrupted_xs.append(x)
             self.ys += color_space_convert(y)

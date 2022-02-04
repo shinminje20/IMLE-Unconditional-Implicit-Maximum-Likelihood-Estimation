@@ -49,6 +49,13 @@ from utils.Utils import *
 #         x[mask] = 0
 #         return x
 
+class CloneInput(nn.Module):
+
+    def __init__(self):
+        super(CloneInput, self).__init__()
+
+    def forward(self, x): return x.clone()
+
 class RandomPixelMask(nn.Module):
     """Returns images with in expectation [pix_mask_frac] of the pixels set to
     zero.
@@ -57,18 +64,33 @@ class RandomPixelMask(nn.Module):
     pix_mask_frac   -- expected fraction of pixels to mask out
     size            -- resolution (SIZExSIZE) at which to set pixels to zero.
                         Decreasing this makes for larger blotches of erased
-                        image.
+                        image
+    fill            -- how to fill the image, one of 'zero' or 'color'
     """
-    def __init__(self, pix_mask_frac, size=16):
+    def __init__(self, pix_mask_frac, size=16, fill="zero"):
         super(RandomPixelMask, self).__init__()
         self.pix_mask_frac = pix_mask_frac
         self.size = size
+        self.fill = fill
 
     def forward(self, x):
-        s = x.shape[-1] // self.size
-        mask = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size))
-        mask = F.interpolate(mask, scale_factor=(s, s), mode="nearest")
-        x[mask < self.pix_mask_frac] = 0
+        mask = torch.rand(size=(x.shape[0], self.size * self.size), device=device)
+        _, indices = torch.sort(mask)
+        indices = indices.view(x.shape[0], self.size, self.size).unsqueeze(1)
+        cutoff = self.pix_mask_frac  * self.size * self.size
+        mask = (indices < cutoff).float()
+
+        mask = mask.expand(x.shape[0], x.shape[1], -1, -1)
+        mask = F.interpolate(mask, size=x.shape[-2:], mode="nearest")
+
+        if self.fill == "color":
+            colors = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size), device=device)
+            colors = F.interpolate(colors, size=x.shape[-2:], mode="nearest")
+            x[mask.bool()] = colors[mask.bool()]
+        elif self.fill == "zero":
+            x[mask.bool()] = 0
+        else:
+            raise ValueError(f"Unknown fill type '{self.fill}'")
         return x
 
 class RandomIllumination(nn.Module):
@@ -82,40 +104,22 @@ class RandomIllumination(nn.Module):
         sigmas = sigmas.view(expanded_shape)
         return torch.clamp(x + sigmas.expand(x.shape), 0, 1)
 
-class GrayScale(nn.Module):
-
-    def __init__(self, color_space="rgb"):
-        super(GrayScale, self).__init__()
-        self.color_space = color_space
-
-    def forward(self, x):
-        expanded_shape = x.shape
-        if self.color_space == "rgb":
-            return torch.mean(x, axis=1).unsqueeze(1).expand(x.shape)
-        elif self.color_space == "lab":
-            return x[:, 0].unsqueeze(1).expand(x.shape)
-        else:
-            raise ValueError(f"Unknown color space '{self.color_space}'")
-
 def get_non_learnable_batch_corruption(rand_illumination=0, pix_mask_frac=0,
-    pix_mask_size=8, grayscale=False, color_space="rgb"):
+    pix_mask_size=8, grayscale=False, fill="zero", **kwargs):
     """
     Args:
     pix_mask_frac    -- the fraction of an image to randomly mask
     grayscale          -- whether or not to grayscale an image
     """
     corruptions = []
-    if rand_illumination > 0:
-        corruptions.append(RandomIllumination(sigma=rand_illumination))
-    if pix_mask_frac > 0:
-        corruptions.append(RandomPixelMask(pix_mask_frac, size=pix_mask_size))
     if grayscale:
         corruptions.append(transforms.Grayscale(num_output_channels=3))
+        corruptions.append(CloneInput())
+    if pix_mask_frac > 0:
+        corruptions.append(RandomPixelMask(pix_mask_frac, size=pix_mask_size, fill=fill))
+    if rand_illumination > 0:
+        corruptions.append(RandomIllumination(sigma=rand_illumination))
     return transforms.Compose(corruptions)
-
-
-
-
 
 ################################################################################
 # CONTRASTIVE LEARNING CORRUPTIONS. These corruptions can be applied to images
@@ -127,50 +131,38 @@ if __name__ == "__main__":
     P.add_argument("--data", choices=["cifar10", "miniImagenet", "camnet3"],
         default="cifar10",
         help="dataset to load images from")
-    P.add_argument("--rand_illumination", default=0, type=float,
-        help="amount of random illumination")
+    P.add_argument("--res", nargs="+", type=int,
+        default=[64, 128],
+        help="resolutions to see data at")
+    P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
+        help="grayscale corruption")
+    P.add_argument("--pix_mask_size", default=8, type=int,
+        help="fraction of pixels to mask at 16x16 resolution")
     P.add_argument("--pix_mask_frac", default=0, type=float,
-        help="amount of random masking")
-    P.add_argument("--grayscale", action="store_true",
-        help="whether or not to grayscale images")
-    P.add_argument("--mask_prob", type=float, default=0,
-        help="probability of adding transforms.RandomErasing")
-    P.add_argument("--idxs", type=int, default=[-10], nargs="+",
-        help="indices of images to corrupt, or negative number to sample that many randomly")
-    args = NestedNamespace(P.parse_args())
+        help="fraction of pixels to mask at 16x16 resolution")
+    P.add_argument("--rand_illumination", default=0, type=float,
+        help="amount by which the illumination of an image can change")
+    P.add_argument("--idxs", default=[-10], type=int, nargs="+",
+        help="amount by which the illumination of an image can change")
+    args = P.parse_args()
 
-    data, _ = get_data_splits(args.data, "cv")
+    expand_factor = 10
 
+    datasets, _ = get_data_splits(args.data, "cv", args.res)
+    data = GeneratorDataset(datasets, get_gen_augs())
 
     if len(args.idxs) == 1 and args.idxs[0] < 0:
         idxs = random.sample(range(len(data)), abs(args.idxs[0]))
     else:
         idxs = args.idxs
 
-    transform = get_non_learnable_image_corruption(args.mask_prob)
-    #
-    # transform = transforms.Compose([
-    #     transforms.Resize((256, 256)),
-    #     transforms.ToTensor(),
-    #     transforms.RandomErasing(p=.5)
-    # ])
+    data = Subset(data, idxs)
+    data_expanded = ExpandedDataset(data, expand_factor=expand_factor)
 
-    to_tensor = transforms.Compose([
-        transforms.Resize((256, 256)),
-        transforms.ToTensor()
-    ])
+    corruptor = get_non_learnable_batch_corruption(**vars(args))
+    corrupted_data = CorruptedDataset(data_expanded, corruptor)
+    image_grid = [[d[1][-1]] for d in data]
+    for idx,(c,_) in enumerate(corrupted_data):
+        image_grid[idx // expand_factor].append(c)
 
-    corruption = get_non_learnable_batch_corruption(
-        rand_illumination=args.rand_illumination,
-        grayscale=args.grayscale,
-        pix_mask_frac=args.pix_mask_frac,
-        mask_prob=args.mask_prob)
-
-    images = [data[idx][0] for idx in idxs]
-    image_grid = [deepcopy(images)] * 5
-    images = [to_tensor(image) for image in images]
-    image_grid = [[transform(image) for image in image_row] for image_row in image_grid]
-    corrupted_images = [corruption(torch.stack(image_row)) for image_row in image_grid]
-    image_grid = [images] + [[c for c in corrupted_images_row] for corrupted_images_row in corrupted_images]
-
-    show_image_grid(image_grid)
+    show_image_grid(make_cpu(image_grid))

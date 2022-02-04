@@ -259,7 +259,7 @@ def parse_camnet_args(unparsed_args):
     P.add_argument("--code_nc", default=5, type=int,
         help="number of code channels")
     P.add_argument("--in_nc", default=3, type=int,
-        help="number of input channels")
+        help="number of input channels. SHOULD ALWAYS BE THREE")
     P.add_argument("--out_nc", default=3, type=int,
         help=" number of output channels")
     P.add_argument("--map_nc", default=128, type=int,
@@ -292,8 +292,10 @@ def get_corruptor_args(unparsed_args):
         help="fraction of pixels to mask at 16x16 resolution")
     P.add_argument("--pix_mask_frac", default=.1, type=float,
         help="fraction of pixels to mask at 16x16 resolution")
-    P.add_argument("--rand_illumination", default=.1, type=float,
+    P.add_argument("--rand_illumination", default=0, type=float,
         help="amount by which the illumination of an image can change")
+    P.add_argument("--fill", default="zero", choices=["color", "zero"],
+        help="how to fill masked out areas")
     return P.parse_known_args(unparsed_args)
 
 if __name__ == "__main__":
@@ -428,6 +430,13 @@ if __name__ == "__main__":
     ############################################################################
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
+
+
+        val_images = get_images(corruptor, model, data_eval,
+            idxs=random.sample(range(len(data_eval)), 10),
+            samples_per_image=5)
+        results_file = f"{save_dir}/val_images/epoch{e}.png"
+        show_image_grid(val_images)
 
         corruptor, model, optimizer, loss_tr = one_epoch_imle(
             corruptor,
