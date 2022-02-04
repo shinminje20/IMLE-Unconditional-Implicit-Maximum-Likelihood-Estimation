@@ -164,8 +164,6 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
             if verbose == 1 and i % 20 == 0 and i > 0:
                 tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
 
-        print("---------------------------------------")
-
     return make_cpu(level_codes)
 
 
