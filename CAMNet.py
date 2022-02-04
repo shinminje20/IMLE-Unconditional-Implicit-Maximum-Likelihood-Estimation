@@ -99,11 +99,9 @@ class CAMNet(nn.Module):
 
         for idx,(code,(k,level)) in enumerate(zip(codes, self.levels.items())):
 
-            ####################################################################
             # This chunk of code allows parallelism across codes, by expanding
             # the inputs to the current level in the loop to match the size of
-            # the codes for the current level in the BS dimension.
-            ####################################################################
+            # the codes for the current level in the zero dimension.
             level_bs = code.shape[0]
             if level_bs > bs:
                 n = level_bs // bs
@@ -113,7 +111,6 @@ class CAMNet(nn.Module):
                 level_output = expand_across_zero_dim(level_output, n)
                 feat = expand_across_zero_dim(feat, n) if len(feat)>0 else feat
                 bs = level_bs
-
 
             feat, level_output = level(level_output, code, feature=feat)
             outputs.append(level_output)

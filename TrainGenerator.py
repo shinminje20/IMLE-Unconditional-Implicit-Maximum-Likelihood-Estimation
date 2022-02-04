@@ -169,8 +169,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 
 def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
-    sample_parallelism=1, verbose=1,
-    color_space_convert=lambda x: x):
+    sample_parallelism=1, verbose=1, color_space_convert=lambda x: x,
+    return_images=True):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
@@ -383,7 +383,7 @@ if __name__ == "__main__":
         if not evenly_divides(sp, args.num_samples):
             raise ValueError(f"--sp {args.sp} evenly divide --num_samples {args.num_samples} on all indices")
 
-    tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps")
+    tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
     ############################################################################
     # Create the corruption, mode,l and its optimizer. Any model specific
     ############################################################################
