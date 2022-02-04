@@ -114,7 +114,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
 
 
 def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
-    code_bs=6, num_samples=120, verbose=1):
+    code_bs=6, num_samples=120, sample_parallelism=2, verbose=1):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -137,19 +137,24 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
     for level_idx in tqdm(range(len(z_dims)), desc="Resolutions", leave=False, dynamic_ncols=True):
         least_losses = torch.ones(bs, device=device) * float("inf")
 
-        for i in tqdm(range(num_samples), desc="Sampling", leave=False, dynamic_ncols=True):
+        for i in tqdm(range(num_samples // sample_parallelism), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:max(0, level_idx - 1)]]
-                new_codes = torch.randn((code_bs,) + z_dims[level_idx], device=device)
+                new_codes = torch.randn((code_bs * sample_parallelism,) + z_dims[level_idx], device=device)
                 test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
                     fx = backbone(cx.to(device), test_codes, loi=level_idx)
-                    losses = compute_loss(fx, ys[level_idx].to(device), loss_fn,
+                    ys = expand_across_zero_dim(ys[level_idx].to(device), sample_parallelism)
+                    losses = compute_loss(fx, ys, loss_fn,
                         reduction="batch")
+
+                if sample_parallelism > 1:
+                    losses, idxs = torch.min(losses.view(-1, sample_parallelism), axis=1)
+                    new_codes = new_codes[idxs]
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]

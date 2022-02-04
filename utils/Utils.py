@@ -226,5 +226,5 @@ def save_images_grid(images, path):
 
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
-    plt.savefig(path, dpi=256)
+    plt.savefig(path, dpi=512)
     tqdm.write(f"Saved image grid to {path}")

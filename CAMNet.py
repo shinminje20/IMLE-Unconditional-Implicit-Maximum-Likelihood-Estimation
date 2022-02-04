@@ -13,6 +13,7 @@ import torch.nn as nn
 
 import Block as B
 from utils.Utils import *
+from utils.UtilsNN import *
 from utils.NestedNamespace import NestedNamespace
 
 def flatten(xs):
@@ -92,10 +93,28 @@ class CAMNet(nn.Module):
                         this level
         """
         level_output = net_input
+        bs = level_output.shape[0]
         feat = torch.tensor([], device=device)
         outputs = []
 
         for idx,(code,(k,level)) in enumerate(zip(codes, self.levels.items())):
+
+            ####################################################################
+            # This chunk of code allows parallelism across codes, by expanding
+            # the inputs to the current level in the loop to match the size of
+            # the codes for the current level in the BS dimension.
+            ####################################################################
+            level_bs = code.shape[0]
+            if level_bs > bs:
+                n = level_bs // bs
+                if not evenly_divides(bs, level_bs):
+                    raise ValueError(f"Batch size of old level {bs} must evenly divide batch size of the current level {level_bs}")
+
+                level_output = expand_across_zero_dim(level_output, n)
+                feat = expand_across_zero_dim(feat, n) if len(feat)>0 else feat
+                bs = level_bs
+
+
             feat, level_output = level(level_output, code, feature=feat)
             outputs.append(level_output)
 
