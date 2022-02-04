@@ -149,19 +149,20 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 
                 with torch.no_grad():
                     fx = backbone(cx.to(device), test_codes, loi=level_idx)
-                    ys = expand_across_zero_dim(ys[level_idx].to(device), sp)
-                    losses = compute_loss(fx, ys, loss_fn,
-                        reduction="batch")
+                    ys = torch.repeat_interleave(ys[level_idx].to(device), sp,axis=0)
+                    losses = compute_loss(fx, ys, loss_fn, reduction="batch")
 
                 if sp > 1:
-                    losses, idxs = torch.min(losses.view(-1, sp), axis=1)
-                    new_codes = new_codes[idxs]
+                    _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
+                    new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
+                    new_codes = new_codes[torch.arange(code_bs), idxs]
+                    losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
                 least_losses[start_idx:end_idx][change_idxs] = losses[change_idxs]
 
-            if verbose == 1 and i % 20 == 0 and i > 0:
+            if verbose == 1 and i % 5 == 0 and i > 0:
                 tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
 
     return make_cpu(level_codes)

@@ -108,8 +108,8 @@ class CAMNet(nn.Module):
                 if not evenly_divides(bs, level_bs):
                     raise ValueError(f"Batch size of old level {bs} must evenly divide batch size of the current level {level_bs}")
 
-                level_output = expand_across_zero_dim(level_output, n)
-                feat = expand_across_zero_dim(feat, n) if len(feat)>0 else feat
+                level_output = torch.repeat_interleave(level_output, n, axis=0)
+                feat = torch.repeat_interleave(feat, n, axis=0)
                 bs = level_bs
 
             feat, level_output = level(level_output, code, feature=feat)

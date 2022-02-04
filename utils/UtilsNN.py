@@ -4,13 +4,6 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import _LRScheduler
 
-def expand_across_zero_dim(x, exp_factor):
-    """Returns BSxAx...xZ tensor expanded across the zero dimension."""
-    if exp_factor == 1:
-        return x
-    else:
-        return torch.cat(exp_factor * [x], axis=0)
-
 def init_weights(net, init_type='kaiming', scale=1, std=0.02):
 
     def weights_init_normal(m, std=0.02):
