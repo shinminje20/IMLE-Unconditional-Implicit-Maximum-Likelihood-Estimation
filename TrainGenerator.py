@@ -100,7 +100,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
 
         corrupted_data = ExpandedDataset(corrupted_data,
             expand_factor=samples_per_image)
-        codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
+        codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
             corrupted_data, model, num_samples=0))
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
 
@@ -206,7 +206,7 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
         images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
         corrupted_data = CorruptedDataset(images_data, corruptor, bs=mini_bs,
             color_space_convert=color_space_convert)
-        codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
+        codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
             corrupted_data, model, loss_fn=loss_fn, code_bs=code_bs,
             num_samples=num_samples, sample_parallelism=sample_parallelism,
             verbose=verbose))

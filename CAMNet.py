@@ -27,6 +27,17 @@ def flatten(xs):
 
     return result
 
+
+def get_z_dims(model):
+    """Returns a list of tuples, where the ith tuple is the shape of the
+    latent code required for the ith level without expansion to the batch
+    dimension.
+    """
+    model = model.module if isinstance(model, nn.DataParallel) else model
+    return [(model.map_nc + self.code_nc * (model.base_size * (2 ** l)) ** 2,)
+            for l in range(len(model.levels))]
+
+
 class CAMNet(nn.Module):
     """CAMNet rewritten to be substantially stateless, better-documented, and
     optimized for ISICLE.
@@ -69,12 +80,9 @@ class CAMNet(nn.Module):
             } for i in range(n_levels)]
 
         self.levels = nn.ModuleDict(
-            {f"level {i}": nn.DataParallel(CAMNetModule(**l), device_ids=gpus)
+            {f"level {i}": CAMNetModule(**l)
              for i,l in enumerate(level_info)}
              )
-
-        print(self.levels)
-
 
         self.map_nc = map_nc
         self.code_nc = code_nc

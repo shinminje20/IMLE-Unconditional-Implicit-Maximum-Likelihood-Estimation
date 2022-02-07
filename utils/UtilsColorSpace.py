@@ -2,7 +2,7 @@
 https://github.com/niopeng/CAM-Net/blob/main/code/utils/util.py
 """
 import torch
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
+device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
 if "cuda" in device:
     torch.backends.cudnn.benchmark = True
 
