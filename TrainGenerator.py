@@ -451,7 +451,7 @@ if __name__ == "__main__":
             verbose=args.verbose,
             color_space_convert=color_space_convert_tr,
             sample_parallelism=args.sp,
-            args.gpus=gpus)
+            gpus=args.gpus)
 
         ########################################################################
         # After each epoch, log results and data
