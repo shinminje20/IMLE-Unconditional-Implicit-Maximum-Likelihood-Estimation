@@ -29,14 +29,14 @@ class LPIPSLoss(nn.Module):
 
     def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
 
-def get_loss_fn(loss_fn):
+def get_loss_fn(loss_fn, gpus=[0]):
     """Returns an unreduced loss function of type [loss_fn], or [loss_fn] itself
     if [loss_fn] is an nn.Module (this allows LPIPS networks to be reused).
     """
     if loss_fn == "lpips":
         return LPIPSLoss(reduction="none").to(device)
     elif loss_fn == "mse":
-        return nn.MSELoss(reduction="none")
+        return nn.DataParallel(nn.MSELoss(reduction="none"), device_ids=gpus)
     elif isinstance(loss_fn, nn.Module):
         return loss_fn
     else:
@@ -114,7 +114,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
 
 
 def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
-    code_bs=6, num_samples=120, sample_parallelism=2, verbose=1):
+    code_bs=6, num_samples=120, sample_parallelism=2, verbose=1, gpus=[0]):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -129,7 +129,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
     code_bs     -- batch size to test codes in
     num_samples -- number of times we try to find a better code for each image
     """
-    loss_fn = get_loss_fn(loss_fn)
+    loss_fn = get_loss_fn(loss_fn, gpus=gpus)
     bs = len(corrupted_data)
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers)
@@ -171,7 +171,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
     sample_parallelism=1, verbose=1, color_space_convert=lambda x: x,
-    return_images=True):
+    return_images=True, gpus=[0]):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
@@ -192,7 +192,7 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     mini_bs                 -- the batch size to run per iteration. Must evenly
                                 divide the batch size of [loader]
     """
-    loss_fn = get_loss_fn(loss_fn)
+    loss_fn = get_loss_fn(loss_fn, gpus=gpus)
     total_loss = 0
 
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
@@ -450,7 +450,8 @@ if __name__ == "__main__":
             iters_per_code_per_ex=args.ipcpe,
             verbose=args.verbose,
             color_space_convert=color_space_convert_tr,
-            sample_parallelism=args.sp)
+            sample_parallelism=args.sp,
+            args.gpus=gpus)
 
         ########################################################################
         # After each epoch, log results and data
