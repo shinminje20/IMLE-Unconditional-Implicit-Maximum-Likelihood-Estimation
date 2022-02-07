@@ -392,7 +392,7 @@ if __name__ == "__main__":
 
     if args.arch == "camnet":
         new_args = {"n_levels": len(args.res) - 1, "base_size": args.res[0]}
-        model = CAMNet(**(vars(model_args) | new_args)).to(device)
+        model = CAMNet(**(vars(model_args) | new_args))
         init_weights(model, init_type=args.init_type, scale=args.init_scale)
         core_params = [p for n,p in model.named_parameters() if not "map" in n]
         map_params = [p for n,p in model.named_parameters() if "map" in n]
