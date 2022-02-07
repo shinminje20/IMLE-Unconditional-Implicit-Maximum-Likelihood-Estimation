@@ -68,9 +68,10 @@ class CAMNet(nn.Module):
             "size": base_size * 2 ** i,
             } for i in range(n_levels)]
 
-        self.levels = nn.DataParallel(
-            nn.ModuleDict({f"level {i}": CAMNetModule(**l) for i,l in enumerate(level_info)}),
-            device_ids=gpus)
+        self.levels = nn.ModuleDict(
+            {f"level {i}": nn.DataParallel(CAMNetModule(**l), device_ids=gpus)
+             for i,l in enumerate(level_info)}
+             )
         self.map_nc = map_nc
         self.code_nc = code_nc
         self.base_size = base_size
