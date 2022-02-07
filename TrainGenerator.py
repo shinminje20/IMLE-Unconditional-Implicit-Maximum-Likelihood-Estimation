@@ -36,7 +36,7 @@ def get_loss_fn(loss_fn, gpus=[0]):
     if loss_fn == "lpips":
         return LPIPSLoss(reduction="none").to(device)
     elif loss_fn == "mse":
-        return nn.DataParallel(nn.MSELoss(reduction="none"), device_ids=gpus)
+        return nn.MSELoss(reduction="none")
     elif isinstance(loss_fn, nn.Module):
         return loss_fn
     else:
