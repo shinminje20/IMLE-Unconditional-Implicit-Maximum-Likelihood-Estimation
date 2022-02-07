@@ -198,25 +198,22 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
 
-        # Get a dataset of corrupted images and their targets
+        # (1) Get a dataset of corrupted images and their targets, (2) Get codes
+        # for the corrupted images. This takes the place of the min() function
+        # in IMLE, since we return the best (minimum loss) codes for each image
+        # from the function, (3) Zip the codes and the corrupted images and
+        # their targets together
         images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
         corrupted_data = CorruptedDataset(images_data, corruptor, bs=mini_bs,
             color_space_convert=color_space_convert)
-
-        # Get codes for the corrupted images. This takes the place of the min()
-        # function in IMLE, since we return the best (minimum loss) codes for
-        # each image from the function
         codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
             corrupted_data, model, loss_fn=loss_fn, code_bs=code_bs,
             num_samples=num_samples, sample_parallelism=sample_parallelism,
             verbose=verbose))
-
-        # Zip the codes and the corrupted images and their targets together
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
         loader = DataLoader(batch_dataset, batch_size=mini_bs, shuffle=True,
             num_workers=num_workers)
 
-        # Train the model
         inner_loop_iters = int(iters_per_code_per_ex * len(batch_dataset) / mini_bs)
         for _ in tqdm(range(inner_loop_iters), desc="Inner loop", leave=False, dynamic_ncols=True):
             for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
@@ -348,7 +345,8 @@ if __name__ == "__main__":
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=[1], nargs="+",
         help="parallelism across samples during code training")
-
+    P.add_argument("--gpus", type=int, default=[0], nargs="+",
+        help="GPU ids")
     args, unparsed_args = P.parse_known_args()
 
     ############################################################################
@@ -403,6 +401,8 @@ if __name__ == "__main__":
                           lr=args.lr, weight_decay=args.wd, betas=args.mm)
     else:
         raise ValueError(f"Unknown architecture '{args.arch}'")
+
+    model = nn.DataParallel(model, device_ids=args.gpus)
 
     ############################################################################
     # Set up remaining training utilities and data logging
