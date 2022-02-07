@@ -92,7 +92,6 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
     """
     with torch.no_grad():
         images_dataset = Subset(dataset, idxs)
-
         corrupted_data = CorruptedDataset(images_dataset, corruptor,
             color_space_convert=color_space_convert_tr, bs=len(idxs))
 
@@ -109,12 +108,11 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
             fx = model(cx.to(device).unsqueeze(0), codes, loi=-1).cpu()
             results[idx // samples_per_image].append(fx)
 
-    results = make_cpu(make_3dim(color_space_convert_view(results)))
-    return results
+    return make_cpu(make_3dim(color_space_convert_view(results)))
 
 
 def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
-    code_bs=6, num_samples=120, sample_parallelism=2, verbose=1, gpus=[0]):
+    code_bs=6, num_samples=128, sample_parallelism=2, verbose=1, gpus=[0]):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -177,7 +175,7 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
 
     ****************************************************************************
     Note that in the typical terminology, a 'minibatch' and a 'batch' are
-    synonymous, and here a 'minibatch' is a subset of a 'batch'.
+    synonymous, but here a 'minibatch' is a subset of a 'batch'.
     ****************************************************************************
 
     Args:
@@ -386,7 +384,7 @@ if __name__ == "__main__":
 
     tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
     ############################################################################
-    # Create the corruption, mode,l and its optimizer. Any model specific
+    # Create the corruption, model, and its optimizer. Any model specific
     ############################################################################
     corruptor = get_non_learnable_batch_corruption(**vars(corruptor_args) | {"color_space": args.color_space})
 
@@ -438,45 +436,29 @@ if __name__ == "__main__":
         # results_file = f"{save_dir}/val_images/epoch{e}.png"
         # show_image_grid(val_images)
 
-        corruptor, model, optimizer, loss_tr = one_epoch_imle(
-            corruptor,
-            model,
-            optimizer,
-            data_tr,
-            loss_fn=args.loss,
-            bs=args.bs,
-            mini_bs=args.mini_bs,
-            code_bs=args.code_bs,
-            num_samples=args.num_samples,
-            iters_per_code_per_ex=args.ipcpe,
-            verbose=args.verbose,
-            color_space_convert=color_space_convert_tr,
-            sample_parallelism=args.sp,
-            gpus=args.gpus)
+        corruptor, model, optimizer, loss_tr = one_epoch_imle(corruptor,
+            model, optimizer, data_tr, loss_fn=args.loss, bs=args.bs,
+            mini_bs=args.mini_bs, code_bs=args.code_bs,
+            num_samples=args.num_samples, iters_per_code_per_ex=args.ipcpe,
+            verbose=args.verbose, color_space_convert=color_space_convert_tr,
+            sample_parallelism=args.sp, gpus=args.gpus)
 
         ########################################################################
         # After each epoch, log results and data
         ########################################################################
-        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {scheduler.get_last_lr()[0]:.5e}")
+        lr = "lr": scheduler.get_last_lr()[0],
 
-        # Save validation image results locally and to W&B
+        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr}")
+
         val_images = get_images(corruptor, model, data_eval,
             idxs=random.sample(range(len(data_eval)), 10),
             samples_per_image=5)
         results_file = f"{save_dir}/val_images/epoch{e}.png"
         save_images_grid(val_images, results_file)
-        wandb.log({
-            "epochs": e,
-            "loss_tr": loss_tr,
-            "lr": scheduler.get_last_lr()[0],
+        wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
             "results": wandb.Image(f"{save_dir}/val_images/epoch{e}.png")})
-
-        # Save the model and optimizer locally and to W&B
-        torch.save({
-            "model": model.cpu(),
-            "optimizer": optimizer,
-            "last_epoch": e,
-        }, f"{save_dir}/{e}.pt")
+        torch.save({"model": model.cpu(), "optimizer": optimizer,
+            "last_epoch": e}, f"{save_dir}/{e}.pt")
         wandb.save(f"{save_dir}/{e}", base_path=f"{save_dir}", policy="end")
         model.to(device)
 
