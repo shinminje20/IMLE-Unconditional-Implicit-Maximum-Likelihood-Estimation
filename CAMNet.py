@@ -51,7 +51,7 @@ class CAMNet(nn.Module):
     def __init__(self, n_levels=4, base_size=16, code_nc=5, in_nc=3, out_nc=3,
         map_nc=128, latent_nc=512, resid_nc=[128, 64, 64, 64],
         dense_nc=[256, 192, 128, 64], n_blocks=6, act_type="leakyrelu",
-        feat_scales=None):
+        feat_scales=None, gpus=[0]):
         super(CAMNet, self).__init__()
         level_info = [{
             "n_blocks": n_blocks,
@@ -68,9 +68,9 @@ class CAMNet(nn.Module):
             "size": base_size * 2 ** i,
             } for i in range(n_levels)]
 
-        self.levels = nn.ModuleDict({
-            f"level {i}": CAMNetModule(**l) for i,l in enumerate(level_info)
-        })
+        self.levels = nn.DataParallel(
+            nn.ModuleDict({f"level {i}": CAMNetModule(**l) for i,l in enumerate(level_info)}),
+            device_ids=gpus)
         self.map_nc = map_nc
         self.code_nc = code_nc
         self.base_size = base_size

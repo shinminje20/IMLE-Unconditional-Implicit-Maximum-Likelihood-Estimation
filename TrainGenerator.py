@@ -402,8 +402,6 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Unknown architecture '{args.arch}'")
 
-    model = nn.DataParallel(model, device_ids=args.gpus)
-
     ############################################################################
     # Set up remaining training utilities and data logging
     ############################################################################
