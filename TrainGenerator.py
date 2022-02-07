@@ -8,7 +8,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader, Subset
 
-from CAMNet import CAMNet
+from CAMNet import CAMNet, get_z_dims
 from Corruptions import get_non_learnable_batch_corruption
 from Data import *
 from utils.Utils import *
