@@ -446,7 +446,7 @@ if __name__ == "__main__":
         ########################################################################
         # After each epoch, log results and data
         ########################################################################
-        lr = "lr": scheduler.get_last_lr()[0],
+        lr = scheduler.get_last_lr()[0],
 
         tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr}")
 
