@@ -34,7 +34,7 @@ def get_z_dims(model):
     dimension.
     """
     model = model.module if isinstance(model, nn.DataParallel) else model
-    return [(model.map_nc + model.code_nc * (model.base_size * (2 ** l)) ** 2)
+    return [(model.map_nc + model.code_nc * (model.base_size * (2 ** l)) ** 2,)
             for l in range(len(model.levels))]
 
 
