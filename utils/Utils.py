@@ -21,8 +21,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 ################################################################################
 # Set up CUDA usage
 device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
-if "cuda" in device:
-    torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = True
 
 num_workers = 6
 
