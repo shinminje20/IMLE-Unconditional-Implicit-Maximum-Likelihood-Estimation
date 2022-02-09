@@ -8,7 +8,7 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader, Subset
 
-from CAMNet import CAMNet
+from CAMNet import CAMNet, get_z_dims
 from Corruptions import get_non_learnable_batch_corruption
 from Data import *
 from utils.Utils import *
@@ -29,7 +29,7 @@ class LPIPSLoss(nn.Module):
 
     def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
 
-def get_loss_fn(loss_fn):
+def get_loss_fn(loss_fn, gpus=[0]):
     """Returns an unreduced loss function of type [loss_fn], or [loss_fn] itself
     if [loss_fn] is an nn.Module (this allows LPIPS networks to be reused).
     """
@@ -91,8 +91,8 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
     idxs        -- the indices to [dataset] to get images for
     """
     with torch.no_grad():
+        model = model.module
         images_dataset = Subset(dataset, idxs)
-
         corrupted_data = CorruptedDataset(images_dataset, corruptor,
             color_space_convert=color_space_convert_tr, bs=len(idxs))
 
@@ -100,7 +100,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
 
         corrupted_data = ExpandedDataset(corrupted_data,
             expand_factor=samples_per_image)
-        codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
+        codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
             corrupted_data, model, num_samples=0))
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
 
@@ -109,13 +109,16 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
             fx = model(cx.to(device).unsqueeze(0), codes, loi=-1).cpu()
             results[idx // samples_per_image].append(fx)
 
-    results = make_cpu(make_3dim(color_space_convert_view(results)))
-    return results
+    return make_cpu(make_3dim(color_space_convert_view(results)))
 
 
 def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
+<<<<<<< HEAD
     code_bs=6, num_samples=120, sample_parallelism=2, verbose=1,
     dataparallel=False):
+=======
+    code_bs=6, num_samples=128, sample_parallelism=2, verbose=1, gpus=[0]):
+>>>>>>> 304973475a103600ec888a3e0f717db0e437098d
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -132,7 +135,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 
     https://docs.computecanada.ca/wiki/PyTorch
     """
-    loss_fn = get_loss_fn(loss_fn)
+    loss_fn = get_loss_fn(loss_fn, gpus=gpus)
     bs = len(corrupted_data)
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers)
@@ -174,13 +177,13 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
     sample_parallelism=1, verbose=1, color_space_convert=lambda x: x,
-    return_images=True):
+    return_images=True, gpus=[0], num_prints=10):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
     ****************************************************************************
     Note that in the typical terminology, a 'minibatch' and a 'batch' are
-    synonymous, and here a 'minibatch' is a subset of a 'batch'.
+    synonymous, but here a 'minibatch' is a subset of a 'batch'.
     ****************************************************************************
 
     Args:
@@ -195,32 +198,29 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset, loss_fn="lpi
     mini_bs                 -- the batch size to run per iteration. Must evenly
                                 divide the batch size of [loader]
     """
-    loss_fn = get_loss_fn(loss_fn)
+    loss_fn = get_loss_fn(loss_fn, gpus=gpus)
     total_loss = 0
-
+    print_iter = len(dataset) // num_prints
+    inner_loop_iters = int(iters_per_code_per_ex * len(batch_dataset) / mini_bs)
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
 
-        # Get a dataset of corrupted images and their targets
+        # (1) Get a dataset of corrupted images and their targets, (2) Get codes
+        # for the corrupted images. This takes the place of the min() function
+        # in IMLE, since we return the best (minimum loss) codes for each image
+        # from the function, (3) Zip the codes and the corrupted images and
+        # their targets together
         images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
         corrupted_data = CorruptedDataset(images_data, corruptor, bs=mini_bs,
             color_space_convert=color_space_convert)
-
-        # Get codes for the corrupted images. This takes the place of the min()
-        # function in IMLE, since we return the best (minimum loss) codes for
-        # each image from the function
-        codes_data = ZippedDataset(*get_new_codes(model.get_z_dims(),
+        codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
             corrupted_data, model, loss_fn=loss_fn, code_bs=code_bs,
             num_samples=num_samples, sample_parallelism=sample_parallelism,
             verbose=verbose))
-
-        # Zip the codes and the corrupted images and their targets together
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
         loader = DataLoader(batch_dataset, batch_size=mini_bs, shuffle=True,
             num_workers=num_workers)
 
-        # Train the model
-        inner_loop_iters = int(iters_per_code_per_ex * len(batch_dataset) / mini_bs)
         for _ in tqdm(range(inner_loop_iters), desc="Inner loop", leave=False, dynamic_ncols=True):
             for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
 
@@ -233,9 +233,13 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset, loss_fn="lpi
 
                 total_loss += loss.item()
 
+<<<<<<< HEAD
         scheduler.step()
 
         if verbose == 1:
+=======
+        if verbose == 1 and batch_idx % print_iter == 0:
+>>>>>>> 304973475a103600ec888a3e0f717db0e437098d
             tqdm.write(f"    current loss {loss.item():.5f}")
 
     return corruptor, model, optimizer, scheduler, total_loss / len(loader)
@@ -353,7 +357,8 @@ if __name__ == "__main__":
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=[1], nargs="+",
         help="parallelism across samples during code training")
-
+    P.add_argument("--gpus", type=int, default=[0], nargs="+",
+        help="GPU ids")
     args, unparsed_args = P.parse_known_args()
 
     ############################################################################
@@ -393,13 +398,14 @@ if __name__ == "__main__":
 
     tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
     ############################################################################
-    # Create the corruption, mode,l and its optimizer. Any model specific
+    # Create the corruption, model, and its optimizer. Any model specific
     ############################################################################
     corruptor = get_non_learnable_batch_corruption(**vars(corruptor_args) | {"color_space": args.color_space})
 
     if args.arch == "camnet":
         new_args = {"n_levels": len(args.res) - 1, "base_size": args.res[0]}
-        model = CAMNet(**(vars(model_args) | new_args)).to(device)
+        model = CAMNet(**(vars(model_args) | new_args))
+        model = nn.DataParallel(model, device_ids=args.gpus).to(device)
         init_weights(model, init_type=args.init_type, scale=args.init_scale)
         core_params = [p for n,p in model.named_parameters() if not "map" in n]
         map_params = [p for n,p in model.named_parameters() if "map" in n]
@@ -444,6 +450,7 @@ if __name__ == "__main__":
         # results_file = f"{save_dir}/val_images/epoch{e}.png"
         # show_image_grid(val_images)
 
+<<<<<<< HEAD
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor,
             model,
@@ -459,29 +466,30 @@ if __name__ == "__main__":
             verbose=args.verbose,
             color_space_convert=color_space_convert_tr,
             sample_parallelism=args.sp)
+=======
+        corruptor, model, optimizer, loss_tr = one_epoch_imle(corruptor,
+            model, optimizer, data_tr, loss_fn=args.loss, bs=args.bs,
+            mini_bs=args.mini_bs, code_bs=args.code_bs,
+            num_samples=args.num_samples, iters_per_code_per_ex=args.ipcpe,
+            verbose=args.verbose, color_space_convert=color_space_convert_tr,
+            sample_parallelism=args.sp, gpus=args.gpus)
+>>>>>>> 304973475a103600ec888a3e0f717db0e437098d
 
         ########################################################################
         # After each epoch, log results and data
         ########################################################################
-        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {scheduler.get_last_lr()[0]:.5e}")
+        lr = scheduler.get_last_lr()[0],
 
-        # Save validation image results locally and to W&B
+        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr}")
+
         val_images = get_images(corruptor, model, data_eval,
             idxs=random.sample(range(len(data_eval)), 10),
             samples_per_image=5)
         results_file = f"{save_dir}/val_images/epoch{e}.png"
         save_images_grid(val_images, results_file)
-        wandb.log({
-            "epochs": e,
-            "loss_tr": loss_tr,
-            "lr": scheduler.get_last_lr()[0],
+        wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
             "results": wandb.Image(f"{save_dir}/val_images/epoch{e}.png")})
-
-        # Save the model and optimizer locally and to W&B
-        torch.save({
-            "model": model.cpu(),
-            "optimizer": optimizer,
-            "last_epoch": e,
-        }, f"{save_dir}/{e}.pt")
+        torch.save({"model": model.cpu(), "optimizer": optimizer,
+            "last_epoch": e}, f"{save_dir}/{e}.pt")
         wandb.save(f"{save_dir}/{e}", base_path=f"{save_dir}", policy="end")
         model.to(device)
