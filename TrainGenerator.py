@@ -170,7 +170,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
 def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
     sample_parallelism=1, verbose=1, color_space_convert=lambda x: x,
-    return_images=True, gpus=[0]):
+    return_images=True, gpus=[0], num_prints=10):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
@@ -193,6 +193,7 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
     """
     loss_fn = get_loss_fn(loss_fn, gpus=gpus)
     total_loss = 0
+    print_iter = (len(dataset) // bs) // num_prints
 
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
@@ -226,7 +227,7 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
 
                 total_loss += loss.item()
 
-        if verbose == 1:
+        if verbose == 1 and batch_idx % print_iter == 0:
             tqdm.write(f"    current loss {loss.item():.5f}")
 
     return corruptor, model, optimizer, total_loss / len(loader)
