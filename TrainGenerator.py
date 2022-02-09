@@ -226,8 +226,9 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset, loss_fn="lpi
 
                 total_loss += loss.item()
         scheduler.step()
+
         if verbose == 1 and batch_idx % print_iter == 0:
-            tqdm.write(f"    current loss {loss.item():.5f}")
+            tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]}")
 
     return corruptor, model, optimizer, scheduler, total_loss / len(loader)
 
@@ -414,7 +415,7 @@ if __name__ == "__main__":
 
     last_epoch = -1
     scheduler = CosineAnnealingLR(optimizer, args.epochs * (len(data_tr) // args.bs),
-        last_epoch=last_epoch, verbose=args.verbose)
+        last_epoch=last_epoch)
 
     save_dir = generator_folder(args)
     wandb.init(anonymous="allow",
