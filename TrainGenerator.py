@@ -91,6 +91,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
     idxs        -- the indices to [dataset] to get images for
     """
     with torch.no_grad():
+        model = model.module
         images_dataset = Subset(dataset, idxs)
         corrupted_data = CorruptedDataset(images_dataset, corruptor,
             color_space_convert=color_space_convert_tr, bs=len(idxs))
@@ -428,13 +429,13 @@ if __name__ == "__main__":
     ############################################################################
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
-        #
-        #
-        # val_images = get_images(corruptor, model, data_eval,
-        #     idxs=random.sample(range(len(data_eval)), 10),
-        #     samples_per_image=5)
-        # results_file = f"{save_dir}/val_images/epoch{e}.png"
-        # show_image_grid(val_images)
+
+
+        val_images = get_images(corruptor, model, data_eval,
+            idxs=random.sample(range(len(data_eval)), 10),
+            samples_per_image=5)
+        results_file = f"{save_dir}/val_images/epoch{e}.png"
+        show_image_grid(val_images)
 
         corruptor, model, optimizer, loss_tr = one_epoch_imle(corruptor,
             model, optimizer, data_tr, loss_fn=args.loss, bs=args.bs,
