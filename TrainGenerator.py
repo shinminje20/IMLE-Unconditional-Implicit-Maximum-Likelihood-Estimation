@@ -112,13 +112,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
     return make_cpu(make_3dim(color_space_convert_view(results)))
 
 
-def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
-<<<<<<< HEAD
-    code_bs=6, num_samples=120, sample_parallelism=2, verbose=1,
-    dataparallel=False):
-=======
-    code_bs=6, num_samples=128, sample_parallelism=2, verbose=1, gpus=[0]):
->>>>>>> 304973475a103600ec888a3e0f717db0e437098d
+def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse", code_bs=6, num_samples=128, sample_parallelism=2, verbose=1, gpus=[0]):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -232,14 +226,8 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset, loss_fn="lpi
                 optimizer.step()
 
                 total_loss += loss.item()
-
-<<<<<<< HEAD
         scheduler.step()
-
-        if verbose == 1:
-=======
         if verbose == 1 and batch_idx % print_iter == 0:
->>>>>>> 304973475a103600ec888a3e0f717db0e437098d
             tqdm.write(f"    current loss {loss.item():.5f}")
 
     return corruptor, model, optimizer, scheduler, total_loss / len(loader)
@@ -450,7 +438,6 @@ if __name__ == "__main__":
         # results_file = f"{save_dir}/val_images/epoch{e}.png"
         # show_image_grid(val_images)
 
-<<<<<<< HEAD
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor,
             model,
@@ -466,14 +453,6 @@ if __name__ == "__main__":
             verbose=args.verbose,
             color_space_convert=color_space_convert_tr,
             sample_parallelism=args.sp)
-=======
-        corruptor, model, optimizer, loss_tr = one_epoch_imle(corruptor,
-            model, optimizer, data_tr, loss_fn=args.loss, bs=args.bs,
-            mini_bs=args.mini_bs, code_bs=args.code_bs,
-            num_samples=args.num_samples, iters_per_code_per_ex=args.ipcpe,
-            verbose=args.verbose, color_space_convert=color_space_convert_tr,
-            sample_parallelism=args.sp, gpus=args.gpus)
->>>>>>> 304973475a103600ec888a3e0f717db0e437098d
 
         ########################################################################
         # After each epoch, log results and data
