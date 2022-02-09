@@ -114,7 +114,8 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1):
 
 
 def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
-    code_bs=6, num_samples=120, sample_parallelism=2, verbose=1):
+    code_bs=6, num_samples=120, sample_parallelism=2, verbose=1,
+    dataparallel=False):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -128,6 +129,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
                     it should return a tensor of N losses.
     code_bs     -- batch size to test codes in
     num_samples -- number of times we try to find a better code for each image
+
+    https://docs.computecanada.ca/wiki/PyTorch
     """
     loss_fn = get_loss_fn(loss_fn)
     bs = len(corrupted_data)
@@ -168,7 +171,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_fn="mse",
     return make_cpu(level_codes)
 
 
-def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
+def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset, loss_fn="lpips",
     bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1000, num_samples=12,
     sample_parallelism=1, verbose=1, color_space_convert=lambda x: x,
     return_images=True):
@@ -230,10 +233,12 @@ def one_epoch_imle(corruptor, model, optimizer, dataset, loss_fn="lpips",
 
                 total_loss += loss.item()
 
+        scheduler.step()
+
         if verbose == 1:
             tqdm.write(f"    current loss {loss.item():.5f}")
 
-    return corruptor, model, optimizer, total_loss / len(loader)
+    return corruptor, model, optimizer, scheduler, total_loss / len(loader)
 
 
 def rgb2lab_with_dims(input):
@@ -415,7 +420,7 @@ if __name__ == "__main__":
         color_space_convert_view = lambda x: x
 
     last_epoch = -1
-    scheduler = CosineAnnealingLR(optimizer, args.epochs,
+    scheduler = CosineAnnealingLR(optimizer, args.epochs * (len(dataset) // args.bs),
         last_epoch=last_epoch, verbose=args.verbose)
 
     save_dir = generator_folder(args)
@@ -439,10 +444,11 @@ if __name__ == "__main__":
         # results_file = f"{save_dir}/val_images/epoch{e}.png"
         # show_image_grid(val_images)
 
-        corruptor, model, optimizer, loss_tr = one_epoch_imle(
+        corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor,
             model,
             optimizer,
+            scheduler,
             data_tr,
             loss_fn=args.loss,
             bs=args.bs,
@@ -479,5 +485,3 @@ if __name__ == "__main__":
         }, f"{save_dir}/{e}.pt")
         wandb.save(f"{save_dir}/{e}", base_path=f"{save_dir}", policy="end")
         model.to(device)
-
-        scheduler.step()
