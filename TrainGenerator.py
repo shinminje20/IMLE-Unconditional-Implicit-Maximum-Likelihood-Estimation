@@ -414,7 +414,7 @@ if __name__ == "__main__":
         color_space_convert_view = lambda x: x
 
     last_epoch = -1
-    scheduler = CosineAnnealingLR(optimizer, args.epochs * (len(dataset) // args.bs),
+    scheduler = CosineAnnealingLR(optimizer, args.epochs * (len(data_tr) // args.bs),
         last_epoch=last_epoch, verbose=args.verbose)
 
     save_dir = generator_folder(args)
