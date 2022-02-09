@@ -195,7 +195,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset, loss_fn="lpi
     loss_fn = get_loss_fn(loss_fn, gpus=gpus)
     total_loss = 0
     print_iter = len(dataset) // num_prints
-    inner_loop_iters = int(iters_per_code_per_ex * len(batch_dataset) / mini_bs)
+    inner_loop_iters = int(iters_per_code_per_ex * len(dataset) / mini_bs)
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
 
