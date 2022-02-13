@@ -405,11 +405,11 @@ if __name__ == "__main__":
         init_weights(model, init_type=model_args.init_type, scale=model_args.init_scale)
 
 
-        # model = nn.DataParallel(model, device_ids=args.gpus).to(device)
+        model = nn.DataParallel(model, device_ids=args.gpus).to(device)
 
-        torch.distributed.init_process_group(backend="nccl", world_size=N, init_method="...")
-        model = DistributedDataParallel(model, device_ids=[i], output_device=i)
-
+        # torch.distributed.init_process_group(backend="nccl", world_size=N, init_method="...")
+        # model = DistributedDataParallel(model, device_ids=[i], output_device=i)
+        #
 
 
 
