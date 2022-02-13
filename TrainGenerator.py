@@ -155,7 +155,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                 test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
-                    fx = backbone(cx.to(device), test_codes, loi=level_idx,
+                    fx = backbone(cx, test_codes, loi=level_idx,
                                   in_color_space=in_color_space,
                                   out_color_space=out_color_space)
                     ys = torch.repeat_interleave(ys[level_idx].to(device), sp, axis=0)
@@ -226,7 +226,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
             for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
 
                 model.zero_grad(set_to_none=True)
-                fx = model(cx, codes,
+                fx = model(cx.to(device), make_device(codes),
                            in_color_space=in_color_space,
                            out_color_space=out_color_space)
                 loss = compute_loss(fx, make_device(ys), loss_fn,
