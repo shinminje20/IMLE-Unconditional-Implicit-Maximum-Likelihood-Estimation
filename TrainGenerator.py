@@ -236,7 +236,6 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
                 optimizer.step()
 
                 total_loss += loss.item()
-                del fx, loss
         scheduler.step()
 
         if verbose > 0 and batch_idx % print_iter == 0:
