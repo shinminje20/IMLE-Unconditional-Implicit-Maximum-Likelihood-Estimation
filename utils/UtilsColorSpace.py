@@ -137,6 +137,7 @@ def rgb2lab(rgb_tensor):
 
     result[:, 0] /= 100
     result[:, 1:] /= 127
+    result[:, 2:] /= 127
 
     # print("LAB TENSOR IN CONVERT TO LAB", result, "\n\n")
 
