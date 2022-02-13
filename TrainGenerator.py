@@ -109,7 +109,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1,
     with torch.no_grad():
         for idx,(codes,(cx,_)) in enumerate(batch_dataset):
             codes = [c.unsqueeze(0) for c in make_device(codes)]
-            fx = model(cx.unsqueeze(0), codes, loi=-1,
+            fx = model(cx.to(device).unsqueeze(0), codes, loi=-1,
                        in_color_space=in_color_space,
                        out_color_space=out_color_space)
             results[idx // samples_per_image].append(fx.cpu())
@@ -155,7 +155,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                 test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
-                    fx = backbone(cx, test_codes, loi=level_idx,
+                    fx = backbone(cx.to(device), test_codes, loi=level_idx,
                                   in_color_space=in_color_space,
                                   out_color_space=out_color_space)
                     ys = torch.repeat_interleave(ys[level_idx].to(device), sp, axis=0)
@@ -174,8 +174,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
             if verbose == 2:
                 tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
 
-    # return make_cpu(level_codes)
-    return level_codes
+    return make_cpu(level_codes)
+
 
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss_type="lpips", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
