@@ -238,7 +238,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
         scheduler.step()
 
         if verbose > 0 and batch_idx % print_iter == 0:
-            tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5e}")
+            tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5f}")
 
     return corruptor, model, optimizer, scheduler, total_loss / len(loader)
 
@@ -453,7 +453,7 @@ if __name__ == "__main__":
         ########################################################################
         lr = scheduler.get_last_lr()[0],
 
-        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr:.5e}")
+        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr:.5f}")
 
         val_images = get_images(corruptor, model, data_eval,
             idxs=random.sample(range(len(data_eval)), 10),
