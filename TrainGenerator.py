@@ -39,7 +39,7 @@ class LPIPSLoss(nn.Module):
         y = self.lpips(y)
 
         if self.project_matrix is None or self.make_new_projection:
-            self.project_matrix = torch.rand(fx.shape[-1], self.projection_dim, device=device)
+            self.project_matrix = torch.rand(fx.shape[-1], self.project_dim, device=device)
             self.project_matrix = self.project_matrix / torch.sum(proj_matrix, axis=0)
             self.make_new_projection = False
 
