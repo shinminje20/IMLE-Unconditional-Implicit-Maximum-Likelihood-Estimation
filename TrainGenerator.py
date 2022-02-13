@@ -154,13 +154,13 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                 new_codes = torch.randn((code_bs * sp,) + z_dims[level_idx], device=device)
                 test_codes = old_codes + [new_codes]
 
-                with torch.no_grad():
-                    fx = backbone(cx.to(device), test_codes, loi=level_idx,
-                                  in_color_space=in_color_space,
-                                  out_color_space=out_color_space)
-                    ys = torch.repeat_interleave(ys[level_idx].to(device), sp,
-                                                 axis=0)
-                    losses = compute_loss(fx, ys, loss_fn, reduction="batch")
+                with torch.autocast():
+                    with torch.no_grad():
+                        fx = backbone(cx.to(device), test_codes, loi=level_idx,
+                                      in_color_space=in_color_space,
+                                      out_color_space=out_color_space)
+                        ys = torch.repeat_interleave(ys[level_idx].to(device), sp, axis=0)
+                        losses = compute_loss(fx, ys, loss_fn, reduction="batch")
 
                 if sp > 1:
                     _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
