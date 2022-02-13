@@ -434,8 +434,9 @@ if __name__ == "__main__":
     val_images = get_images(corruptor, model, data_eval,
         idxs=random.sample(range(len(data_eval)), 10),
         samples_per_image=5)
-    results_file = f"{save_dir}/val_images/no_training.png"
+    results_file = f"{save_dir}/val_images/with_no_training.png"
     save_images_grid(val_images, results_file)
+    wandb.log({"with_no_training": wandb.Image(results_file)})
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
