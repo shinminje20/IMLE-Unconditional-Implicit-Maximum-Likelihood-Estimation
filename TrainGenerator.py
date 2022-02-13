@@ -21,32 +21,13 @@ from utils.UtilsNN import *
 ################################################################################
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean", project_dim=2048):
+    def __init__(self, reduction="mean"):
         super(LPIPSLoss, self).__init__()
         self.lpips = LPIPSFeats()
         self.reduction = reduction
         self.loss = nn.MSELoss(reduction=self.reduction)
-        self.project_dim = project_dim
-        self.project_matrix = None
-        self.make_new_projection = False
 
-    def init_projection(self, projection_dim=1000):
-        self.make_new_projection = True
-        self.project_dim = projection_dim
-
-    def forward(self, fx, y):
-        fx = self.lpips(fx)
-        y = self.lpips(y)
-
-        if self.project_matrix is None or self.make_new_projection:
-            self.project_matrix = torch.rand(1, self.project_dim, device=device).expand(fx.shape[-1], self.project_dim)
-            self.project_matrix = self.project_matrix / torch.sum(self.project_matrix, axis=0)
-            self.make_new_projection = False
-
-        fx = torch.matmul(fx, self.projection_matrix)
-        y = torch.matmul(y, self.projection_matrix)
-
-        return self.loss(fx, y)
+    def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
 
 lpips_loss = None
 def get_loss_fn(loss_fn):
@@ -57,7 +38,6 @@ def get_loss_fn(loss_fn):
         global lpips_loss
         if lpips_loss is None:
             lpips_loss = LPIPSLoss(reduction="none").to(device)
-        lpips_loss.init_projection(projection_dim=2048)
         return lpips_loss
     elif loss_fn == "mse":
         return nn.MSELoss(reduction="none")
@@ -424,7 +404,6 @@ if __name__ == "__main__":
         model = CAMNet(**(vars(model_args) | additional_kwargs))
         init_weights(model, init_type=model_args.init_type, scale=model_args.init_scale)
         model = nn.DataParallel(model, device_ids=args.gpus).to(device)
-
         core_params = [p for n,p in model.named_parameters() if not "map" in n]
         map_params = [p for n,p in model.named_parameters() if "map" in n]
         optimizer = Adam([{"params": core_params},
