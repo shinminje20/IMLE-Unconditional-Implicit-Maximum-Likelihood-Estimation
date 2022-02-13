@@ -315,7 +315,7 @@ class CorruptedDataset(Dataset):
     corruptor   -- corruptor to corrupt a batch of images
     bs          -- batch size for getting corrupted versions of images
     """
-    def __init__(self, source, corruptor, color_space_convert=lambda x: x, bs=1):
+    def __init__(self, source, corruptor, bs=1):
         super(CorruptedDataset, self).__init__()
         loader = DataLoader(source, num_workers=num_workers, batch_size=bs,
             collate_fn=collate_fn)
@@ -323,9 +323,9 @@ class CorruptedDataset(Dataset):
         self.ys = []
 
         for x,y in loader:
-            x = color_space_convert(corruptor(x.to(device, non_blocking=True)))
+            x = corruptor(x.to(device, non_blocking=True))
             self.corrupted_xs.append(x)
-            self.ys += color_space_convert(y)
+            self.ys += y
 
         self.ys = make_cpu(self.ys)
         self.corrupted_xs = torch.cat(self.corrupted_xs, axis=0).cpu()

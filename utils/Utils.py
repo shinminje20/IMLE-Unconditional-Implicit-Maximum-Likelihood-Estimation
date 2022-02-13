@@ -75,6 +75,19 @@ def flatten(xs):
     else:
         return [xs]
 
+def make_list(x, length=1):
+    """Returns a list of length [length] where each elment is [x], or, if [x]
+    is a list of length [length], returns [x].
+    """
+    if isinstance(x, list) and len(x) == length:
+        return x
+    elif isinstance(x, list) and len(x) == 1:
+        return x * length
+    elif isinstance(x, list) and not len(x) == length and len(x) > 1:
+        raise ValueError(f"Can not convert list {x} to length {length}")
+    else:
+        return [x] * length
+
 ################################################################################
 # File I/O Utils
 ################################################################################

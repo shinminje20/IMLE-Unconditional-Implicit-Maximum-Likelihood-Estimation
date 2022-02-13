@@ -141,3 +141,19 @@ def rgb2lab(rgb_tensor):
     # print("LAB TENSOR IN CONVERT TO LAB", result, "\n\n")
 
     return result
+
+def rgb2lab_with_dims(input):
+    if isinstance(input, list):
+        return [rgb2lab_with_dims(x) for x in input]
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 4:
+        return rgb2lab(input.to(device))
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 3:
+        return rgb2lab(input.to(device).unsqueeze(0)).squeeze(0)
+
+def lab2rgb_with_dims(input):
+    if isinstance(input, list):
+        return [lab2rgb_with_dims(x) for x in input]
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 4:
+        return lab2rgb(input.to(device))
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 3:
+        return lab2rgb(input.to(device).unsqueeze(0)).squeeze(0)

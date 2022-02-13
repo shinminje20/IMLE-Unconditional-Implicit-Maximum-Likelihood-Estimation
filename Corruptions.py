@@ -19,36 +19,6 @@ from utils.Utils import *
 # image per input image.
 ################################################################################
 
-# class LearnablePerPixelMaskCorruption(nn.Module):
-#     """Learns a pix-wise mask through gradients propagated back through the
-#     network.
-#
-#     Args:
-#     input_dim   -- the BSxCxHxW dimensionality of input image minibatches
-#     n_channels  -- the number of channels internal to the ConvNets
-#     """
-#     def __init__(self, input_dim, n_channels=32, size=16):
-#         super(LearnablePerPixelMaskCorruption, self).__init__()
-#         _,c,h,w = input_dim
-#         # This choice of kernel size and padding shouldn't change the dimension
-#         # of the image while being run through the convolutional layers
-#         self.model = nn.Sequential(
-#             nn.Conv2D(c, n_channels, kernel_size=3, padding=1),
-#             nn.ReLU(),
-#             nn.Conv2D(n_channels, n_channels, kernel_size=3, padding=1),
-#             nn.ReLU(),
-#             nn.Conv2D(n_channels, n_channels, kernel_size=3, padding=1),
-#             nn.ReLU(),
-#             nn.Linear(h * w, h * w),
-#             nn.ReLU(),
-#             nn.Linear(h * w, h * w)
-#         )
-#
-#     def forward(self, x):
-#         mask = self.model(x) < 0
-#         x[mask] = 0
-#         return x
-
 class CloneInput(nn.Module):
 
     def __init__(self):

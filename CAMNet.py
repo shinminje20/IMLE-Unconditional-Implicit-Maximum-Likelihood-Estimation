@@ -13,19 +13,20 @@ import torch.nn as nn
 
 import Block as B
 from utils.Utils import *
+from utils.UtilsColorSpace import rgb2lab_with_dims, lab2rgb_with_dims
 from utils.UtilsNN import *
 from utils.NestedNamespace import NestedNamespace
-
-def flatten(xs):
-    """Returns collection [xs] after recursively flattening into a list."""
-    result = []
-    for x in xs:
-        if isinstance(x, (list, tuple, set, nn.Sequential)):
-            result += flatten(x)
-        else:
-            result.append(x)
-
-    return result
+#
+# def flatten(xs):
+#     """Returns collection [xs] after recursively flattening into a list."""
+#     result = []
+#     for x in xs:
+#         if isinstance(x, (list, tuple, set, nn.Sequential)):
+#             result += flatten(x)
+#         else:
+#             result.append(x)
+#
+#     return result
 
 
 def get_z_dims(model):
@@ -34,36 +35,40 @@ def get_z_dims(model):
     dimension.
     """
     model = model.module if isinstance(model, nn.DataParallel) else model
-    return [(model.map_nc + model.code_nc * (model.base_size * (2 ** l)) ** 2,)
-            for l in range(len(model.levels))]
-
+    return [(model.map_nc + model.code_nc * s ** 2,) for i,s in enumerate(model.sizes[:-1])]
 
 class CAMNet(nn.Module):
     """CAMNet rewritten to be substantially stateless, better-documented, and
     optimized for ISICLE.
 
     Args:
-    n_levels                    -- number of CAMNet levels
-    base_size                   -- size of network input
-    code_nc                     -- number of code channels
-    in_nc                       -- number of input channels
-    out_nc                      -- number of output channels
-    map_nc                      -- number of input channels to mapping net
-    latent_nc                   -- number of channels inside the mapping net
-    resid_nc                    -- list of numbers of residual channels in RRDB
-                                    blocks for each CAMNet level
-    dense_nc                    -- list of numbers of dense channels in RRDB
-                                    blocks for each CAMNet level
-    n_blocks                    -- number of RRDB blocks inside each level
-    act_type                    -- activation type
-    feat_scales                 -- amount by which to scale features, or None
+    ARGUMENTS FOR OVERALL CAMNET STRUCTURE
+    res        -- list of resolutions, starting with the input resolution to the
+                    model and ending with the output resolution. Each resolution
+                    should be equal to or 2x the last.
+    n_levels   -- number of CAMNet levels. Must be at least the number of
+                    resolutions
+
+    ARGUMENTS FOR CONSTITUENT CAMNET LEVELS
+    code_nc    -- number of code channels
+    in_nc      -- number of input channels
+    out_nc     -- number of output channels
+    map_nc     -- number of input channels to mapping net
+    latent_nc  -- number of channels inside the mapping net
+    resid_nc   -- list of numbers of residual channels in RRDB blocks for each CAMNet level
+    dense_nc   -- list of numbers of dense channels in RRDB  blocks for each CAMNet level
+    n_blocks   -- number of RRDB blocks inside each level
+    act_type   -- activation type
+    feat_scales-- amount by which to scale features, or None
     """
 
-    def __init__(self, n_levels=4, base_size=16, code_nc=5, in_nc=3, out_nc=3,
-        map_nc=128, latent_nc=512, resid_nc=[128, 64, 64, 64],
+    def __init__(self, res=[32, 64, 128, 256], levels=4, code_nc=5, in_nc=3,
+        out_nc=3, map_nc=128, latent_nc=512, resid_nc=[128, 64, 64, 64],
         dense_nc=[256, 192, 128, 64], n_blocks=6, act_type="leakyrelu",
-        feat_scales=None, gpus=[0]):
+        feat_scales=None, internal_color_space="rgb", **kwargs):
         super(CAMNet, self).__init__()
+
+        self.sizes = res + ([res[-1]] * (levels - len(res) + 1))
         level_info = [{
             "n_blocks": n_blocks,
             "map_nc": map_nc,
@@ -76,27 +81,19 @@ class CAMNet(nn.Module):
             "prev_resid_nc": 0 if i == 0 else resid_nc[i-1],
             "level": i,
             "feat_scale": (.1 * i) if feat_scales is None else feat_scales[i],
-            "size": base_size * 2 ** i,
-            } for i in range(n_levels)]
+            "size": self.sizes[i],
+            "upsample": False if self.sizes[i] == res[-1] else (self.sizes[i] < self.sizes[i+1])
+            } for i in range(levels)]
 
         self.levels = nn.ModuleDict(
-            {f"level {i}": CAMNetModule(**l)
-             for i,l in enumerate(level_info)}
-             )
+            {str(i): CAMNetModule(**l) for i,l in enumerate(level_info)})
 
         self.map_nc = map_nc
         self.code_nc = code_nc
-        self.base_size = base_size
+        self.internal_color_space = internal_color_space
 
-    def get_z_dims(self):
-        """Returns a list of tuples, where the ith tuple is the shape of the
-        latent code required for the ith level without expansion to the batch
-        dimension.
-        """
-        return [(self.map_nc + self.code_nc * (self.base_size * (2 ** l)) ** 2,)
-                for l in range(len(self.levels))]
 
-    def forward(self, net_input, codes, loi=float("inf")):
+    def forward(self, net_input, codes, loi=None, in_color_space="rgb", out_color_space="rgb"):
         """Returns a list of the outputs computed by each level.
 
         Args:
@@ -105,12 +102,23 @@ class CAMNet(nn.Module):
         loi         -- level of interest. Returns a list of outputs from only
                         this level
         """
-        level_output = net_input
+        ########################################################################
+        # Input color space conversion
+        ########################################################################
+        if in_color_space == self.internal_color_space:
+            level_output = net_input
+        elif in_color_space == "rgb" and self.internal_color_space == "lab":
+            level_output = rgb2lab_with_dims(net_input)
+        else:
+            raise ValueError(f"in_color_space {in_color_space} and internal_color_space {self.internal_color_space} shouldn't be used")
+
+        ########################################################################
+        # Linear algebra soup
+        ########################################################################
         bs = level_output.shape[0]
         feat = torch.tensor([], device=device)
         outputs = []
-
-        for idx,(code,(k,level)) in enumerate(zip(codes, self.levels.items())):
+        for idx,(code,(_,level)) in enumerate(zip(codes, self.levels.items())):
 
             # This chunk of code allows parallelism across codes, by expanding
             # the inputs to the current level in the loop to match the size of
@@ -127,17 +135,25 @@ class CAMNet(nn.Module):
 
             feat, level_output = level(level_output, code, feature=feat)
             outputs.append(level_output)
+            if idx == loi: break
 
-            if idx == loi:
-                return outputs[-1]
+        result = outputs[loi] if loi is not None else outputs
 
-        return outputs[-1] if loi == -1 else outputs
+        ########################################################################
+        # Output color space conversion
+        ########################################################################
+        if self.internal_color_space == out_color_space:
+            return result
+        elif self.internal_color_space == "lab" and out_color_space == "rgb":
+            return lab2rgb_with_dims(result)
+        else:
+            raise ValueError(f"internal_color_space {self.internal_color_space} and out_color_space {out_color_space} shouldn't be used")
 
 class CAMNetModule(nn.Module):
 
     def __init__(self, map_nc=128, latent_nc=512, in_nc=3, out_nc=3, code_nc=5,
         feat_scale=1, prev_resid_nc=0, resid_nc=-1, dense_nc=-1, n_blocks=6,
-        upsample_mode="nearest", act_type="leakyrelu", upsample_output=True,
+        upsample_mode="nearest", act_type="leakyrelu", upsample=True,
         size=16, level=1):
         """
         Args:
@@ -153,14 +169,15 @@ class CAMNetModule(nn.Module):
         n_blocks        -- number of RRDB blocks in the level
         upsample_mode   -- upsampling mode
         act_type        -- activation type to use
-        upsample_output  -- whether to upsample level features before or after
-                            running them through the output convolution
+        upsample        -- whether to upsample level features before or after
+           running them through the output convolution
         """
         super(CAMNetModule, self).__init__()
-        self.upsample_output = upsample_output
+        self.upsample = upsample
         self.map_nc = map_nc
         self.code_nc = code_nc
         self.feat_scale = feat_scale
+        self.size = size
         self.mapping_net = MappingNet(map_nc, latent_nc, act_type)
 
         self.feat_net = B.conv_block(in_nc + code_nc + prev_resid_nc,
@@ -173,7 +190,7 @@ class CAMNetModule(nn.Module):
             B.conv_block(resid_nc, resid_nc, kernel_size=3, act_type=None)
         ))
 
-        self.upsample = CAMNetUpsampling(resid_nc, upsample=True)
+        self.upsample = CAMNetUpsampling(resid_nc, upsample=upsample)
         self.out_conv = B.conv_block(resid_nc, out_nc, kernel_size=3,
             act_type="tanh")
         self.rerange_output = B.RerangeLayer()
@@ -200,7 +217,7 @@ class CAMNetModule(nn.Module):
 
         # If the second output should be 2x the dimension of the input, upsample
         # the input to self.out_conv, otherwise, do not!
-        if self.upsample_output:
+        if self.upsample:
             feature = self.upsample(feature)
             out = self.out_conv(feature)
         else:
