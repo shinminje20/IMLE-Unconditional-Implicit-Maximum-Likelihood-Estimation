@@ -103,7 +103,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1,
     corrupted_data = ExpandedDataset(corrupted_data,
         expand_factor=samples_per_image)
     codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
-        corrupted_data, model, num_samples=0))
+        corrupted_data, model, "mse", num_samples=0))
     batch_dataset = ZippedDataset(codes_data, corrupted_data)
 
     with torch.no_grad():
