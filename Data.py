@@ -327,8 +327,8 @@ class CorruptedDataset(Dataset):
             self.corrupted_xs.append(x)
             self.ys += y
 
-        self.ys = make_cpu(self.ys)
-        self.corrupted_xs = torch.cat(self.corrupted_xs, axis=0).cpu()
+        self.ys = self.ys
+        self.corrupted_xs = torch.cat(self.corrupted_xs, axis=0)
 
     def __len__(self): return len(self.corrupted_xs)
     def __getitem__(self, idx): return self.corrupted_xs[idx], self.ys[idx]

@@ -109,7 +109,7 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1,
     with torch.no_grad():
         for idx,(codes,(cx,_)) in enumerate(batch_dataset):
             codes = [c.unsqueeze(0) for c in make_device(codes)]
-            fx = model(cx.to(device).unsqueeze(0), codes, loi=-1,
+            fx = model(cx.unsqueeze(0), codes, loi=-1,
                        in_color_space=in_color_space,
                        out_color_space=out_color_space)
             results[idx // samples_per_image].append(fx.cpu())
@@ -174,8 +174,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
             if verbose == 2:
                 tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
 
-    return make_cpu(level_codes)
-
+    # return make_cpu(level_codes)
+    return level_codes
 
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss_type="lpips", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
@@ -226,7 +226,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
             for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
 
                 model.zero_grad(set_to_none=True)
-                fx = model(cx.to(device), make_device(codes),
+                fx = model(cx, codes,
                            in_color_space=in_color_space,
                            out_color_space=out_color_space)
                 loss = compute_loss(fx, make_device(ys), loss_fn,
