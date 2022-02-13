@@ -136,18 +136,22 @@ class CAMNet(nn.Module):
                 bs = level_bs
 
             feat, level_output = level(level_output, code, feature=feat)
-            outputs.append(level_output)
-            if idx == loi: break
 
-        result = outputs[loi] if loi is not None else outputs
-
+            if loi is not None and loi == idx:
+                outputs = [level_output]
+                break
+            elif loi is not None and not loi == idx:
+                continue
+            else:
+                outputs.append(level_output)
+                
         ########################################################################
         # Output color space conversion
         ########################################################################
         if self.internal_color_space == out_color_space:
-            return result
+            return outputs
         elif self.internal_color_space == "lab" and out_color_space == "rgb":
-            return lab2rgb_with_dims(result)
+            return lab2rgb_with_dims(outputs)
         else:
             raise ValueError(f"internal_color_space {self.internal_color_space} and out_color_space {out_color_space} shouldn't be used")
 
