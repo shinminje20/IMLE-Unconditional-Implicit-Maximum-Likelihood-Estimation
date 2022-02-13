@@ -21,13 +21,32 @@ from utils.UtilsNN import *
 ################################################################################
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean"):
+    def __init__(self, reduction="mean", project_dim=2048):
         super(LPIPSLoss, self).__init__()
         self.lpips = LPIPSFeats()
         self.reduction = reduction
         self.loss = nn.MSELoss(reduction=self.reduction)
+        self.project_dim = project_dim
+        self.project_matrix = None
+        self.make_new_projection = False
 
-    def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
+    def init_projection(projection_dim=1000):
+        self.make_new_projection = True
+        self.project_dim = projection_dim
+
+    def forward(self, fx, y):
+        fx = self.lpips(fx)
+        y = self.lpips(y)
+
+        if self.project_matrix is None or self.make_new_projection:
+            self.project_matrix = torch.rand(fx.shape[-1], self.projection_dim, device=device)
+            self.project_matrix = self.project_matrix / torch.sum(proj_matrix, axis=0)
+            self.make_new_projection = False
+
+        fx = torch.matmul(fx, self.projection_matrix)
+        y = torch.matmul(y, self.projection_matrix)
+
+        return self.loss(fx, y)
 
 lpips_loss = None
 def get_loss_fn(loss_fn):
@@ -38,6 +57,7 @@ def get_loss_fn(loss_fn):
         global lpips_loss
         if lpips_loss is None:
             lpips_loss = LPIPSLoss(reduction="none").to(device)
+        lpips_loss.init_projection(projection_dim=2048)
         return lpips_loss
     elif loss_fn == "mse":
         return nn.MSELoss(reduction="none")
@@ -138,7 +158,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     loss_fn = get_loss_fn(loss_type)
     bs = len(corrupted_data)
     sample_parallelism = make_list(sp, length=len(z_dims))
-    level_codes = [torch.randn((bs,)+z) for z in z_dims]
+    level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers)
 
     for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
@@ -152,7 +172,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
 
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
                 new_codes = torch.randn((code_bs * sp,) + z_dims[level_idx], device=device)
-                test_codes = make_device(old_codes) + [new_codes]
+                test_codes = old_codes + [new_codes]
 
                 with torch.no_grad():
                     fx = backbone(cx.to(device), test_codes, loi=level_idx,
@@ -169,7 +189,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                     losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
 
                 change_idxs = losses < least_losses_batch
-                level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs].cpu()
+                level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
                 least_losses[start_idx:end_idx][change_idxs] = losses[change_idxs]
 
             if verbose == 2:
@@ -403,15 +423,7 @@ if __name__ == "__main__":
         }
         model = CAMNet(**(vars(model_args) | additional_kwargs))
         init_weights(model, init_type=model_args.init_type, scale=model_args.init_scale)
-
-
         model = nn.DataParallel(model, device_ids=args.gpus).to(device)
-
-        # torch.distributed.init_process_group(backend="nccl", world_size=N, init_method="...")
-        # model = DistributedDataParallel(model, device_ids=[i], output_device=i)
-        #
-
-
 
         core_params = [p for n,p in model.named_parameters() if not "map" in n]
         map_params = [p for n,p in model.named_parameters() if "map" in n]
