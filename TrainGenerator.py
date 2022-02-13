@@ -141,8 +141,6 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers)
 
-    tqdm.write(f"LEVEL CODES {[l.shape for l in level_codes]} SP {sample_parallelism}")
-
     for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
         least_losses = torch.ones(bs, device=device) * float("inf")
         sp = sample_parallelism[level_idx]

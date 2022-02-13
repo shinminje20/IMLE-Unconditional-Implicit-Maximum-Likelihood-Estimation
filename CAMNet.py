@@ -92,6 +92,8 @@ class CAMNet(nn.Module):
         self.code_nc = code_nc
         self.internal_color_space = internal_color_space
 
+        tqdm.write(f"Contructed CAMNet model with sizes {self.sizes}")
+
 
     def forward(self, net_input, codes, loi=None, in_color_space="rgb", out_color_space="rgb"):
         """Returns a list of the outputs computed by each level.
