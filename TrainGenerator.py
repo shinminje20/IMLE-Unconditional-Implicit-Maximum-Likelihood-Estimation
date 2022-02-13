@@ -145,6 +145,12 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
         least_losses = torch.ones(bs, device=device) * float("inf")
         sp = sample_parallelism[level_idx]
 
+        for l in model.modules.levels:
+            if l > level_idx:
+                model.modules.levels[l].cpu()
+            else:
+                model.modules.levels[l].to(device)
+
         for i in tqdm(range(num_samples // sp), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
@@ -236,6 +242,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
                 optimizer.step()
 
                 total_loss += loss.item()
+                del fx, loss
         scheduler.step()
 
         if verbose > 0 and batch_idx % print_iter == 0:
