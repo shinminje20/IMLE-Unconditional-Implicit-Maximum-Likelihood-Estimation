@@ -139,7 +139,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     bs = len(corrupted_data)
     sample_parallelism = make_list(sp, length=len(z_dims))
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
-    loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers)
+    loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers, pin_memory=True)
 
     for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
         least_losses = torch.ones(bs, device=device) * float("inf")
@@ -220,7 +220,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
             out_color_space=out_color_space, verbose=verbose))
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
         loader = DataLoader(batch_dataset, batch_size=mini_bs, shuffle=True,
-            num_workers=num_workers)
+            num_workers=num_workers, pin_memory=True)
 
         for _ in tqdm(range(iters_per_code_per_ex), desc="Inner loop", leave=False, dynamic_ncols=True):
             for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):

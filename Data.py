@@ -231,7 +231,7 @@ class FeatureDataset(Dataset):
 
     def __init__(self, data, F, bs=500):
         super(FeatureDataset, self).__init__()
-        loader = DataLoader(data, batch_size=bs, drop_last=False)
+        loader = DataLoader(data, batch_size=bs, drop_last=False, pin_memory=True)
 
         data_x, data_y = [], []
         F = F.to(device)
@@ -318,7 +318,7 @@ class CorruptedDataset(Dataset):
     def __init__(self, source, corruptor, bs=1):
         super(CorruptedDataset, self).__init__()
         loader = DataLoader(source, num_workers=num_workers, batch_size=bs,
-            collate_fn=collate_fn)
+            collate_fn=collate_fn, pin_memory=True)
         self.corrupted_xs = []
         self.ys = []
 
