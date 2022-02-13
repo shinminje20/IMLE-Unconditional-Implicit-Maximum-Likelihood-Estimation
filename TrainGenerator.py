@@ -145,12 +145,6 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
         least_losses = torch.ones(bs, device=device) * float("inf")
         sp = sample_parallelism[level_idx]
 
-        for l in model.module.levels:
-            if int(l) > level_idx:
-                model.module.levels[l].cpu()
-            else:
-                model.module.levels[l].to(device)
-
         for i in tqdm(range(num_samples // sp), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
