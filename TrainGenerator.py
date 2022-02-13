@@ -30,7 +30,7 @@ class LPIPSLoss(nn.Module):
         self.project_matrix = None
         self.make_new_projection = False
 
-    def init_projection(projection_dim=1000):
+    def init_projection(self, projection_dim=1000):
         self.make_new_projection = True
         self.project_dim = projection_dim
 
