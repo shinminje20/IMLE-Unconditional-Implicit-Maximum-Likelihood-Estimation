@@ -138,7 +138,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     loss_fn = get_loss_fn(loss_type)
     bs = len(corrupted_data)
     sample_parallelism = make_list(sp, length=len(z_dims))
-    level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
+    level_codes = [torch.randn((bs,)+z) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers)
 
     for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
@@ -152,7 +152,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
 
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
                 new_codes = torch.randn((code_bs * sp,) + z_dims[level_idx], device=device)
-                test_codes = old_codes + [new_codes]
+                test_codes = make_device(old_codes) + [new_codes]
 
                 with torch.no_grad():
                     fx = backbone(cx.to(device), test_codes, loi=level_idx,
@@ -226,7 +226,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
         for _ in tqdm(range(iters_per_code_per_ex), desc="Inner loop", leave=False, dynamic_ncols=True):
             for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
 
-                model.zero_grad()
+                model.zero_grad(set_to_none=True)
                 fx = model(cx.to(device), make_device(codes),
                            in_color_space=in_color_space,
                            out_color_space=out_color_space)
@@ -403,7 +403,16 @@ if __name__ == "__main__":
         }
         model = CAMNet(**(vars(model_args) | additional_kwargs))
         init_weights(model, init_type=model_args.init_type, scale=model_args.init_scale)
-        model = nn.DataParallel(model, device_ids=args.gpus).to(device)
+
+
+        # model = nn.DataParallel(model, device_ids=args.gpus).to(device)
+
+        torch.distributed.init_process_group(backend="nccl", world_size=N, init_method="...")
+        model = DistributedDataParallel(model, device_ids=[i], output_device=i)
+
+
+
+
         core_params = [p for n,p in model.named_parameters() if not "map" in n]
         map_params = [p for n,p in model.named_parameters() if "map" in n]
         optimizer = Adam([{"params": core_params},
