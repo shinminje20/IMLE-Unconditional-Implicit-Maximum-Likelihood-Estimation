@@ -146,7 +146,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
         sp = sample_parallelism[level_idx]
 
         for l in model.module.levels:
-            if l > level_idx:
+            if int(l) > level_idx:
                 model.module.levels[l].cpu()
             else:
                 model.module.levels[l].to(device)
