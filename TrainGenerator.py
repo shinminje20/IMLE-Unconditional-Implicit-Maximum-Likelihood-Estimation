@@ -169,7 +169,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                     losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
 
                 change_idxs = losses < least_losses_batch
-                level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
+                level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs].cpu()
                 least_losses[start_idx:end_idx][change_idxs] = losses[change_idxs]
 
             if verbose == 2:
