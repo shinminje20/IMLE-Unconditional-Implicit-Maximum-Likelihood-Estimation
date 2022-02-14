@@ -458,7 +458,7 @@ if __name__ == "__main__":
 
         tqdm.write(f"{type(loss_tr)} {type(lr)} {lr}")
 
-        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr:.5f}")
+        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr[0]:.5f}")
 
         val_images = get_images(corruptor, model, data_eval,
             idxs=random.sample(range(len(data_eval)), 10),
