@@ -206,9 +206,6 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     print_iter = len(dataset) // num_prints
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
 
-
-    tqdm.write(f"DATA LEN {len(dataset)} BS {bs}")
-
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
 
         # (1) Get a dataset of corrupted images and their targets, (2) Get codes
