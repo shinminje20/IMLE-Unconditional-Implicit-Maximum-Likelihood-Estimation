@@ -456,6 +456,8 @@ if __name__ == "__main__":
         ########################################################################
         lr = scheduler.get_last_lr()[0],
 
+        tqdm.write(f"{type(loss_tr)} {type(lr)} ")
+
         tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr:.5f}")
 
         val_images = get_images(corruptor, model, data_eval,
