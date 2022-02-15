@@ -312,6 +312,8 @@ if __name__ == "__main__":
         help="verbosity level")
     P.add_argument("--resume", default=None,
         help="file to resume from")
+    P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
+        help="path to data if not in normal place")
 
     P.add_argument("--arch", default="camnet", choices=["camnet"],
         help="Model architecture to use. Architecture hyperparameters are parsed later based on this")
@@ -367,7 +369,7 @@ if __name__ == "__main__":
     # stage.
     ############################################################################
     args.res = args.res + ([args.res[-1]] * (model_args.levels-len(args.res)+1))
-    data_tr, data_eval = get_data_splits(args.data, args.eval, args.res)
+    data_tr, data_eval = get_data_splits(args.data, args.eval, args.res, data_path=args.data_folder_path)
     base_transform = get_gen_augs()
     data_tr = GeneratorDataset(data_tr, base_transform)
     data_eval = GeneratorDataset(data_eval, base_transform)

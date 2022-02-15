@@ -59,7 +59,7 @@ def seed_kwargs(seed=0):
 # Functionality for loading datasets
 ################################################################################
 
-def get_data_splits(data_str, eval_str, res=None):
+def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data"):
     """Returns data for training and evaluation. All Datasets returned are
     ImageFolders, meaning that another kind of dataset likely needs to be built
     on top of them.
@@ -83,7 +83,7 @@ def get_data_splits(data_str, eval_str, res=None):
         else:
             return ImageFolder(data_paths)
 
-    data_path = f"{project_dir}/data/{data_str}"
+    data_path = f"{data_path}/{data_str}"
 
     if eval_str == "test":
         eval_split_specifier = "test"
