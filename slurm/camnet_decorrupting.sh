@@ -51,14 +51,19 @@ if [ "$SLURM_ARRAY_TASK_ID" = 1 ]
 then
     python TrainGenerator.py --res 32 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 1 --pix_mask_frac .4 --pix_mask_size 4  --lr 1e-5
 elif [ "$SLURM_ARRAY_TASK_ID" = 2 ]
+then
     python TrainGenerator.py --res 32 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 1 --pix_mask_frac .4 --pix_mask_size 8  --lr 1e-5
 elif [ "$SLURM_ARRAY_TASK_ID" = 3 ]
+then
     python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .4 --pix_mask_size 4  --lr 1e-5
 elif [ "$SLURM_ARRAY_TASK_ID" = 4 ]
+then
     python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .4 --pix_mask_size 8  --lr 1e-5
 elif [ "$SLURM_ARRAY_TASK_ID" = 5 ]
+then
     python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .6 --pix_mask_size 4  --lr 1e-5
 elif [ "$SLURM_ARRAY_TASK_ID" = 6 ]
+then
     python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .6 --pix_mask_size 8  --lr 1e-5
 else
     echo "No case here"
