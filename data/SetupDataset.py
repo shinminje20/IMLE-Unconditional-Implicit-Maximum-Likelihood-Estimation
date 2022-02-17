@@ -54,7 +54,7 @@ if __name__ == "__main__":
         tqdm.write(f"----- Using existing dataset {args.use_existing} -----")
         if not args.use_existing.startswith(data_dir):
             raise ValueError(f"Existing datasets should already be in {data_dir}")
-        
+
         args.data = args.use_existing
         dataset_dir = args.use_existing
 

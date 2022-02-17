@@ -19,6 +19,18 @@ from utils.UtilsNN import *
 ################################################################################
 # Loss whatnot
 ################################################################################
+class ResolutionLoss(nn.Module):
+    """Loss function for computing MSE loss on low resolution images and LPIPS
+    loss on higher resolution images.
+    """
+    def __init__(self):
+        super(ResolutionLoss, self).__init__()
+        self.mse = get_loss_fn("mse")
+        self.lpips = get_loss_fn("lpips")
+
+    def forward(self, fx, y):
+        return self.lpips(fx, y) if fx.shape[-1] >= 64 else self.mse(fx, y)
+
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
     def __init__(self, reduction="mean"):
@@ -41,6 +53,8 @@ def get_loss_fn(loss_fn):
         return lpips_loss
     elif loss_fn == "mse":
         return nn.MSELoss(reduction="none")
+    elif loss_fn == "resolution":
+        return ResolutionLoss().to(device)
     else:
         raise ValueError(f"Unknown loss type {loss_fn}")
 
@@ -317,7 +331,7 @@ if __name__ == "__main__":
 
     P.add_argument("--arch", default="camnet", choices=["camnet"],
         help="Model architecture to use. Architecture hyperparameters are parsed later based on this")
-    P.add_argument("--loss", default="mse", choices=["mse", "lpips"],
+    P.add_argument("--loss", default="resolution", choices=["mse", "lpips", "resolution"],
         help="loss function to use")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
