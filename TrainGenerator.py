@@ -23,7 +23,7 @@ class ResolutionLoss(nn.Module):
     """Loss function for computing MSE loss on low resolution images and LPIPS
     loss on higher resolution images.
     """
-    def __init__(self):
+    def __init__(self, reduction="none"):
         super(ResolutionLoss, self).__init__()
         self.mse = get_loss_fn("mse")
         self.lpips = get_loss_fn("lpips")
@@ -347,7 +347,7 @@ if __name__ == "__main__":
         help="number of samples for IMLE")
     P.add_argument("--ipcpe", type=int, default=2,
         help="iters_per_code_per_ex")
-    P.add_argument("--lr", type=float, default=1e-4,
+    P.add_argument("--lr", type=float, default=1e-5,
         help="learning rate")
     P.add_argument("--wd", type=float, default=1e-6,
         help="weight decay")
