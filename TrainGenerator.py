@@ -27,6 +27,7 @@ class ResolutionLoss(nn.Module):
         super(ResolutionLoss, self).__init__()
         self.mse = get_loss_fn("mse")
         self.lpips = get_loss_fn("lpips")
+        self.reduction = "none"
 
     def forward(self, fx, y):
         return self.lpips(fx, y) if fx.shape[-1] >= 64 else self.mse(fx, y)
