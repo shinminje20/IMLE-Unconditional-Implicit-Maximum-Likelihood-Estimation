@@ -30,7 +30,10 @@ class ResolutionLoss(nn.Module):
         self.reduction = "none"
 
     def forward(self, fx, y):
-        return self.lpips(fx, y) if fx.shape[-1] >= 64 else self.mse(fx, y)
+        if fx.shape[-1] >= 64:
+            return self.lpips(fx, y)
+        else:
+            return self.lpips(fx, y) + .1 * self.mse(fx, y)
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
