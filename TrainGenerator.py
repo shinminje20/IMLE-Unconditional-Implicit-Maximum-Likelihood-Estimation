@@ -19,34 +19,70 @@ from utils.UtilsNN import *
 ################################################################################
 # Loss whatnot
 ################################################################################
+def reduce_loss_over_batch(loss):
+    """Returns unreduced loss [loss] reduced over the batch dimension."""
+    return torch.mean(loss.view(loss.shape[0], -1), axis=1)
+
+def compute_loss(fx, y, loss_fn, reduction="batch", list_reduction="mean"):
+    """Returns the loss of output [fx] against target [y] using loss function
+    [loss_fn] and reduction strategies [reduction] and [list_reduction].
+
+    Args:
+    fx              -- list of or single BSxCxHxW generated images
+    y               -- list of or single BSxCxHxW ground-truth image
+    loss_fn         -- unreduced loss function that acts on 4D tensors
+    reduction       -- how to reduce across the images
+    list_reduction  -- how to reduce across the list if inputs include lists
+    """
+    if isinstance(fx, list) and isinstance(y, list):
+        losses = [compute_loss(f, t, loss_fn, reduction) for f,t in zip(fx, y)]
+        if list_reduction == "mean":
+            return torch.mean(torch.stack(losses), axis=0)
+        else:
+            raise ValueError(f"Unknown list_reduction '{list_reduction}'")
+    else:
+        if reduction == loss_fn.reduction:
+            return loss_fn(fx, y)
+        elif reduction == "batch" and loss_fn.reduction == "none":
+            return reduce_loss_over_batch(loss_fn(fx, y))
+        elif reduction == "mean":
+            return torch.mean(loss_fn(fx, y))
+        else:
+            raise ValueError(f"Requested reduction '{reduction}' and/or loss_fn reduction '{loss_fn.reduction}' are invalid or can't be used together.")
+
 class ResolutionLoss(nn.Module):
     """Loss function for computing MSE loss on low resolution images and LPIPS
     loss on higher resolution images.
     """
-    def __init__(self, reduction="none"):
+    def __init__(self, reduction="batch"):
         super(ResolutionLoss, self).__init__()
-        self.mse = get_loss_fn("mse")
-        self.lpips = get_loss_fn("lpips")
-        self.reduction = "none"
+        self.mse = get_unreduced_loss_fn("mse")
+        self.lpips = get_unreduced_loss_fn("lpips")
+
+        if not reduction == "batch":
+            raise ValueError("ResolutionLoss can only be used with a batch reduction")
+        self.reduction = "batch"
 
     def forward(self, fx, y):
         if fx.shape[-1] >= 64:
-            return self.lpips(fx, y)
+            return reduce_loss_over_batch(self.lpips(fx, y))
         else:
-            return self.lpips(fx, y) + .1 * self.mse(fx, y)
+            lpips_loss = reduce_loss_over_batch(self.lpips(fx, y))
+            mse_loss = reduce_loss_over_batch(self.mse(fx, y))
+            return lpips_loss  + .1 * mse_loss
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
     def __init__(self, reduction="mean"):
         super(LPIPSLoss, self).__init__()
         self.lpips = LPIPSFeats()
-        self.reduction = reduction
+        self.reduction = "none"
         self.loss = nn.MSELoss(reduction=self.reduction)
 
     def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
 
 lpips_loss = None
-def get_loss_fn(loss_fn):
+def get_unreduced_loss_fn(loss_fn):
     """Returns an unreduced loss function of type [loss_fn]. The LPIPS loss
     function is memoized.
     """
@@ -61,40 +97,6 @@ def get_loss_fn(loss_fn):
         return ResolutionLoss().to(device)
     else:
         raise ValueError(f"Unknown loss type {loss_fn}")
-
-def compute_loss(fx, y, loss_fn, reduction="none", list_reduction="mean"):
-    """Returns the loss of output [fx] against target [y] using loss function
-    [loss_fn] and reduction strategies [reduction] and [list_reduction].
-
-    Args:
-    fx              -- list of or single BSxCxHxW generated images
-    y               -- list of or single BSxCxHxW ground-truth image
-    loss_fn         -- unreduced loss function that acts on 4D tensors
-    reduction       -- how to reduce across the images
-    list_reduction  -- how to reduce across the list if inputs include lists
-    """
-    if not loss_fn.reduction == "none":
-        raise ValueError(f"Wrapped loss function's reduction must be 'none' but was '{loss_fn.reduction}'")
-
-    if isinstance(fx, list) and isinstance(y, list) and len(fx) == len(y):
-        losses = [compute_loss(f, t, loss_fn, reduction) for f,t in zip(fx, y)]
-        if list_reduction == "none":
-            return torch.stack(losses, axis=0)
-        elif list_reduction == "mean":
-            return torch.mean(torch.stack(losses), axis=0)
-        elif list_reduction == "sum":
-            return torch.sum(torch.stack(losses), axis=0)
-        else:
-            raise ValueError(f"Unknown list_reduction '{list_reduction}'")
-    else:
-        if reduction == "none":
-            return loss_fn(fx, y)
-        elif reduction == "mean":
-            return torch.mean(loss_fn(fx, y))
-        elif reduction == "batch":
-            return torch.mean(loss_fn(fx, y).view(fx.shape[0], -1), axis=1)
-        else:
-            raise ValueError(f"Unknown reduction '{reduction}'")
 
 ################################################################################
 # IMLE whatnot
@@ -153,7 +155,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     num_samples -- number of times we try to find a better code for each image
 
     """
-    loss_fn = get_loss_fn(loss_type)
+    loss_fn = get_unreduced_loss_fn(loss_type)
     bs = len(corrupted_data)
     sample_parallelism = make_list(sp, length=len(z_dims))
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
@@ -219,7 +221,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     mini_bs                 -- the batch size to run per iteration. Must evenly
                                 divide the batch size of [loader]
     """
-    loss_fn = get_loss_fn(loss_type)
+    loss_fn = get_unreduced_loss_fn(loss_type)
     total_loss = 0
     print_iter = len(dataset) // num_prints
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
@@ -326,7 +328,7 @@ if __name__ == "__main__":
         help="resolutions to see data at")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
-    P.add_argument("--verbose", choices=[0, 1], default=0, type=int,
+    P.add_argument("--verbose", choices=[0, 1, 2], default=0, type=int,
         help="verbosity level")
     P.add_argument("--resume", default=None,
         help="file to resume from")
