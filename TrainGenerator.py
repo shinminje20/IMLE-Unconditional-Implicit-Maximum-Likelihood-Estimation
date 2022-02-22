@@ -249,10 +249,9 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
 
                 model.zero_grad(set_to_none=True)
                 fx = model(cx.to(device), make_device(codes),
-                           in_color_space=in_color_space,
-                           out_color_space=out_color_space)
-                loss = compute_loss(fx, make_device(ys), loss_fn,
-                                    reduction="mean", list_reduction="mean")
+                    in_color_space=in_color_space,
+                    out_color_space=out_color_space)
+                loss = compute_loss(fx, make_device(ys), loss_fn, reduction="mean")
                 loss.backward()
                 optimizer.step()
 
