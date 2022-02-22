@@ -214,7 +214,7 @@ def generator_folder(args):
     return folder
 
 def generator_str(args):
-    print(args)
+    print(args.res)
     return f"{args.arch}_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.pix_mask_frac}-mask_size{args.pix_mask_size}-mini_bs{args.mini_bs}-res{'_'.join(args.res)}" + suffix_str(args.suffix)
 
 ################################################################################
