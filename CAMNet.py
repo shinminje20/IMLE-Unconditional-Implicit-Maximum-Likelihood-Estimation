@@ -64,7 +64,7 @@ class CAMNet(nn.Module):
         for r1,r2 in zip(res[:-1],res[1:]):
             if not (r1 == r2 or r1 * 2 == r2):
                 raise ValueError(f"Got 'res' {res} btu sequential resolutions should have equal size or be 2x the last")
-        if not all([len(x) > levels for x in [resid_nc, dense_nc]]):
+        if not all([len(x) >= levels for x in [resid_nc, dense_nc]]):
             raise ValueError(f"'dense_nc' and 'resid_nc' must have levels={levels} entries")
 
         ########################################################################
