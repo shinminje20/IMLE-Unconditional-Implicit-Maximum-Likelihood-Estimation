@@ -13,19 +13,17 @@ from Data import *
 from utils.NestedNamespace import NestedNamespace
 from utils.Utils import *
 
+
+import kornia as K
+from kornia.augmentation import AugmentationBase2D
+
+
 ################################################################################
 # GENERATOR AUGMENTATIONS. These are for corrupting images before they are fed
 # to the generator. The generator is responsible for outputting more than one
 # image per input image.
 ################################################################################
-
-class CloneInput(nn.Module):
-
-    def __init__(self):
-        super(CloneInput, self).__init__()
-
-    def forward(self, x): return x.clone()
-
+#
 class RandomPixelMask(nn.Module):
     """Returns images with in expectation [pix_mask_frac] of the pixels set to
     zero.
@@ -37,10 +35,10 @@ class RandomPixelMask(nn.Module):
                         image
     fill            -- how to fill the image, one of 'zero' or 'color'
     """
-    def __init__(self, pix_mask_frac, size=16, fill="zero"):
+    def __init__(self, pix_mask_frac, pix_mask_size=16, fill="zero"):
         super(RandomPixelMask, self).__init__()
         self.pix_mask_frac = pix_mask_frac
-        self.size = size
+        self.size = pix_mask_size
         self.fill = fill
 
     def forward(self, x):
@@ -63,33 +61,21 @@ class RandomPixelMask(nn.Module):
             raise ValueError(f"Unknown fill type '{self.fill}'")
         return x
 
-class RandomIllumination(nn.Module):
-    def __init__(self, sigma=.1):
-        super(RandomIllumination, self).__init__()
-        self.sigma = sigma
+class Corruption(nn.Module):
 
-    def forward(self, x):
-        sigmas = (torch.rand(x.shape[0], device=device) - .5) * 2 * self.sigma
-        expanded_shape = tuple([len(x)] + ([1] * (len(tuple(x.shape)) - 1)))
-        sigmas = sigmas.view(expanded_shape)
-        return torch.clamp(x + sigmas.expand(x.shape), 0, 1)
+    def __init__(self, pix_mask_frac=0, pix_mask_size=1, fill="zero", grayscale=1, **kwargs):
+        super(Corruption, self).__init__()
+        corruptions = []
 
-def get_non_learnable_batch_corruption(rand_illumination=0, pix_mask_frac=0,
-    pix_mask_size=8, grayscale=False, fill="zero", **kwargs):
-    """
-    Args:
-    pix_mask_frac    -- the fraction of an image to randomly mask
-    grayscale          -- whether or not to grayscale an image
-    """
-    corruptions = []
-    if grayscale:
-        corruptions.append(transforms.Grayscale(num_output_channels=3))
-        corruptions.append(CloneInput())
-    if pix_mask_frac > 0:
-        corruptions.append(RandomPixelMask(pix_mask_frac, size=pix_mask_size, fill=fill))
-    if rand_illumination > 0:
-        corruptions.append(RandomIllumination(sigma=rand_illumination))
-    return transforms.Compose(corruptions)
+        if grayscale:
+            corruptions.append(K.augmentation.RandomGrayscale(p=1))
+        if pix_mask_frac > 0:
+            corruptions.append(RandomPixelMask(pix_mask_frac=pix_mask_frac,
+                pix_mask_size=pix_mask_size, fill=fill))
+        self.model = nn.Sequential(*corruptions)
+
+    def forward(self, x): return self.model(x)
+
 
 ################################################################################
 # CONTRASTIVE LEARNING CORRUPTIONS. These corruptions can be applied to images
@@ -104,7 +90,7 @@ if __name__ == "__main__":
     P.add_argument("--res", nargs="+", type=int,
         default=[64, 128],
         help="resolutions to see data at")
-    P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
+    P.add_argument("--grayscale", default=0, type=int, choices=[0, 1],
         help="grayscale corruption")
     P.add_argument("--pix_mask_size", default=8, type=int,
         help="fraction of pixels to mask at 16x16 resolution")
@@ -118,7 +104,7 @@ if __name__ == "__main__":
 
     expand_factor = 10
 
-    datasets, _ = get_data_splits(args.data, "cv", args.res)
+    datasets, _ = get_data_splits(args.data, "val", args.res)
     data = GeneratorDataset(datasets, get_gen_augs())
 
     if len(args.idxs) == 1 and args.idxs[0] < 0:
@@ -129,7 +115,7 @@ if __name__ == "__main__":
     data = Subset(data, idxs)
     data_expanded = ExpandedDataset(data, expand_factor=expand_factor)
 
-    corruptor = get_non_learnable_batch_corruption(**vars(args))
+    corruptor = Corruption(**vars(args))
     corrupted_data = CorruptedDataset(data_expanded, corruptor)
     image_grid = [[d[1][-1]] for d in data]
     for idx,(c,_) in enumerate(corrupted_data):

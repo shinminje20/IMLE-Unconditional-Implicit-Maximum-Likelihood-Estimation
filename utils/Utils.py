@@ -8,7 +8,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 import random
+import shutil
 from tqdm import tqdm
+import wandb
 
 import torch
 import torch.nn as nn
@@ -31,9 +33,18 @@ os.environ["WANDB_CONSOLE"] = "off"
 # Make non-determinism work out. This function should be called first
 def set_seed(seed):
     """Seeds the program to use seed [seed]."""
-    random.seed(seed)
-    torch.manual_seed(seed)
-    tqdm.write(f"Set the PyTorch and Random modules seeds to {seed}")
+    if isinstance(seed, int):
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        tqdm.write(f"Set the NumPy, PyTorch, and Random modules seeds to {seed}")
+    elif isinstance(seed, dict):
+        random.setstate(seed["random_seed"])
+        np.random.set_state(seed["numpy_seed"])
+        torch.set_rng_state(seed["pytorch_seed"])
+        tqdm.write(f"Reseeded program with old seed")
+    else:
+        raise ValueError(f"Seed should be int or contain resuming keys")
 
 ################################################################################
 # Miscellaneous utilities
@@ -99,9 +110,19 @@ def check_paths_exist(paths):
         if not os.path.exists(path):
             raise FileNotFoundError(f"{path}' but this path couldn't be found")
 
-state_sep_str = "=" * 40
-
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+def file_in_current_filesystem(file, key="isicle"):
+    """Returns [file] as though it existed on the current filesystem. This is to
+    synchonrize multiple ISICLE runs across multiple computers.
+
+    Args:
+    file    -- the file to return in the new filesystem
+    key     -- a shared string between [file] and where it should appear
+    """
+    old_isicle_start = file.find(key)
+    new_isicle_start = project_dir.find(key)
+    return project_dir[:new_isicle_start] + file[old_isicle_start:]
 
 def strip_slash(s):
     """Returns string [s] without a trailing slash.
@@ -132,9 +153,6 @@ def opts_str(args):
 def suffix_str(args):
     """Returns the suffix string for [args]."""
     return f"-{args.suffix}" if not args.suffix == "" else ""
-
-def load_camnet(file):
-    pass
 
 def new_camnet_folder(args):
     """Returns the folder for saving a CAMNet model trained with [args].
@@ -185,12 +203,79 @@ def simclr_folder(args):
     return folder
 
 def generator_folder(args):
-    """
+    """Returns the folder to which to save a Generator saved with [args].
 
     Because there are so many arguments to a generator, it's impossible to get
     them all into a file name, so we need to use times to keep track of things.
+    This is also the reason we use WandB!
     """
-    return f"{project_dir}/models/{args.arch}/{args.data}/{datetime.now().strftime('%b-%d-%H:%M:%S')}{suffix_str(args)}"
+    folder = f"{project_dir}/models/{args.arch}/{args.data}/{datetime.now().strftime('%b%d-%H-%M-%S').lower()}{suffix_str(args)}"
+    if not os.path.exists(folder): os.makedirs(folder)
+    return folder
+
+def generator_str(args): return f"{args.arch}_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.pix_mask_frac}-mask_size{args.pix_mask_size}-mini_bs{args.mini_bs}-res{'_'.join(args.res)}" + suffix_str(args.suffix)
+
+################################################################################
+# WandB stuff. WandB is finnicky to work with, and for actually managing model
+# checkpoints, it would be nice to just be able to do pass either of
+#
+#   --resume PATH_TO_CHECKPOINT or --resume RUN_ID/CHECKPOINT
+#
+# into a training script. Then, when the --resume argument isn't None, we just
+# fetch the required data—which will include a [run_id] and a [save_dir]. Then,
+# we create the path [save_dir/checkpoint] after mapping it onto our filesystem,
+# and return the required data for resuming. By returning [run_id], we have an
+# object that can be easily passed into `wandb.init()` to resume the run if
+# desired.
+################################################################################
+
+def wandb_load(checkoint):
+    """Returns a (wandb run ID, data) tuple.
+
+    Args:
+    checkpoint  -- either a local checkpoint dictionary to resume from, or
+                    something of the form RUN_PATH/CHECKPOINT, eg.
+                    'tristanengst/isicle-generator/abc123/40.pt'
+    """
+    def move_downloaded_data_to_path(saved_data):
+        """Moves [saved_data] to its true path if one can be found."""
+        if "save_dir" in saved_data:
+            save_dir = file_in_current_filesystem(saved_data["save_dir"])
+            if not os.path.exists(save_dir): os.makedirs(save_dir)
+            shutil.move(input, f"{save_dir}/{input}")
+            tqdm.write(f"Moved {input} to {save_dir}/{input}")
+        else:
+            tqdm.write("Found no path to move loaded data to.")
+
+    if os.path.exists(checkoint):
+        saved_data = torch.load(checkoint)
+    else:
+        input, run_path = os.path.basename(checkoint), os.path.dirname(checkoint)
+        saved_data = wandb.restore(input, run_path=run_path)
+        print(saved_data)
+        saved_data = torch.load(saved_data)
+        move_downloaded_data_to_path(saved_data)
+
+    return saved_data["run_id"], saved_data
+
+def wandb_save(dictionary, path):
+    """Saves [file] to WandB folder [path] and uploads the result to WandB."""
+    resume_dictionary = {
+        "run_id": path[max(path.rfind("-"), path.rfind("/")):],
+        "save_dir": path,
+        "seed": {"pytorch_seed": torch.get_rng_state(),
+                 "numpy_seed": np.random.get_state(),
+                 "random_seed": random.getstate()}
+        }
+    torch.save(dictionary | resume_dictionary, path)
+    wandb.save(path, base_path=os.path.dirname(path), policy="now")
+    tqdm.write(f"Saved files to {path}")
+
+def wandb_folder(project, wandb_run_id, info_str=""):
+    """Returns the folder to which to save files resulting from a run."""
+    info_str = f"{info_str}-" if not info_str == "" else ""
+    return f"{project_dir}/models/{project}/{info_str}{wandb_run_id}"
+
 
 ################################################################################
 # Image I/O Utilities

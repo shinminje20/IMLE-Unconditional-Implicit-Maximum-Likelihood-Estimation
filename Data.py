@@ -336,7 +336,7 @@ class CorruptedDataset(Dataset):
 class ExpandedDataset(Dataset):
     """Provides a view of [source_data] expanded by a factor of [expand_factor].
     More formally, the indices i * expand_factor ... (i+1) * expand_factor - 1
-    map to the ith example of [source_data].
+    map from the ith example of [source_data].
     """
     def __init__(self, source_data, expand_factor=1):
         self.source = source_data

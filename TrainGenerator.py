@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader, Subset
 
 from CAMNet import CAMNet, get_z_dims
-from Corruptions import get_non_learnable_batch_corruption
+from Corruptions import Corruption
 from Data import *
 from utils.Utils import *
 from utils.UtilsColorSpace import *
@@ -103,7 +103,7 @@ def get_unreduced_loss_fn(loss_fn):
 # IMLE whatnot
 ################################################################################
 
-def get_images(corruptor, model, dataset, idxs=None, samples_per_image=1,
+def get_images(corruptor, model, dataset, idxs=None, samples_per_image=5,
     in_color_space="rgb", out_color_space="rgb"):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
@@ -262,6 +262,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
         if verbose > 0 and batch_idx % print_iter == 0:
             tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5f}")
 
+    model.zero_grad(set_to_none=True)
     return corruptor, model, optimizer, scheduler, total_loss / len(loader)
 
 def parse_camnet_args(unparsed_args):
@@ -331,10 +332,12 @@ if __name__ == "__main__":
         help="optional training suffix")
     P.add_argument("--verbose", choices=[0, 1, 2], default=0, type=int,
         help="verbosity level")
-    P.add_argument("--resume", default=None,
-        help="file to resume from")
     P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
         help="path to data if not in normal place")
+    P.add_argument("--seed", type=int, default=0,
+        help="random seed")
+    P.add_argument("--resume", type=str, default=None,
+        help="WandB run to resume from")
 
     P.add_argument("--arch", default="camnet", choices=["camnet"],
         help="Model architecture to use. Architecture hyperparameters are parsed later based on this")
@@ -369,28 +372,83 @@ if __name__ == "__main__":
     args, unparsed_args = P.parse_known_args()
 
     ############################################################################
-    # Collect the arguments for generating the model and corruptor from
-    # separate functions
+    # If resuming, resume; otherwise, validate arguments and construct training
+    # objects.
     ############################################################################
-    if args.arch == "camnet":
-        model_args, unparsed_args = parse_camnet_args(unparsed_args)
+    if not args.resume is None:
+        run_id, resume_data = wandb_load(args.resume)
+        wandb.init(id=args.resume, resume="must")
+        wandb.save("*.pt")
+        model = resume_data["model"]
+        optimizer = resume_data["optimizer"]
+        corruptor = resume_data["corruptor"]
+        last_epoch = resume_data["last_epoch"]
+        save_dir = resume_data["save_dir"]
+        seed = resume_data["seed"]
+        set_seed(seed)
+
+        # We need to record the fact that we're resuming and use the current
+        # data_folder_path
+        resumed, data_folder_path = True, args.data_folder_path
+        args = resume_data["args"]
+        args.resume = True
+        args.data_folder_path = data_folder_path
     else:
-        raise ValueError(f"Unknown architecture '{args.arch}'")
+        ########################################################################
+        # Collect the model and corruptor args and concatenate them into [args]
+        ########################################################################
+        if args.arch == "camnet":
+            model_args, unparsed_args = parse_camnet_args(unparsed_args)
+        else:
+            raise ValueError(f"Unknown architecture '{args.arch}'")
 
-    corruptor_args, unparsed_args = get_corruptor_args(unparsed_args)
+        corruptor_args, unparsed_args = get_corruptor_args(unparsed_args)
 
-    if len(unparsed_args) > 0:
-        raise ValueError(f"Got unknown arguments. Unparseable arguments:\n    {' '.join(unparsed_args)}")
-    else:
-        args.__dict__ |= vars(model_args) | vars(corruptor_args)
+        if len(unparsed_args) > 0:
+            raise ValueError(f"Got unknown arguments. Unparseable arguments:\n    {' '.join(unparsed_args)}")
+        else:
+            args.__dict__ |= vars(model_args) | vars(corruptor_args)
+
+        ########################################################################
+        # Initialize WandB utilities
+        ########################################################################
+        run_id = wandb.util.generate_id()
+        save_dir = wandb_folder("isicle-generator", run_id, generator_str(args))
+        wandb_name = f"{'' if args.suffix == '' else args.suffix + '-'}{run_id}"
+        wandb.init(anonymous="allow",
+            id=wandb.util.generate_id(),
+            mode="online" if args.wandb else "disabled",
+            name=wandb_name,
+            project="isicle-generator",
+            config=args)
+        set_seed(args.seed)
+
+        ########################################################################
+        # Initialize the model, optimizer, corruptor, and last_epoch
+        ########################################################################
+        if args.arch == "camnet":
+            additional_kwargs = {"res": args.res, "internal_color_space": args.color_space}
+            model = CAMNet(**(vars(model_args) | additional_kwargs))
+            init_weights(model, init_type=model_args.init_type, scale=model_args.init_scale)
+            model = nn.DataParallel(model, device_ids=args.gpus).to(device)
+            core_params = [p for n,p in model.named_parameters() if not "map" in n]
+            map_params = [p for n,p in model.named_parameters() if "map" in n]
+            optimizer = Adam([{"params": core_params},
+                              {"params": map_params, "lr": 1e-2 * args.lr}],
+                              lr=args.lr, weight_decay=args.wd, betas=args.mm)
+        else:
+            raise ValueError(f"Unknown architecture '{args.arch}'")
+
+        corruptor = Corruption(**vars(corruptor_args))
+        last_epoch = -1
 
     ############################################################################
-    # Create the dataset and options, and check that various batch types have
-    # okay sizes. Also check other arguments, since we can do that at this
-    # stage.
+    # Create the dataset, check that it is compatible with the various batch
+    # sizes, initialize the color spaces, and create the scheduler.
     ############################################################################
-    args.res = args.res + ([args.res[-1]] * (model_args.levels-len(args.res)+1))
-    data_tr, data_eval = get_data_splits(args.data, args.eval, args.res, data_path=args.data_folder_path)
+    args.res = args.res + ([args.res[-1]] * (args.levels-len(args.res)+1))
+    data_tr, data_eval = get_data_splits(args.data, args.eval, args.res,
+        data_path=args.data_folder_path)
     base_transform = get_gen_augs()
     data_tr = GeneratorDataset(data_tr, base_transform)
     data_eval = GeneratorDataset(data_eval, base_transform)
@@ -402,74 +460,41 @@ if __name__ == "__main__":
     if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
          raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
 
-    args.sp = make_list(args.sp, length=model_args.levels)
+    args.sp = make_list(args.sp, length=args.levels)
     for sp in args.sp:
         if not evenly_divides(sp, args.num_samples):
             raise ValueError(f"--sp {args.sp} evenly divide --num_samples {args.num_samples} on all indices")
     tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
 
-    ############################################################################
     # Setup the color spaces
-    ############################################################################
     in_color_space = "lab" if "_lab" in args.data else "rgb"
     internal_color_space = args.color_space
     out_color_space = "rgb" if args.loss == "lpips" or args.color_space == "rgb" else "lab"
     tqdm.write(f"Color space settings: input {in_color_space} | internal {internal_color_space} | output {out_color_space}")
 
-    ############################################################################
-    # Create the corruption, model, and its optimizer.
-    ############################################################################
-    if args.arch == "camnet":
-        additional_kwargs = {
-            "res": args.res,
-            "internal_color_space": internal_color_space
-        }
-        model = CAMNet(**(vars(model_args) | additional_kwargs))
-        init_weights(model, init_type=model_args.init_type, scale=model_args.init_scale)
-        model = nn.DataParallel(model, device_ids=args.gpus).to(device)
-        core_params = [p for n,p in model.named_parameters() if not "map" in n]
-        map_params = [p for n,p in model.named_parameters() if "map" in n]
-        optimizer = Adam([{"params": core_params},
-                          {"params": map_params, "lr": 1e-2 * args.lr}],
-                          lr=args.lr, weight_decay=args.wd, betas=args.mm)
-    else:
-        raise ValueError(f"Unknown architecture '{args.arch}'")
-
-    corruptor = get_non_learnable_batch_corruption(**vars(corruptor_args))
-    ############################################################################
-    # Set up remaining training utilities and data logging.
-    ############################################################################
-    last_epoch = -1
-    scheduler = CosineAnnealingLR(optimizer, args.epochs * (len(data_tr) // args.bs),
+    # Setup the scheduler
+    scheduler = CosineAnnealingLR(optimizer,
+        args.epochs * (len(data_tr) // args.bs),
         last_epoch=last_epoch)
-
-    save_dir = generator_folder(args)
-    wandb.init(anonymous="allow",
-               mode="online" if args.wandb else "disabled",
-               name=save_dir.replace(f"{project_dir}/models/", "").replace("/", "-"),
-               project="ISICLE generator training",
-               notes=args.suffix,
-               config=args)
 
     ############################################################################
     # Begin training!
     ############################################################################
-
-    val_images = get_images(corruptor, model, data_eval,
-        idxs=random.sample(range(len(data_eval)), 10),
-        samples_per_image=5)
-    results_file = f"{save_dir}/val_images/with_no_training.png"
-    save_images_grid(val_images, results_file)
-    wandb.log({"with_no_training": wandb.Image(results_file)})
+    if args.resume is None:
+        val_images = get_images(corruptor, model, data_eval)
+        results_file = f"{save_dir}/val_images/with_no_training.png"
+        save_images_grid(val_images, results_file)
+        wandb.log({"before_training": wandb.Image(results_file)})
+    tqdm.write(f"----- Beginning Training -----")
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor, model, optimizer, scheduler, data_tr,
-            loss_type=args.loss,
-            bs=args.bs, mini_bs=args.mini_bs, code_bs=args.code_bs,
-            num_samples=args.num_samples, iters_per_code_per_ex=args.ipcpe,
-            verbose=args.verbose, in_color_space=in_color_space,
-            out_color_space=out_color_space, sp=args.sp)
+            loss_type=args.loss, bs=args.bs, mini_bs=args.mini_bs,
+            code_bs=args.code_bs, num_samples=args.num_samples,
+            iters_per_code_per_ex=args.ipcpe, verbose=args.verbose,
+            in_color_space=in_color_space, out_color_space=out_color_space,
+            sp=args.sp)
 
         ########################################################################
         # After each epoch, log results and data
@@ -479,14 +504,17 @@ if __name__ == "__main__":
         # There is a weird bug here, where [lr] stops being indexed into
         tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr[0]:.5f}")
 
-        val_images = get_images(corruptor, model, data_eval,
-            idxs=random.sample(range(len(data_eval)), 10),
-            samples_per_image=5)
-        results_file = f"{save_dir}/val_images/epoch{e}.png"
-        save_images_grid(val_images, results_file)
+        # Log results
+        images_file = f"{save_dir}/val_images/epoch{e}.png"
+        save_images_grid(get_images(corruptor, model, data_eval), images_file)
         wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
-            "results": wandb.Image(f"{save_dir}/val_images/epoch{e}.png")})
-        torch.save({"model": model.cpu(), "optimizer": optimizer,
-            "last_epoch": e}, f"{save_dir}/{e}.pt")
-        wandb.save(f"{save_dir}/{e}", base_path=f"{save_dir}", policy="end")
+                   "results": wandb.Image(images_file)})
+
+        # Save training utilities. wandb_save() adds importanting data related
+        # to resuming, creates a local save, and uploads the result to WandB.
+        state_file = f"{save_dir}/{e}.pt"
+        wandb_save({"corruptor": corruptor.cpu(), "model": model.cpu(),
+                    "optimizer": optimizer, "last_epoch": e, "args": args},
+                    state_file)
         model.to(device)
+        corruptor.to(device)
