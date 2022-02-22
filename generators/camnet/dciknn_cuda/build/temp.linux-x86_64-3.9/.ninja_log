@@ -1,4 +1,0 @@
-# ninja log v5
-0	1132	1641458699337711169	/home/tristanengst/Development/ISICLE/generators/camnet/dciknn_cuda/build/temp.linux-x86_64-3.9/src/util_kernel.o	4fdb720b2f12bb1c
-0	7955	1641458706157701352	/home/tristanengst/Development/ISICLE/generators/camnet/dciknn_cuda/build/temp.linux-x86_64-3.9/src/dci_cuda_kernel.o	260e84d9a93421ad
-0	9909	1641458708113698530	/home/tristanengst/Development/ISICLE/generators/camnet/dciknn_cuda/build/temp.linux-x86_64-3.9/src/dci_cuda.o	97894e87d492e8b1

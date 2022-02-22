@@ -326,7 +326,7 @@ if __name__ == "__main__":
         help="data to train on")
     P.add_argument("--eval", default="val", choices=["cv", "val", "test"],
         help="data for validation")
-    P.add_argument("--res", nargs="+", required=True, type=int,
+    P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
         help="resolutions to see data at")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
@@ -377,13 +377,12 @@ if __name__ == "__main__":
     ############################################################################
     if not args.resume is None:
         run_id, resume_data = wandb_load(args.resume)
-        wandb.init(id=args.resume, resume="must")
+        wandb.init(id=run_id, resume="must", project="isicle-generator")
         wandb.save("*.pt")
-        model = resume_data["model"]
+        model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
-        corruptor = resume_data["corruptor"]
+        corruptor = resume_data["corruptor"].to(device)
         last_epoch = resume_data["last_epoch"]
-        save_dir = resume_data["save_dir"]
         seed = resume_data["seed"]
         set_seed(seed)
 
@@ -413,10 +412,10 @@ if __name__ == "__main__":
         # Initialize WandB utilities
         ########################################################################
         run_id = wandb.util.generate_id()
-        save_dir = wandb_folder("isicle-generator", run_id, generator_str(args))
-        wandb_name = f"{'' if args.suffix == '' else args.suffix + '-'}{run_id}"
+        save_dir = generator_folder(args)
+        wandb_name = generator_folder(args).replace(f"{project_dir}/generators/", "")
         wandb.init(anonymous="allow",
-            id=wandb.util.generate_id(),
+            id=run_id,
             mode="online" if args.wandb else "disabled",
             name=wandb_name,
             project="isicle-generator",
@@ -510,11 +509,10 @@ if __name__ == "__main__":
         wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
                    "results": wandb.Image(images_file)})
 
-        # Save training utilities. wandb_save() adds importanting data related
-        # to resuming, creates a local save, and uploads the result to WandB.
+        # Save training utilities
         state_file = f"{save_dir}/{e}.pt"
-        wandb_save({"corruptor": corruptor.cpu(), "model": model.cpu(),
-                    "optimizer": optimizer, "last_epoch": e, "args": args},
-                    state_file)
+        wandb_save({"run_id": run_id, "corruptor": corruptor.cpu(),
+            "model": model.cpu(), "optimizer": optimizer, "last_epoch": e,
+            "args": args}, state_file)
         model.to(device)
         corruptor.to(device)

@@ -209,13 +209,9 @@ def generator_folder(args):
     them all into a file name, so we need to use times to keep track of things.
     This is also the reason we use WandB!
     """
-    folder = f"{project_dir}/models/{args.arch}/{args.data}/{datetime.now().strftime('%b%d-%H-%M-%S').lower()}{suffix_str(args)}"
+    return f"{project_dir}/generators/{args.arch}_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.pix_mask_frac}-mask_size{args.pix_mask_size}-mini_bs{args.mini_bs}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
-
-def generator_str(args):
-    print(type(args))
-    return f"{args.arch}_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.pix_mask_frac}-mask_size{args.pix_mask_size}-mini_bs{args.mini_bs}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
 
 ################################################################################
 # WandB stuff. WandB is finnicky to work with, and for actually managing model
@@ -239,45 +235,18 @@ def wandb_load(checkoint):
                     something of the form RUN_PATH/CHECKPOINT, eg.
                     'tristanengst/isicle-generator/abc123/40.pt'
     """
-    def move_downloaded_data_to_path(saved_data):
-        """Moves [saved_data] to its true path if one can be found."""
-        if "save_dir" in saved_data:
-            save_dir = file_in_current_filesystem(saved_data["save_dir"])
-            if not os.path.exists(save_dir): os.makedirs(save_dir)
-            shutil.move(input, f"{save_dir}/{input}")
-            tqdm.write(f"Moved {input} to {save_dir}/{input}")
-        else:
-            tqdm.write("Found no path to move loaded data to.")
-
-    if os.path.exists(checkoint):
-        saved_data = torch.load(checkoint)
-    else:
-        input, run_path = os.path.basename(checkoint), os.path.dirname(checkoint)
-        saved_data = wandb.restore(input, run_path=run_path)
-        print(saved_data)
-        saved_data = torch.load(saved_data)
-        move_downloaded_data_to_path(saved_data)
-
+    saved_data = torch.load(checkoint)
     return saved_data["run_id"], saved_data
 
 def wandb_save(dictionary, path):
     """Saves [file] to WandB folder [path] and uploads the result to WandB."""
-    resume_dictionary = {
-        "run_id": path[max(path.rfind("-"), path.rfind("/")):],
-        "save_dir": path,
-        "seed": {"pytorch_seed": torch.get_rng_state(),
-                 "numpy_seed": np.random.get_state(),
-                 "random_seed": random.getstate()}
-        }
+    resume_dictionary = {"seed": {
+        "pytorch_seed": torch.get_rng_state(),
+        "numpy_seed": np.random.get_state(),
+        "random_seed": random.getstate()}
+    }
     torch.save(dictionary | resume_dictionary, path)
-    wandb.save(path, base_path=os.path.dirname(path), policy="now")
     tqdm.write(f"Saved files to {path}")
-
-def wandb_folder(project, wandb_run_id, info_str=""):
-    """Returns the folder to which to save files resulting from a run."""
-    info_str = f"{info_str}-" if not info_str == "" else ""
-    return f"{project_dir}/models/{project}/{info_str}{wandb_run_id}"
-
 
 ################################################################################
 # Image I/O Utilities
