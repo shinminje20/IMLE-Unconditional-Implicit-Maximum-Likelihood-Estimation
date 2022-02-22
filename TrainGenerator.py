@@ -432,7 +432,7 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"Unknown architecture '{args.arch}'")
 
-        corruptor = Corruption(**vars(corruptor_args))
+        corruptor = Corruption(**vars(corruptor_args)).to(device)
         last_epoch = -1
 
     ############################################################################
