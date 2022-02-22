@@ -228,7 +228,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
 
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
-        break
+
         # (1) Get a dataset of corrupted images and their targets, (2) Get codes
         # for the corrupted images. This takes the place of the min() function
         # in IMLE, since we return the best (minimum loss) codes for each image
