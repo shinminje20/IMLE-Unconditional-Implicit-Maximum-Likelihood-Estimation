@@ -112,18 +112,6 @@ def check_paths_exist(paths):
 
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-def file_in_current_filesystem(file, key="isicle"):
-    """Returns [file] as though it existed on the current filesystem. This is to
-    synchonrize multiple ISICLE runs across multiple computers.
-
-    Args:
-    file    -- the file to return in the new filesystem
-    key     -- a shared string between [file] and where it should appear
-    """
-    old_isicle_start = file.find(key)
-    new_isicle_start = project_dir.find(key)
-    return project_dir[:new_isicle_start] + file[old_isicle_start:]
-
 def strip_slash(s):
     """Returns string [s] without a trailing slash.
 
@@ -252,6 +240,7 @@ def wandb_save(dictionary, path):
 # Image I/O Utilities
 ################################################################################
 plt.rcParams["savefig.bbox"] = "tight"
+plt.tight_layout(pad=0.00)
 
 def make_2d_list_of_tensor(x):
     """Returns [x] as a 2D list where inner element is a Tensor."""
@@ -279,7 +268,7 @@ def show_image_grid(images):
             axs[i, j].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
     plt.show()
 
-def save_images_grid(images, path):
+def save_image_grid(images, path):
     """Builds a grid of images out of [images] and saves the image containing
     the grid to [path].
     """

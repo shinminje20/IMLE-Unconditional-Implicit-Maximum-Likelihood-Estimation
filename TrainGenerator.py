@@ -103,8 +103,8 @@ def get_unreduced_loss_fn(loss_fn):
 # IMLE whatnot
 ################################################################################
 
-def get_images(corruptor, model, dataset, idxs=None, samples_per_image=5,
-    in_color_space="rgb", out_color_space="rgb"):
+def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
+    samples_per_image=5, in_color_space="rgb", out_color_space="rgb"):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 
@@ -228,7 +228,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
 
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
-
+        break
         # (1) Get a dataset of corrupted images and their targets, (2) Get codes
         # for the corrupted images. This takes the place of the min() function
         # in IMLE, since we return the best (minimum loss) codes for each image
@@ -263,7 +263,8 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
             tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5f}")
 
     model.zero_grad(set_to_none=True)
-    return corruptor, model, optimizer, scheduler, total_loss / len(loader)
+    loss = total_loss * mini_bs / iters_per_code_per_ex / len(dataset)
+    return corruptor, model, optimizer, scheduler, loss
 
 def parse_camnet_args(unparsed_args):
     """Returns an argparse Namespace and the remaining unparsed arguments after
@@ -383,24 +384,21 @@ if __name__ == "__main__":
         optimizer = resume_data["optimizer"]
         corruptor = resume_data["corruptor"].to(device)
         last_epoch = resume_data["last_epoch"]
-        seed = resume_data["seed"]
-        set_seed(seed)
 
-        # We need to record the fact that we're resuming and use the current
-        # data_folder_path
         resumed, data_folder_path = True, args.data_folder_path
         args = resume_data["args"]
         args.resume = True
         args.data_folder_path = data_folder_path
+
+        seed = resume_data["seed"]
+        set_seed(seed)
+
+        save_dir = generator_folder(args)
     else:
         ########################################################################
         # Collect the model and corruptor args and concatenate them into [args]
         ########################################################################
-        if args.arch == "camnet":
-            model_args, unparsed_args = parse_camnet_args(unparsed_args)
-        else:
-            raise ValueError(f"Unknown architecture '{args.arch}'")
-
+        model_args, unparsed_args = parse_camnet_args(unparsed_args)
         corruptor_args, unparsed_args = get_corruptor_args(unparsed_args)
 
         if len(unparsed_args) > 0:
@@ -408,23 +406,20 @@ if __name__ == "__main__":
         else:
             args.__dict__ |= vars(model_args) | vars(corruptor_args)
 
+        save_dir = generator_folder(args)
         ########################################################################
         # Initialize WandB utilities
         ########################################################################
         run_id = wandb.util.generate_id()
-        save_dir = generator_folder(args)
-        wandb_name = generator_folder(args).replace(f"{project_dir}/generators/", "")
-        wandb.init(anonymous="allow",
-            id=run_id,
-            mode="online" if args.wandb else "disabled",
-            name=wandb_name,
-            project="isicle-generator",
-            config=args)
+        wandb.init(anonymous="allow", id=run_id, project="isicle-generator",
+            mode="online" if args.wandb else "disabled", config=args,
+            name=save_dir.replace(f"{project_dir}/generators/", ""))
         set_seed(args.seed)
 
         ########################################################################
         # Initialize the model, optimizer, corruptor, and last_epoch
         ########################################################################
+        args.res = args.res + ([args.res[-1]] * (args.levels-len(args.res)+1))
         if args.arch == "camnet":
             additional_kwargs = {"res": args.res, "internal_color_space": args.color_space}
             model = CAMNet(**(vars(model_args) | additional_kwargs))
@@ -445,7 +440,6 @@ if __name__ == "__main__":
     # Create the dataset, check that it is compatible with the various batch
     # sizes, initialize the color spaces, and create the scheduler.
     ############################################################################
-    args.res = args.res + ([args.res[-1]] * (args.levels-len(args.res)+1))
     data_tr, data_eval = get_data_splits(args.data, args.eval, args.res,
         data_path=args.data_folder_path)
     base_transform = get_gen_augs()
@@ -468,21 +462,19 @@ if __name__ == "__main__":
     # Setup the color spaces
     in_color_space = "lab" if "_lab" in args.data else "rgb"
     internal_color_space = args.color_space
-    out_color_space = "rgb" if args.loss == "lpips" or args.color_space == "rgb" else "lab"
+    out_color_space = "rgb" if args.loss in ["lpips", "resolution"] or args.color_space == "rgb" else "lab"
     tqdm.write(f"Color space settings: input {in_color_space} | internal {internal_color_space} | output {out_color_space}")
 
     # Setup the scheduler
     scheduler = CosineAnnealingLR(optimizer,
-        args.epochs * (len(data_tr) // args.bs),
-        last_epoch=last_epoch)
+        args.epochs * (len(data_tr) // args.bs), last_epoch=last_epoch)
 
     ############################################################################
     # Begin training!
     ############################################################################
     if args.resume is None:
-        val_images = get_images(corruptor, model, data_eval)
         results_file = f"{save_dir}/val_images/with_no_training.png"
-        save_images_grid(val_images, results_file)
+        save_image_grid(get_images(corruptor, model, data_eval), results_file)
         wandb.log({"before_training": wandb.Image(results_file)})
     tqdm.write(f"----- Beginning Training -----")
 
@@ -498,18 +490,12 @@ if __name__ == "__main__":
         ########################################################################
         # After each epoch, log results and data
         ########################################################################
-        lr = scheduler.get_last_lr()[0],
-
-        # There is a weird bug here, where [lr] stops being indexed into
-        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr[0]:.5f}")
-
-        # Log results
+        lr = scheduler._last_lr[0]
+        tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr:.5f}")
         images_file = f"{save_dir}/val_images/epoch{e}.png"
-        save_images_grid(get_images(corruptor, model, data_eval), images_file)
+        save_image_grid(get_images(corruptor, model, data_eval), images_file)
         wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
                    "results": wandb.Image(images_file)})
-
-        # Save training utilities
         state_file = f"{save_dir}/{e}.pt"
         wandb_save({"run_id": run_id, "corruptor": corruptor.cpu(),
             "model": model.cpu(), "optimizer": optimizer, "last_epoch": e,
