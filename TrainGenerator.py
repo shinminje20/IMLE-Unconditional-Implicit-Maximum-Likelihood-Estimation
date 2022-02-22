@@ -54,10 +54,11 @@ class ResolutionLoss(nn.Module):
     """Loss function for computing MSE loss on low resolution images and LPIPS
     loss on higher resolution images.
     """
-    def __init__(self, reduction="batch"):
+    def __init__(self, reduction="batch", alpha=.1):
         super(ResolutionLoss, self).__init__()
         self.mse = get_unreduced_loss_fn("mse")
         self.lpips = get_unreduced_loss_fn("lpips")
+        self.alpha = alpha
 
         if not reduction == "batch":
             raise ValueError("ResolutionLoss can only be used with a batch reduction")
@@ -69,7 +70,7 @@ class ResolutionLoss(nn.Module):
         else:
             lpips_loss = reduce_loss_over_batch(self.lpips(fx, y))
             mse_loss = reduce_loss_over_batch(self.mse(fx, y))
-            return lpips_loss  + .1 * mse_loss
+            return lpips_loss  + self.alpha * mse_loss
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
@@ -102,7 +103,7 @@ def get_unreduced_loss_fn(loss_fn):
 # IMLE whatnot
 ################################################################################
 
-def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1,
+def get_images(corruptor, model, dataset, idxs=None, samples_per_image=1,
     in_color_space="rgb", out_color_space="rgb"):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
@@ -114,14 +115,14 @@ def get_images(corruptor, model, dataset, idxs=[0], samples_per_image=1,
     idxs        -- the indices to [dataset] to get images for
     """
     model = model.module
+    idxs = list(range(len(dataset))) if idxs is None else idxs
     images_dataset = Subset(dataset, idxs)
     corrupted_data = CorruptedDataset(images_dataset, corruptor, bs=len(idxs))
 
     results = [[ys[-1], cx] for cx,ys in corrupted_data]
     results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
 
-    corrupted_data = ExpandedDataset(corrupted_data,
-        expand_factor=samples_per_image)
+    corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
     codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
         corrupted_data, model, "mse", num_samples=0))
     batch_dataset = ZippedDataset(codes_data, corrupted_data)

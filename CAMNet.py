@@ -16,18 +16,6 @@ from utils.Utils import *
 from utils.UtilsColorSpace import rgb2lab_with_dims, lab2rgb_with_dims
 from utils.UtilsNN import *
 from utils.NestedNamespace import NestedNamespace
-#
-# def flatten(xs):
-#     """Returns collection [xs] after recursively flattening into a list."""
-#     result = []
-#     for x in xs:
-#         if isinstance(x, (list, tuple, set, nn.Sequential)):
-#             result += flatten(x)
-#         else:
-#             result.append(x)
-#
-#     return result
-
 
 def get_z_dims(model):
     """Returns a list of tuples, where the ith tuple is the shape of the
@@ -35,7 +23,7 @@ def get_z_dims(model):
     dimension.
     """
     model = model.module if isinstance(model, nn.DataParallel) else model
-    return [(model.map_nc + model.code_nc * s ** 2,) for i,s in enumerate(model.sizes[:-1])]
+    return [(model.map_nc + model.code_nc * s ** 2,) for i,s in enumerate(model.in_sizes)]
 
 class CAMNet(nn.Module):
     """CAMNet rewritten to be substantially stateless, better-documented, and
@@ -68,7 +56,21 @@ class CAMNet(nn.Module):
         feat_scales=None, internal_color_space="rgb", **kwargs):
         super(CAMNet, self).__init__()
 
-        self.sizes = res + ([res[-1]] * (levels - len(res) + 1))
+        ########################################################################
+        # Check input validity
+        ########################################################################
+        if not len(res) == levels + 1:
+            raise ValueError(f"Got 'res' {res} and {levels} levels. 'res' should specify the input of each CAMNet level followed by the output resolution, and must therefore have one more item than 'levels'.")
+        for r1,r2 in zip(res[:-1],res[1:]):
+            if not (r1 == r2 or r1 * 2 == r2):
+                raise ValueError(f"Got 'res' {res} btu sequential resolutions should have equal size or be 2x the last")
+        if not all([len(x) == levels for x in [resid_nc, dense_nc]]):
+            raise ValueError(f"'dense_nc' and 'resid_nc' must have levels={levels} entries")
+
+        ########################################################################
+        # Create the network
+        ########################################################################
+        self.in_sizes, self.out_sizes= res[:-1], res[1:]
         level_info = [{
             "n_blocks": n_blocks,
             "map_nc": map_nc,
@@ -81,8 +83,8 @@ class CAMNet(nn.Module):
             "prev_resid_nc": 0 if i == 0 else resid_nc[i-1],
             "level": i,
             "feat_scale": (.1 * i) if feat_scales is None else feat_scales[i],
-            "size": self.sizes[i],
-            "upsample": False if self.sizes[i] == res[-1] else (self.sizes[i] < self.sizes[i+1])
+            "size": self.in_sizes[i],
+            "upsample": self.out_sizes[i] > self.in_sizes[i],
             } for i in range(levels)]
 
         self.levels = nn.ModuleDict(
@@ -92,7 +94,8 @@ class CAMNet(nn.Module):
         self.code_nc = code_nc
         self.internal_color_space = internal_color_space
 
-        tqdm.write(f"Contructed CAMNet model with sizes {self.sizes}")
+        self.short_str = " ".join([f"[{i}->{o}]" for i,o in zip(self.in_sizes, self.out_sizes)])
+        tqdm.write(f"Constructed CAMNet architecture: {self.short_str}")
 
 
     def forward(self, net_input, codes, loi=None, in_color_space="rgb", out_color_space="rgb"):
@@ -192,7 +195,7 @@ class CAMNetModule(nn.Module):
             B.conv_block(resid_nc, resid_nc, kernel_size=3, act_type=None)
         ))
 
-        self.upsample = CAMNetUpsampling(resid_nc, upsample=upsample)
+        self.upsample_block = CAMNetUpsampling(resid_nc, upsample=upsample)
         self.out_conv = B.conv_block(resid_nc, out_nc, kernel_size=3,
             act_type="tanh")
         self.rerange_output = B.RerangeLayer()
@@ -220,11 +223,11 @@ class CAMNetModule(nn.Module):
         # If the second output should be 2x the dimension of the input, upsample
         # the input to self.out_conv, otherwise, do not!
         if self.upsample:
-            feature = self.upsample(feature)
+            feature = self.upsample_block(feature)
             out = self.out_conv(feature)
         else:
             out = self.out_conv(feature)
-            feature = self.upsample(feature)
+            feature = self.upsample_block(feature)
 
         return feature, self.rerange_output(out)
 
