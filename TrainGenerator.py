@@ -353,7 +353,7 @@ if __name__ == "__main__":
         help="minibatch size")
     P.add_argument("--code_bs", type=int, default=6,
         help="batch size to use for sampling codes")
-    P.add_argument("--num_samples", type=int, default=120,
+    P.add_argument("--num_samples", type=int, default=128,
         help="number of samples for IMLE")
     P.add_argument("--ipcpe", type=int, default=2,
         help="iters_per_code_per_ex")
