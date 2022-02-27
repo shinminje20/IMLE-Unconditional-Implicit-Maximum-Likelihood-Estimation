@@ -66,11 +66,14 @@ class ResolutionLoss(nn.Module):
 
     def forward(self, fx, y):
         if fx.shape[-1] >= 64:
-            return reduce_loss_over_batch(self.lpips(fx, y))
+            # return reduce_loss_over_batch(self.lpips(fx, y))
+            result = reduce_loss_over_batch(self.lpips(fx, y))
+            # tqdm.write(f"ResolutionLoss SHAPES: result {result.shape}")
+            return result
         else:
             lpips_loss = reduce_loss_over_batch(self.lpips(fx, y))
             mse_loss = reduce_loss_over_batch(self.mse(fx, y))
-            return lpips_loss  + self.alpha * mse_loss
+            result = lpips_loss + self.alpha * mse_loss
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
@@ -83,14 +86,15 @@ class LPIPSLoss(nn.Module):
 
     def forward(self, fx, y):
         s = fx.shape
+        s2 = y.shape
         fx = self.lpips(fx)
         y = self.lpips(y)
 
-        # tqdm.write(f"AFTER LPIPS SHAPE {s} -> {fx.shape}" )
+        # tqdm.write(f"NEW LPIPS SHAPE CHANGES x: {s} -> {fx.shape}   y: {s2} -> {y.shape}" )
 
         result =  self.loss(fx, y)
-
-        # tqdm.write(f"LPIPS OUTPUT SHAPE {result.shape}")
+        #
+        # tqdm.write(f"NEW LPIPS OUTPUT SHAPE {result.shape}")
         return result
         # return self.loss(self.lpips(fx), self.lpips(y))
 
@@ -126,6 +130,13 @@ class BroadcastMSELoss(nn.Module):
             raise ValueError(f"Got invalid shapes for BroadcastMSELoss. x shape was {x.shape} and y shape was {y.shape}")
 
         result = torch.cdist(x, y)
+        #
+        # y = torch.repeat_interleave(y, sp, axis=0)
+        # mse = nn.MSELoss(reduction="none")
+        # old_result = mse(x.view(y.shape[0], 1, -1), y)
+        #
+        # tqdm.write(f"{result}, {result.shape}")
+        # tqdm.write(f"{reduce_loss_over_batch(old_result)}, {reduce_loss_over_batch(old_result).shape}")
 
         if self.reduction == "batch" or self.reduction == "none":
             return result.view(result.shape[0] * result.shape[1], 1)
@@ -214,8 +225,11 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                     fx = backbone(cx.to(device), test_codes, loi=level_idx,
                                   in_color_space=in_color_space,
                                   out_color_space=out_color_space)
+                    # tqdm.write(f"FX SHAPE {fx.shape}")
+
                     # ys = torch.repeat_interleave(ys[level_idx].to(device), sp, axis=0)
                     ys = ys[level_idx].to(device)
+                    # tqdm.write(f"YS SHAPE {ys.shape}")
                     losses = compute_loss(fx, ys, loss_fn, reduction="batch")
 
                 if sp > 1:
