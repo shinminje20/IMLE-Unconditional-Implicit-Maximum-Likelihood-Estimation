@@ -74,13 +74,25 @@ class ResolutionLoss(nn.Module):
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean"):
+    def __init__(self, reduction="mean", use_projection=True):
         super(LPIPSLoss, self).__init__()
         self.lpips = LPIPSFeats()
         self.reduction = "none"
-        self.loss = nn.MSELoss(reduction=self.reduction)
+        self.loss = BroadcastMSELoss(reduction=self.reduction)
+        self.projection_matrix = None
 
-    def forward(self, fx, y): return self.loss(self.lpips(fx), self.lpips(y))
+    def forward(self, fx, y):
+        s = fx.shape
+        fx = self.lpips(fx)
+        y = self.lpips(y)
+
+        # tqdm.write(f"AFTER LPIPS SHAPE {s} -> {fx.shape}" )
+
+        result =  self.loss(fx, y)
+
+        # tqdm.write(f"LPIPS OUTPUT SHAPE {result.shape}")
+        return result
+        # return self.loss(self.lpips(fx), self.lpips(y))
 
 lpips_loss = None
 def get_unreduced_loss_fn(loss_fn):
@@ -90,7 +102,7 @@ def get_unreduced_loss_fn(loss_fn):
     if loss_fn == "lpips":
         global lpips_loss
         if lpips_loss is None:
-            lpips_loss = LPIPSLoss(reduction="none").to(device)
+            lpips_loss = LPIPSLoss(reduction="batch").to(device)
         return lpips_loss
     elif loss_fn == "mse":
         return nn.MSELoss(reduction="none")
@@ -98,6 +110,29 @@ def get_unreduced_loss_fn(loss_fn):
         return ResolutionLoss().to(device)
     else:
         raise ValueError(f"Unknown loss type {loss_fn}")
+
+class BroadcastMSELoss(nn.Module):
+    def __init__(self, reduction="batch"):
+        super(BroadcastMSELoss, self).__init__()
+        self.reduction = reduction
+
+    def forward(self, x, y):
+        # tqdm.write(f"INPUT BroadcastMSELoss SHAPES: x {x.shape} y {y.shape}")
+        if len(y.shape) == 2:
+            y = y.unsqueeze(1)
+        if len(x.shape) == 2:
+            x = x.view(y.shape[0], x.shape[0] // y.shape[0], x.shape[-1])
+        if not (len(x.shape) == 3 and x.shape[0] == y.shape[0] and x.shape[2] == y.shape[2]):
+            raise ValueError(f"Got invalid shapes for BroadcastMSELoss. x shape was {x.shape} and y shape was {y.shape}")
+
+        result = torch.cdist(x, y)
+
+        if self.reduction == "batch" or self.reduction == "none":
+            return result.view(result.shape[0] * result.shape[1], 1)
+        elif self.reduction == "mean":
+            return torch.mean(result)
+        else:
+            raise ValueError(f"Unknown reduction {self.reduction}")
 
 ################################################################################
 # IMLE whatnot
@@ -179,7 +214,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                     fx = backbone(cx.to(device), test_codes, loi=level_idx,
                                   in_color_space=in_color_space,
                                   out_color_space=out_color_space)
-                    ys = torch.repeat_interleave(ys[level_idx].to(device), sp, axis=0)
+                    # ys = torch.repeat_interleave(ys[level_idx].to(device), sp, axis=0)
+                    ys = ys[level_idx].to(device)
                     losses = compute_loss(fx, ys, loss_fn, reduction="batch")
 
                 if sp > 1:
