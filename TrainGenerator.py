@@ -82,7 +82,7 @@ class ResolutionLoss(nn.Module):
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean", proj_dim=512):
+    def __init__(self, reduction="mean", proj_dim=None):
         super(LPIPSLoss, self).__init__()
         self.lpips = LPIPSFeats()
         self.reduction = "none"
@@ -113,14 +113,14 @@ class LPIPSLoss(nn.Module):
         return self.loss(fx, y)
 
 lpips_loss = None
-def get_unreduced_loss_fn(loss_fn):
+def get_unreduced_loss_fn(loss_fn, proj_dim=None):
     """Returns an unreduced loss function of type [loss_fn]. The LPIPS loss
     function is memoized.
     """
     if loss_fn == "lpips":
         global lpips_loss
         if lpips_loss is None:
-            lpips_loss = LPIPSLoss(reduction="batch").to(device)
+            lpips_loss = LPIPSLoss(reduction="batch", proj_dim=proj_dim).to(device)
 
         lpips_loss.reset_projections()
         return lpips_loss
@@ -195,7 +195,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
 
 def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     num_samples=128, sp=2, in_color_space="rgb", out_color_space="rgb",
-    verbose=1):
+    proj_dim=None, verbose=1):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -211,7 +211,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     num_samples -- number of times we try to find a better code for each image
 
     """
-    loss_fn = get_unreduced_loss_fn(loss_type)
+    loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
     bs = len(corrupted_data)
     sample_parallelism = make_list(sp, length=len(z_dims))
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
@@ -260,7 +260,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss_type="lpips", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
     num_samples=1, sp=1, in_color_space="rgb", out_color_space="rgb", verbose=0,
-    num_prints=10):
+    num_prints=10, proj_dim=None):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
@@ -281,7 +281,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     mini_bs                 -- the batch size to run per iteration. Must evenly
                                 divide the batch size of [loader]
     """
-    loss_fn = get_unreduced_loss_fn(loss_type)
+    loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
     total_loss = 0
     print_iter = len(dataset) // num_prints
     rand_idxs = random.sample(range(len(dataset)), len(dataset))
@@ -405,6 +405,8 @@ if __name__ == "__main__":
         help="Model architecture to use. Architecture hyperparameters are parsed later based on this")
     P.add_argument("--loss", default="resolution", choices=["mse", "lpips", "resolution"],
         help="loss function to use")
+    P.add_argument("--proj_dim", default=None, type=int,
+        help="projection dimensionality")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
     P.add_argument("--n_ramp", default=1, type=int,
@@ -546,7 +548,7 @@ if __name__ == "__main__":
             code_bs=args.code_bs, num_samples=args.num_samples,
             iters_per_code_per_ex=args.ipcpe, verbose=args.verbose,
             in_color_space=in_color_space, out_color_space=out_color_space,
-            sp=args.sp)
+            sp=args.sp, proj_dim=args.proj_dim)
 
         ########################################################################
         # After each epoch, log results and data
