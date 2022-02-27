@@ -1,12 +1,16 @@
 import argparse
+from collections import defaultdict
 from datetime import datetime
 from tqdm import tqdm
 import wandb
 
 import torch.nn as nn
+import torch.nn.functional as F
+from torch.nn.utils import clip_grad_norm_
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader, Subset
+from torch.cuda.amp import autocast, GradScaler
 
 from CAMNet import CAMNet, get_z_dims
 from Corruptions import Corruption
@@ -15,6 +19,7 @@ from utils.Utils import *
 from utils.UtilsColorSpace import *
 from utils.UtilsLPIPS import LPIPSFeats
 from utils.UtilsNN import *
+
 
 ################################################################################
 # Loss whatnot
@@ -77,26 +82,35 @@ class ResolutionLoss(nn.Module):
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean", use_projection=True):
+    def __init__(self, reduction="mean", proj_dim=512):
         super(LPIPSLoss, self).__init__()
         self.lpips = LPIPSFeats()
         self.reduction = "none"
         self.loss = BroadcastMSELoss(reduction=self.reduction)
-        self.projection_matrix = None
+
+        self.proj_dim = proj_dim
+        self.projections = {}
+
+    def project_tensor(self, t):
+        """Returns a projection matrix for a tensor with last size [dim]."""
+        if not t.shape[-1] in self.projections:
+            projection = torch.randn(t.shape[-1], self.proj_dim, device=device)
+            projection = F.normalize(projection, p=2, dim=1)
+            self.projections[t.shape[-1]] = projection
+
+        return torch.matmul(t, self.projections[t.shape[-1]])
+
+    def reset_projections(self):
+        """Resets the loss's projection matrix."""
+        self.projections = {}
 
     def forward(self, fx, y):
-        s = fx.shape
-        s2 = y.shape
-        fx = self.lpips(fx)
-        y = self.lpips(y)
+        fx, y = self.lpips(fx), self.lpips(y)
 
-        # tqdm.write(f"NEW LPIPS SHAPE CHANGES x: {s} -> {fx.shape}   y: {s2} -> {y.shape}" )
+        if self.proj_dim is not None:
+            fx, y = self.project_tensor(fx), self.project_tensor(y)
 
-        result =  self.loss(fx, y)
-        #
-        # tqdm.write(f"NEW LPIPS OUTPUT SHAPE {result.shape}")
-        return result
-        # return self.loss(self.lpips(fx), self.lpips(y))
+        return self.loss(fx, y)
 
 lpips_loss = None
 def get_unreduced_loss_fn(loss_fn):
@@ -107,6 +121,8 @@ def get_unreduced_loss_fn(loss_fn):
         global lpips_loss
         if lpips_loss is None:
             lpips_loss = LPIPSLoss(reduction="batch").to(device)
+
+        lpips_loss.reset_projections()
         return lpips_loss
     elif loss_fn == "mse":
         return nn.MSELoss(reduction="none")
@@ -130,13 +146,6 @@ class BroadcastMSELoss(nn.Module):
             raise ValueError(f"Got invalid shapes for BroadcastMSELoss. x shape was {x.shape} and y shape was {y.shape}")
 
         result = torch.cdist(x, y)
-        #
-        # y = torch.repeat_interleave(y, sp, axis=0)
-        # mse = nn.MSELoss(reduction="none")
-        # old_result = mse(x.view(y.shape[0], 1, -1), y)
-        #
-        # tqdm.write(f"{result}, {result.shape}")
-        # tqdm.write(f"{reduce_loss_over_batch(old_result)}, {reduce_loss_over_batch(old_result).shape}")
 
         if self.reduction == "batch" or self.reduction == "none":
             return result.view(result.shape[0] * result.shape[1], 1)
@@ -221,22 +230,23 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                 new_codes = torch.randn((code_bs * sp,) + z_dims[level_idx], device=device)
                 test_codes = old_codes + [new_codes]
 
-                with torch.no_grad():
-                    fx = backbone(cx.to(device), test_codes, loi=level_idx,
-                                  in_color_space=in_color_space,
-                                  out_color_space=out_color_space)
-                    # tqdm.write(f"FX SHAPE {fx.shape}")
+                # Turn off gradients and FP32. We entirely don't need the
+                # former, and can likely get a useful and non-harmful
+                # performance boost from not using the latter. The latent codes
+                # are still FP32 items and are used in FP32 training later.
+                with autocast():
+                    with torch.no_grad():
+                        fx = backbone(cx.to(device), test_codes, loi=level_idx,
+                            in_color_space=in_color_space,
+                            out_color_space=out_color_space)
+                        ys = ys[level_idx].to(device)
+                        losses = compute_loss(fx, ys, loss_fn, reduction="batch")
 
-                    # ys = torch.repeat_interleave(ys[level_idx].to(device), sp, axis=0)
-                    ys = ys[level_idx].to(device)
-                    # tqdm.write(f"YS SHAPE {ys.shape}")
-                    losses = compute_loss(fx, ys, loss_fn, reduction="batch")
-
-                if sp > 1:
-                    _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
-                    new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
-                    new_codes = new_codes[torch.arange(code_bs), idxs]
-                    losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
+                    if sp > 1:
+                        _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
+                        new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
+                        new_codes = new_codes[torch.arange(code_bs), idxs]
+                        losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
@@ -246,7 +256,6 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                 tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
 
     return make_cpu(level_codes)
-
 
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss_type="lpips", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
@@ -303,9 +312,12 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
                     out_color_space=out_color_space)
                 loss = compute_loss(fx, make_device(ys), loss_fn, reduction="mean")
                 loss.backward()
+                clip_grad_norm_(model.parameters(), max_norm=2.0)
                 optimizer.step()
 
                 total_loss += loss.item()
+
+        model.zero_grad(set_to_none=True)
         scheduler.step()
 
         if verbose > 0 and batch_idx % print_iter == 0:
@@ -407,7 +419,7 @@ if __name__ == "__main__":
         help="number of samples for IMLE")
     P.add_argument("--ipcpe", type=int, default=2,
         help="iters_per_code_per_ex")
-    P.add_argument("--lr", type=float, default=1e-5,
+    P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
     P.add_argument("--wd", type=float, default=1e-6,
         help="weight decay")
