@@ -523,7 +523,7 @@ if __name__ == "__main__":
     args.sp = make_list(args.sp, length=args.levels)
     args.ns = make_list(args.ns, length=args.levels)
     for ns,sp in zip(args.ns, args.sp):
-        if not evenly_divides(sp, ns):
+        if not evenly_divides(sp, ns) and not ns < sp:
             raise ValueError(f"--sp {args.sp} evenly divide --num_samples {args.ns} on all indices")
     tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
 
