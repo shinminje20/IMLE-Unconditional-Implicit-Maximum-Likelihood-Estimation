@@ -197,7 +197,7 @@ def generator_folder(args):
     them all into a file name, so we need to use times to keep track of things.
     This is also the reason we use WandB!
     """
-    return f"{project_dir}/generators/{args.arch}_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.pix_mask_frac}-mask_size{args.pix_mask_size}-mini_bs{args.mini_bs}-ns{'_'.join([str(n) for r in args.ns]}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
+    return f"{project_dir}/generators/{args.arch}_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.pix_mask_frac}-mask_size{args.pix_mask_size}-mini_bs{args.mini_bs}-ns{'_'.join([str(n) for r in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
