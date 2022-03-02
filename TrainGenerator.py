@@ -179,7 +179,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
 
     corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
     codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
-        corrupted_data, model, "mse", num_samples=0))
+        corrupted_data, model, "mse", ns=0))
     batch_dataset = ZippedDataset(codes_data, corrupted_data)
 
     with torch.no_grad():
@@ -524,7 +524,7 @@ if __name__ == "__main__":
     args.ns = make_list(args.ns, length=args.levels)
     for ns,sp in zip(args.ns, args.sp):
         if not evenly_divides(sp, ns) and not ns < sp:
-            raise ValueError(f"--sp {args.sp} evenly divide --num_samples {args.ns} on all indices")
+            raise ValueError(f"--sp {args.sp} evenly divide --ns {args.ns} on all indices")
     tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
 
     # Setup the color spaces
@@ -550,7 +550,7 @@ if __name__ == "__main__":
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor, model, optimizer, scheduler, data_tr,
             loss_type=args.loss, bs=args.bs, mini_bs=args.mini_bs,
-            code_bs=args.code_bs, num_samples=args.num_samples,
+            code_bs=args.code_bs, ns=args.ns,
             iters_per_code_per_ex=args.ipcpe, verbose=args.verbose,
             in_color_space=in_color_space, out_color_space=out_color_space,
             sp=args.sp, proj_dim=args.proj_dim)
