@@ -194,7 +194,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
 
 
 def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
-    num_samples=128, sp=2, in_color_space="rgb", out_color_space="rgb",
+    ns=128, sp=2, in_color_space="rgb", out_color_space="rgb",
     proj_dim=None, verbose=1):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
@@ -214,20 +214,24 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
     bs = len(corrupted_data)
     sample_parallelism = make_list(sp, length=len(z_dims))
+    num_samples = make_list(ns, length=len(z_dims))
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers, pin_memory=True)
 
     for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
         least_losses = torch.ones(bs, device=device) * float("inf")
-        sp = sample_parallelism[level_idx]
 
-        for i in tqdm(range(num_samples // sp), desc="Sampling", leave=False, dynamic_ncols=True):
+        ns = num_samples[level_idx]
+        sp = min(ns, sample_parallelism[level_idx])
+        shape = z_dims[level_idx]
+
+        for i in tqdm(range(ns // sp), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
-                new_codes = torch.randn((code_bs * sp,) + z_dims[level_idx], device=device)
+                new_codes = torch.randn((code_bs * sp,) + shape, device=device)
                 test_codes = old_codes + [new_codes]
 
                 # Turn off gradients and FP32. We entirely don't need the
@@ -259,7 +263,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
 
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss_type="lpips", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
-    num_samples=1, sp=1, in_color_space="rgb", out_color_space="rgb", verbose=0,
+    ns=1, sp=1, in_color_space="rgb", out_color_space="rgb", verbose=0,
     num_prints=10, proj_dim=None):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
@@ -297,7 +301,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
         corrupted_data = CorruptedDataset(images_data, corruptor, bs=bs)
         codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
             corrupted_data, model, loss_type=loss_type, code_bs=code_bs,
-            num_samples=num_samples, sp=sp, in_color_space=in_color_space,
+            ns=ns, sp=sp, in_color_space=in_color_space,
             out_color_space=out_color_space, verbose=verbose))
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
         loader = DataLoader(batch_dataset, batch_size=mini_bs, shuffle=True,
@@ -359,7 +363,7 @@ def parse_camnet_args(unparsed_args):
         help="amount by which to scale features, or None")
     P.add_argument("--init_type", choices=["kaiming", "normal"], default="kaiming",
         help="NN weight initialization method")
-    P.add_argument("--init_scale", type=float, default=1,
+    P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
     return P.parse_known_args(unparsed_args)
 
@@ -417,7 +421,7 @@ if __name__ == "__main__":
         help="minibatch size")
     P.add_argument("--code_bs", type=int, default=6,
         help="batch size to use for sampling codes")
-    P.add_argument("--num_samples", type=int, default=128,
+    P.add_argument("--ns", type=int, nargs="+", default=[512, 64, 32, 16],
         help="number of samples for IMLE")
     P.add_argument("--ipcpe", type=int, default=2,
         help="iters_per_code_per_ex")
