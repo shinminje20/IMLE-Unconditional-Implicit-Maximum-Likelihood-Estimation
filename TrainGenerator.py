@@ -240,21 +240,17 @@ def get_new_codes(corrupted_data, backbone, loss_type, code_bs=6,
                 new_codes = torch.randn((code_bs * sp,) + shape, device=device)
                 test_codes = old_codes + [new_codes]
 
-                tqdm.write(f"DEVICE {device}")
+                fx = backbone(cx.to(device), test_codes, loi=level_idx,
+                    in_color_space=in_color_space,
+                    out_color_space=out_color_space)
+                ys = ys[level_idx].to(device)
+                losses = compute_loss(fx, ys, loss_fn, reduction="batch")
 
-                with autocast():
-                    with torch.no_grad():
-                        fx = backbone(cx.to(device), test_codes, loi=level_idx,
-                            in_color_space=in_color_space,
-                            out_color_space=out_color_space)
-                        ys = ys[level_idx].to(device)
-                        losses = compute_loss(fx, ys, loss_fn, reduction="batch")
-
-                    if sp > 1:
-                        _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
-                        new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
-                        new_codes = new_codes[torch.arange(code_bs), idxs]
-                        losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
+                if sp > 1:
+                    _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
+                    new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
+                    new_codes = new_codes[torch.arange(code_bs), idxs]
+                    losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
@@ -296,19 +292,18 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
 
     for batch_idx in tqdm(range(0, len(dataset), bs), desc="Batches", leave=False, dynamic_ncols=True):
 
-        # (1) Get a dataset of corrupted images and their targets, (2) Get codes
-        # for the corrupted images. This takes the place of the min() function
-        # in IMLE, since we return the best (minimum loss) codes for each image
-        # from the function, (3) Zip the codes and the corrupted images and
-        # their targets together
-        images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
-        corrupted_data = CorruptedDataset(images_data, corruptor)
-        codes_data = ZippedDataset(*get_new_codes(corrupted_data, model, loss_type=loss_type, code_bs=code_bs,
-            ns=ns, sp=sp, in_color_space=in_color_space,
-            out_color_space=out_color_space, verbose=verbose))
-        batch_dataset = ZippedDataset(codes_data, corrupted_data)
-        loader = DataLoader(batch_dataset, batch_size=mini_bs, shuffle=True,
-            num_workers=num_workers, pin_memory=True)
+        with autocast():
+            with torch.no_grad():
+
+                images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx+bs])
+                corrupted_data = CorruptedDataset(images_data, corruptor)
+                codes_data = ZippedDataset(*get_new_codes(corrupted_data, model,
+                    loss_type=loss_type, code_bs=code_bs, ns=ns, sp=sp,
+                    in_color_space=in_color_space,
+                    out_color_space=out_color_space, verbose=verbose))
+                batch_dataset = ZippedDataset(codes_data, corrupted_data)
+                loader = DataLoader(batch_dataset, batch_size=mini_bs,
+                    shuffle=True, num_workers=num_workers, pin_memory=True)
 
         for _ in tqdm(range(iters_per_code_per_ex), desc="Inner loop", leave=False, dynamic_ncols=True):
             for codes,(cx,ys) in tqdm(loader, desc="Minibatches", leave=False, dynamic_ncols=True):
@@ -365,11 +360,11 @@ if __name__ == "__main__":
         help="number of epochs (months) to train for")
     P.add_argument("--n_ramp", default=1, type=int,
         help="number of epochs to ramp learning rate")
-    P.add_argument("--bs", type=int, default=300,
+    P.add_argument("--bs", type=int, default=8,
         help="batch size")
-    P.add_argument("--mini_bs", type=int, default=10,
+    P.add_argument("--mini_bs", type=int, default=4,
         help="minibatch size")
-    P.add_argument("--code_bs", type=int, default=6,
+    P.add_argument("--code_bs", type=int, default=4,
         help="batch size to use for sampling codes")
     P.add_argument("--ns", type=int, nargs="+", default=[512, 64, 32, 16],
         help="number of samples for IMLE")
