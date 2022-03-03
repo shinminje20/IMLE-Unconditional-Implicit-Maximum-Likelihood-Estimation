@@ -56,8 +56,10 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
 
     corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
-    codes_data = ZippedDataset(*[torch.randn((bs,)+z, device=device) for z in get_z_dims(model)])
-    batch_dataset = ZippedDataset(codes_data, corrupted_data)
+    codes = [torch.randn((len(corrupted_data),)+z, device=device)
+        for z in get_z_dims(model)]
+    codes = ZippedDataset(*codes)
+    batch_dataset = ZippedDataset(codes, corrupted_data)
 
     with torch.no_grad():
         for idx,(codes,(cx,_)) in enumerate(batch_dataset):
