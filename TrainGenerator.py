@@ -56,8 +56,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
 
     corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
-    codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
-        corrupted_data, model, "mse", ns=0))
+    codes_data = ZippedDataset(*[torch.randn((bs,)+z, device=device) for z in get_z_dims(model)])
     batch_dataset = ZippedDataset(codes_data, corrupted_data)
 
     with torch.no_grad():
@@ -71,7 +70,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     return make_cpu(make_3dim(results))
 
 
-def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
+def get_new_codes(corrupted_data, backbone, loss_type, code_bs=6,
     ns=128, sp=2, in_color_space="rgb", out_color_space="rgb",
     proj_dim=None, verbose=1):
     """Returns a list of new latent codes found via hierarchical sampling. For
@@ -89,11 +88,12 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     num_samples -- number of times we try to find a better code for each image
 
     """
-    tqdm.write(f"{ns}")
-    loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
-    bs = len(corrupted_data)
+    z_dims = get_z_dims(model)
     sample_parallelism = make_list(sp, length=len(z_dims))
     num_samples = make_list(ns, length=len(z_dims))
+
+    bs = len(corrupted_data)
+    loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
     level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers, pin_memory=True)
 
@@ -103,8 +103,6 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
         ns = num_samples[level_idx]
         sp = min(ns, sample_parallelism[level_idx])
         shape = z_dims[level_idx]
-
-        tqdm.write(f"ns {ns} | sp {sp} | sp1 {sample_parallelism[level_idx]}")
 
         for i in tqdm(range(ns // sp), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
@@ -176,8 +174,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
         # their targets together
         images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
         corrupted_data = CorruptedDataset(images_data, corruptor, bs=bs)
-        codes_data = ZippedDataset(*get_new_codes(get_z_dims(model),
-            corrupted_data, model, loss_type=loss_type, code_bs=code_bs,
+        codes_data = ZippedDataset(*get_new_codes(corrupted_data, model, loss_type=loss_type, code_bs=code_bs,
             ns=ns, sp=sp, in_color_space=in_color_space,
             out_color_space=out_color_space, verbose=verbose))
         batch_dataset = ZippedDataset(codes_data, corrupted_data)
@@ -371,8 +368,6 @@ if __name__ == "__main__":
     tqdm.write(f"----- Beginning Training -----")
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
-        tqdm.write(f"1 ---------------- {args.ns}")
-        assert False
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor, model, optimizer, scheduler, data_tr,
             loss_type=args.loss, bs=args.bs, mini_bs=args.mini_bs,
