@@ -36,16 +36,6 @@ def check_args(args, data_tr_len):
 
     return args
 
-
-################################################################################
-# Loss whatnot
-################################################################################
-
-
-################################################################################
-# IMLE whatnot
-################################################################################
-
 def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     samples_per_image=5, in_color_space="rgb", out_color_space="rgb"):
     """Returns a list of lists, where each sublist contains first a ground-truth
@@ -113,6 +103,8 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
         sp = min(ns, sample_parallelism[level_idx])
         shape = z_dims[level_idx]
 
+        tqdm.write(f"ns {ns} | sp {sp} | sp1 {sample_parallelism[idx]}")
+
         for i in tqdm(range(ns // sp), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
@@ -122,10 +114,6 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
                 new_codes = torch.randn((code_bs * sp,) + shape, device=device)
                 test_codes = old_codes + [new_codes]
 
-                # Turn off gradients and FP32. We entirely don't need the
-                # former, and can likely get a useful and non-harmful
-                # performance boost from not using the latter. The latent codes
-                # are still FP32 items and are used in FP32 training later.
                 with autocast():
                     with torch.no_grad():
                         fx = backbone(cx.to(device), test_codes, loi=level_idx,
