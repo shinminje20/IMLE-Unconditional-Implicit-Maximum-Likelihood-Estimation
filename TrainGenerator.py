@@ -370,6 +370,7 @@ if __name__ == "__main__":
     tqdm.write(f"----- Beginning Training -----")
 
     tqdm.write(f"1 ---------------- {args.ns}")
+    assert False
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
