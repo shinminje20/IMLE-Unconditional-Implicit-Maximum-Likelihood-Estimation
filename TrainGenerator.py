@@ -369,7 +369,7 @@ if __name__ == "__main__":
         wandb.log({"before_training": wandb.Image(results_file)})
     tqdm.write(f"----- Beginning Training -----")
 
-    print("------------------", args.ns)
+    tqdm.write(f"1 {args.ns}")
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
