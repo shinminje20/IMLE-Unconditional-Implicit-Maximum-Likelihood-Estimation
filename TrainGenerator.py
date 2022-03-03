@@ -175,7 +175,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     model = model.module
     idxs = list(range(len(dataset))) if idxs is None else idxs
     images_dataset = Subset(dataset, idxs)
-    corrupted_data = CorruptedDataset(images_dataset, corruptor, bs=len(idxs))
+    corrupted_data = CorruptedDataset(images_dataset, corruptor)
 
     results = [[ys[-1], cx] for cx,ys in corrupted_data]
     results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
@@ -240,6 +240,8 @@ def get_new_codes(corrupted_data, backbone, loss_type, code_bs=6,
                 new_codes = torch.randn((code_bs * sp,) + shape, device=device)
                 test_codes = old_codes + [new_codes]
 
+                tqdm.write(f"DEVICE {device}")
+
                 with autocast():
                     with torch.no_grad():
                         fx = backbone(cx.to(device), test_codes, loi=level_idx,
@@ -300,7 +302,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
         # from the function, (3) Zip the codes and the corrupted images and
         # their targets together
         images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx + bs])
-        corrupted_data = CorruptedDataset(images_data, corruptor, bs=bs)
+        corrupted_data = CorruptedDataset(images_data, corruptor)
         codes_data = ZippedDataset(*get_new_codes(corrupted_data, model, loss_type=loss_type, code_bs=code_bs,
             ns=ns, sp=sp, in_color_space=in_color_space,
             out_color_space=out_color_space, verbose=verbose))

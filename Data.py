@@ -315,7 +315,7 @@ class CorruptedDataset(Dataset):
     corruptor   -- corruptor to corrupt a batch of images
     bs          -- batch size for getting corrupted versions of images
     """
-    def __init__(self, source, corruptor, bs=1):
+    def __init__(self, source, corruptor):
         super(CorruptedDataset, self).__init__()
         loader = DataLoader(source, num_workers=num_workers, batch_size=8,
             collate_fn=collate_fn, pin_memory=True)
