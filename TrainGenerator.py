@@ -89,6 +89,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
     num_samples -- number of times we try to find a better code for each image
 
     """
+    tqdm.write(f"{ns}")
     loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
     bs = len(corrupted_data)
     sample_parallelism = make_list(sp, length=len(z_dims))
