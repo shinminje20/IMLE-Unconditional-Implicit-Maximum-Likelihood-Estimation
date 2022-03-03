@@ -304,6 +304,8 @@ if __name__ == "__main__":
         help="how to fill masked out areas")
     args = P.parse_args()
 
+    assert False
+
     ############################################################################
     # If resuming, resume; otherwise, validate arguments and construct training
     # objects.
