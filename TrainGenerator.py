@@ -5,7 +5,6 @@ from tqdm import tqdm
 import wandb
 
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
@@ -20,139 +19,27 @@ from utils.UtilsColorSpace import *
 from utils.UtilsLPIPS import LPIPSFeats
 from utils.UtilsNN import *
 
+def check_args(args, data_tr_len):
+    """Returns [args] if they are okay or raises an informative ValueError."""
+    if not evenly_divides(args.bs, data_tr_len) or data_tr_len < args.bs:
+        raise ValueError(f"--bs {args.bs} must be at most and evenly divide the length of the dataset {len(data_tr)}")
+    if not evenly_divides(args.mini_bs, args.bs) or args.bs < args.mini_bs:
+        raise ValueError(f"--mini_bs {args.mini_bs} must be at most and evenly divide --bs {args.bs}")
+    if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
+         raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
+
+    for ns,sp in zip(args.ns, args.sp):
+        if not evenly_divides(sp, ns) and not ns < sp:
+            raise ValueError(f"--sp {args.sp} evenly divide --ns {args.ns} on all indices")
+    tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
+
+    return args
+
 
 ################################################################################
 # Loss whatnot
 ################################################################################
-def reduce_loss_over_batch(loss):
-    """Returns unreduced loss [loss] reduced over the batch dimension."""
-    return torch.mean(loss.view(loss.shape[0], -1), axis=1)
 
-def compute_loss(fx, y, loss_fn, reduction="batch", list_reduction="mean"):
-    """Returns the loss of output [fx] against target [y] using loss function
-    [loss_fn] and reduction strategies [reduction] and [list_reduction].
-
-    Args:
-    fx              -- list of or single BSxCxHxW generated images
-    y               -- list of or single BSxCxHxW ground-truth image
-    loss_fn         -- unreduced loss function that acts on 4D tensors
-    reduction       -- how to reduce across the images
-    list_reduction  -- how to reduce across the list if inputs include lists
-    """
-    if isinstance(fx, list) and isinstance(y, list):
-        losses = [compute_loss(f, t, loss_fn, reduction) for f,t in zip(fx, y)]
-        if list_reduction == "mean":
-            return torch.mean(torch.stack(losses), axis=0)
-        else:
-            raise ValueError(f"Unknown list_reduction '{list_reduction}'")
-    else:
-        if reduction == loss_fn.reduction:
-            return loss_fn(fx, y)
-        elif reduction == "batch" and loss_fn.reduction == "none":
-            return reduce_loss_over_batch(loss_fn(fx, y))
-        elif reduction == "mean":
-            return torch.mean(loss_fn(fx, y))
-        else:
-            raise ValueError(f"Requested reduction '{reduction}' and/or loss_fn reduction '{loss_fn.reduction}' are invalid or can't be used together.")
-
-class ResolutionLoss(nn.Module):
-    """Loss function for computing MSE loss on low resolution images and LPIPS
-    loss on higher resolution images.
-    """
-    def __init__(self, reduction="batch", alpha=.1):
-        super(ResolutionLoss, self).__init__()
-        self.mse = get_unreduced_loss_fn("mse")
-        self.lpips = get_unreduced_loss_fn("lpips")
-        self.alpha = alpha
-
-        if not reduction == "batch":
-            raise ValueError("ResolutionLoss can only be used with a batch reduction")
-        self.reduction = "batch"
-
-    def forward(self, fx, y):
-        if fx.shape[-1] >= 64:
-            # return reduce_loss_over_batch(self.lpips(fx, y))
-            result = reduce_loss_over_batch(self.lpips(fx, y))
-            # tqdm.write(f"ResolutionLoss SHAPES: result {result.shape}")
-            return result
-        else:
-            lpips_loss = reduce_loss_over_batch(self.lpips(fx, y))
-            mse_loss = reduce_loss_over_batch(self.mse(fx, y))
-            result = lpips_loss + self.alpha * mse_loss
-
-class LPIPSLoss(nn.Module):
-    """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean", proj_dim=None):
-        super(LPIPSLoss, self).__init__()
-        self.lpips = LPIPSFeats()
-        self.reduction = "none"
-        self.loss = BroadcastMSELoss(reduction=self.reduction)
-
-        self.proj_dim = proj_dim
-        self.projections = {}
-
-    def project_tensor(self, t):
-        """Returns a projection matrix for a tensor with last size [dim]."""
-        if not t.shape[-1] in self.projections:
-            projection = torch.randn(t.shape[-1], self.proj_dim, device=device)
-            projection = F.normalize(projection, p=2, dim=1)
-            self.projections[t.shape[-1]] = projection
-
-        return torch.matmul(t, self.projections[t.shape[-1]])
-
-    def reset_projections(self):
-        """Resets the loss's projection matrix."""
-        self.projections = {}
-
-    def forward(self, fx, y):
-        fx, y = self.lpips(fx), self.lpips(y)
-
-        if self.proj_dim is not None:
-            fx, y = self.project_tensor(fx), self.project_tensor(y)
-
-        return self.loss(fx, y)
-
-lpips_loss = None
-def get_unreduced_loss_fn(loss_fn, proj_dim=None):
-    """Returns an unreduced loss function of type [loss_fn]. The LPIPS loss
-    function is memoized.
-    """
-    if loss_fn == "lpips":
-        global lpips_loss
-        if lpips_loss is None:
-            lpips_loss = LPIPSLoss(reduction="batch", proj_dim=proj_dim).to(device)
-
-        lpips_loss.reset_projections()
-        return lpips_loss
-    elif loss_fn == "mse":
-        return nn.MSELoss(reduction="none")
-    elif loss_fn == "resolution":
-        return ResolutionLoss().to(device)
-    else:
-        raise ValueError(f"Unknown loss type {loss_fn}")
-
-class BroadcastMSELoss(nn.Module):
-    def __init__(self, reduction="batch"):
-        super(BroadcastMSELoss, self).__init__()
-        self.reduction = reduction
-
-    def forward(self, x, y):
-        # tqdm.write(f"INPUT BroadcastMSELoss SHAPES: x {x.shape} y {y.shape}")
-        if len(y.shape) == 2:
-            y = y.unsqueeze(1)
-        if len(x.shape) == 2:
-            x = x.view(y.shape[0], x.shape[0] // y.shape[0], x.shape[-1])
-        if not (len(x.shape) == 3 and x.shape[0] == y.shape[0] and x.shape[2] == y.shape[2]):
-            raise ValueError(f"Got invalid shapes for BroadcastMSELoss. x shape was {x.shape} and y shape was {y.shape}")
-
-        result = torch.cdist(x, y)
-
-        if self.reduction == "batch" or self.reduction == "none":
-            return result.view(result.shape[0] * result.shape[1], 1)
-        elif self.reduction == "mean":
-            return torch.mean(result)
-        else:
-            raise ValueError(f"Unknown reduction {self.reduction}")
 
 ################################################################################
 # IMLE whatnot
@@ -331,59 +218,6 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss = total_loss * mini_bs / iters_per_code_per_ex / len(dataset)
     return corruptor, model, optimizer, scheduler, loss
 
-def parse_camnet_args(unparsed_args):
-    """Returns an argparse Namespace and the remaining unparsed arguments after
-    parsing [unparsed_args].
-    """
-    P = argparse.ArgumentParser(description="CAMNet architecture argparsing")
-    P.add_argument("--levels", default=4, type=int,
-        help="number of CAMNet levels")
-    P.add_argument("--code_nc", default=5, type=int,
-        help="number of code channels")
-    P.add_argument("--in_nc", default=3, type=int,
-        help="number of input channels. SHOULD ALWAYS BE THREE")
-    P.add_argument("--out_nc", default=3, type=int,
-        help=" number of output channels")
-    P.add_argument("--map_nc", default=128, type=int,
-        help="number of input channels to mapping net")
-    P.add_argument("--latent_nc", default=512, type=int,
-        help="number of channels inside the mapping net")
-    P.add_argument("--resid_nc", default=[128, 64, 64, 64], type=int,
-        nargs="+",
-        help="list of numbers of residual channels in RRDB blocks for each CAMNet level")
-    P.add_argument("--dense_nc", default=[256, 192, 128, 64], type=int,
-        nargs="+",
-        help="list of numbers of dense channels in RRDB blocks for each CAMNet level")
-    P.add_argument("--n_blocks", default=6, type=int,
-        help="number of RRDB blocks inside each level")
-    P.add_argument("--act_type", default="leakyrelu",
-        choices=["leakyrelu"],
-        help="activation type")
-    P.add_argument("--feat_scales", default=None, type=int,
-        help="amount by which to scale features, or None")
-    P.add_argument("--init_type", choices=["kaiming", "normal"], default="kaiming",
-        help="NN weight initialization method")
-    P.add_argument("--init_scale", type=float, default=.1,
-        help="Scale for weight initialization")
-    return P.parse_known_args(unparsed_args)
-
-def get_corruptor_args(unparsed_args):
-    """Returns an argparse Namespace and the remaining unparsed arguments after
-    parsing [unparsed_args].
-    """
-    P = argparse.ArgumentParser(description="Corruptor argparsing")
-    P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
-        help="grayscale corruption")
-    P.add_argument("--pix_mask_size", default=8, type=int,
-        help="fraction of pixels to mask at 16x16 resolution")
-    P.add_argument("--pix_mask_frac", default=.1, type=float,
-        help="fraction of pixels to mask at 16x16 resolution")
-    P.add_argument("--rand_illumination", default=0, type=float,
-        help="amount by which the illumination of an image can change")
-    P.add_argument("--fill", default="zero", choices=["color", "zero"],
-        help="how to fill masked out areas")
-    return P.parse_known_args(unparsed_args)
-
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
     P.add_argument("--wandb", default=1, choices=[0, 1], type=int,
@@ -437,7 +271,48 @@ if __name__ == "__main__":
         help="parallelism across samples during code training")
     P.add_argument("--gpus", type=int, default=[0], nargs="+",
         help="GPU ids")
-    args, unparsed_args = P.parse_known_args()
+
+    P.add_argument("--levels", default=4, type=int,
+        help="number of CAMNet levels")
+    P.add_argument("--code_nc", default=5, type=int,
+        help="number of code channels")
+    P.add_argument("--in_nc", default=3, type=int,
+        help="number of input channels. SHOULD ALWAYS BE THREE")
+    P.add_argument("--out_nc", default=3, type=int,
+        help=" number of output channels")
+    P.add_argument("--map_nc", default=128, type=int,
+        help="number of input channels to mapping net")
+    P.add_argument("--latent_nc", default=512, type=int,
+        help="number of channels inside the mapping net")
+    P.add_argument("--resid_nc", default=[128, 64, 64, 64], type=int,
+        nargs="+",
+        help="list of numbers of residual channels in RRDB blocks for each CAMNet level")
+    P.add_argument("--dense_nc", default=[256, 192, 128, 64], type=int,
+        nargs="+",
+        help="list of numbers of dense channels in RRDB blocks for each CAMNet level")
+    P.add_argument("--n_blocks", default=6, type=int,
+        help="number of RRDB blocks inside each level")
+    P.add_argument("--act_type", default="leakyrelu",
+        choices=["leakyrelu"],
+        help="activation type")
+    P.add_argument("--feat_scales", default=None, type=int,
+        help="amount by which to scale features, or None")
+    P.add_argument("--init_type", choices=["kaiming", "normal"], default="kaiming",
+        help="NN weight initialization method")
+    P.add_argument("--init_scale", type=float, default=.1,
+        help="Scale for weight initialization")
+
+    P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
+        help="grayscale corruption")
+    P.add_argument("--pix_mask_size", default=8, type=int,
+        help="fraction of pixels to mask at 16x16 resolution")
+    P.add_argument("--pix_mask_frac", default=.1, type=float,
+        help="fraction of pixels to mask at 16x16 resolution")
+    P.add_argument("--rand_illumination", default=0, type=float,
+        help="amount by which the illumination of an image can change")
+    P.add_argument("--fill", default="zero", choices=["color", "zero"],
+        help="how to fill masked out areas")
+    args = P.parse_args()
 
     ############################################################################
     # If resuming, resume; otherwise, validate arguments and construct training
@@ -445,93 +320,51 @@ if __name__ == "__main__":
     ############################################################################
     if not args.resume is None:
         run_id, resume_data = wandb_load(args.resume)
+        set_seed(resume_data["seed"])
+        data_folder_path = args.data_folder_path
+
         wandb.init(id=run_id, resume="must", project="isicle-generator")
         wandb.save("*.pt")
         model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
         corruptor = resume_data["corruptor"].to(device)
         last_epoch = resume_data["last_epoch"]
-
-        resumed, data_folder_path = True, args.data_folder_path
         args = resume_data["args"]
         args.resume = True
         args.data_folder_path = data_folder_path
 
-        seed = resume_data["seed"]
-        set_seed(seed)
-
         save_dir = generator_folder(args)
     else:
-        ########################################################################
-        # Collect the model and corruptor args and concatenate them into [args]
-        ########################################################################
-        model_args, unparsed_args = parse_camnet_args(unparsed_args)
-        corruptor_args, unparsed_args = get_corruptor_args(unparsed_args)
-
-        if len(unparsed_args) > 0:
-            raise ValueError(f"Got unknown arguments. Unparseable arguments:\n    {' '.join(unparsed_args)}")
-        else:
-            args.__dict__ |= vars(model_args) | vars(corruptor_args)
+        set_seed(args.seed)
+        args.ns = make_list(args.ns, length=args.levels)
+        args.sp = make_list(args.sp, length=args.levels)
 
         save_dir = generator_folder(args)
-        ########################################################################
-        # Initialize WandB utilities
-        ########################################################################
         run_id = wandb.util.generate_id()
         wandb.init(anonymous="allow", id=run_id, project="isicle-generator",
             mode="online" if args.wandb else "disabled", config=args,
             name=save_dir.replace(f"{project_dir}/generators/", ""))
-        set_seed(args.seed)
 
-        ########################################################################
-        # Initialize the model, optimizer, corruptor, and last_epoch
-        ########################################################################
-        args.res = args.res + ([args.res[-1]] * (args.levels-len(args.res)+1))
-        if args.arch == "camnet":
-            additional_kwargs = {"res": args.res, "internal_color_space": args.color_space}
-            model = CAMNet(**(vars(model_args) | additional_kwargs))
-            init_weights(model, init_type=model_args.init_type, scale=model_args.init_scale)
-            model = nn.DataParallel(model, device_ids=args.gpus).to(device)
-            core_params = [p for n,p in model.named_parameters() if not "map" in n]
-            map_params = [p for n,p in model.named_parameters() if "map" in n]
-            optimizer = Adam([{"params": core_params},
-                              {"params": map_params, "lr": 1e-2 * args.lr}],
-                              lr=args.lr, weight_decay=args.wd, betas=args.mm)
-        else:
-            raise ValueError(f"Unknown architecture '{args.arch}'")
-
-        corruptor = Corruption(**vars(corruptor_args)).to(device)
+        model = CAMNet(**(vars(args)))
+        model = nn.DataParallel(model, device_ids=args.gpus).to(device)
+        core_params = [p for n,p in model.named_parameters() if not "map" in n]
+        map_params = [p for n,p in model.named_parameters() if "map" in n]
+        optimizer = Adam([{"params": core_params},
+                          {"params": map_params, "lr": 1e-2 * args.lr}],
+                          lr=args.lr, weight_decay=args.wd, betas=args.mm)
+        corruptor = Corruption(**vars(args)).to(device)
         last_epoch = -1
 
-    ############################################################################
-    # Create the dataset, check that it is compatible with the various batch
-    # sizes, initialize the color spaces, and create the scheduler.
-    ############################################################################
+    # Setup the datasets
     data_tr, data_eval = get_data_splits(args.data, args.eval, args.res,
         data_path=args.data_folder_path)
-    base_transform = get_gen_augs()
-    data_tr = GeneratorDataset(data_tr, base_transform)
-    data_eval = GeneratorDataset(data_eval, base_transform)
-
-    if not evenly_divides(args.bs, len(data_tr)) or len(data_tr) < args.bs:
-        raise ValueError(f"--bs {args.bs} must be at most and evenly divide the length of the dataset {len(data_tr)}")
-    if not evenly_divides(args.mini_bs, args.bs) or args.bs < args.mini_bs:
-        raise ValueError(f"--mini_bs {args.mini_bs} must be at most and evenly divide --bs {args.bs}")
-    if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
-         raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
-
-    args.sp = make_list(args.sp, length=args.levels)
-    args.ns = make_list(args.ns, length=args.levels)
-    for ns,sp in zip(args.ns, args.sp):
-        if not evenly_divides(sp, ns) and not ns < sp:
-            raise ValueError(f"--sp {args.sp} evenly divide --ns {args.ns} on all indices")
-    tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
+    data_tr = GeneratorDataset(data_tr, get_gen_augs())
+    data_eval = GeneratorDataset(data_eval, get_gen_augs())
 
     # Setup the color spaces
     in_color_space = "lab" if "_lab" in args.data else "rgb"
-    internal_color_space = args.color_space
     out_color_space = "rgb" if args.loss in ["lpips", "resolution"] or args.color_space == "rgb" else "lab"
-    tqdm.write(f"Color space settings: input {in_color_space} | internal {internal_color_space} | output {out_color_space}")
+    tqdm.write(f"Color space settings: input {in_color_space} | internal {args.color_space} | output {out_color_space}")
 
     # Setup the scheduler
     scheduler = CosineAnnealingLR(optimizer,
@@ -563,7 +396,7 @@ if __name__ == "__main__":
         images_file = f"{save_dir}/val_images/epoch{e}.png"
         save_image_grid(get_images(corruptor, model, data_eval), images_file)
         wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
-                   "results": wandb.Image(images_file)})
+                   "results": wandb.Image(images_file)}, step=e)
         state_file = f"{save_dir}/{e}.pt"
         wandb_save({"run_id": run_id, "corruptor": corruptor.cpu(),
             "model": model.cpu(), "optimizer": optimizer, "last_epoch": e,

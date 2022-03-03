@@ -53,7 +53,7 @@ class CAMNet(nn.Module):
     def __init__(self, res=[32, 64, 128, 256], levels=4, code_nc=5, in_nc=3,
         out_nc=3, map_nc=128, latent_nc=512, resid_nc=[128, 64, 64, 64],
         dense_nc=[256, 192, 128, 64], n_blocks=6, act_type="leakyrelu",
-        feat_scales=None, internal_color_space="rgb", **kwargs):
+        feat_scales=None, color_space="rgb", **kwargs):
         super(CAMNet, self).__init__()
 
         ########################################################################
@@ -92,7 +92,9 @@ class CAMNet(nn.Module):
 
         self.map_nc = map_nc
         self.code_nc = code_nc
-        self.internal_color_space = internal_color_space
+        self.color_space = color_space
+
+        init_weights(self, scale=init_scale, init_type=init_type)
 
         self.short_str = " ".join([f"[{i}->{o}]" for i,o in zip(self.in_sizes, self.out_sizes)])
         tqdm.write(f"Constructed CAMNet architecture: {self.short_str}")
@@ -110,12 +112,12 @@ class CAMNet(nn.Module):
         ########################################################################
         # Input color space conversion
         ########################################################################
-        if in_color_space == self.internal_color_space:
+        if in_color_space == self.color_space:
             level_output = net_input
-        elif in_color_space == "rgb" and self.internal_color_space == "lab":
+        elif in_color_space == "rgb" and self.color_space == "lab":
             level_output = rgb2lab_with_dims(net_input)
         else:
-            raise ValueError(f"in_color_space {in_color_space} and internal_color_space {self.internal_color_space} shouldn't be used")
+            raise ValueError(f"in_color_space {in_color_space} and color_space {self.color_space} shouldn't be used")
 
         ########################################################################
         # Linear algebra soup
@@ -147,12 +149,12 @@ class CAMNet(nn.Module):
         ########################################################################
         # Output color space conversion
         ########################################################################
-        if self.internal_color_space == out_color_space:
+        if self.color_space == out_color_space:
             return result
-        elif self.internal_color_space == "lab" and out_color_space == "rgb":
+        elif self.color_space == "lab" and out_color_space == "rgb":
             return lab2rgb_with_dims(result)
         else:
-            raise ValueError(f"internal_color_space {self.internal_color_space} and out_color_space {out_color_space} shouldn't be used")
+            raise ValueError(f"color_space {self.color_space} and out_color_space {out_color_space} shouldn't be used")
 
 class CAMNetModule(nn.Module):
 

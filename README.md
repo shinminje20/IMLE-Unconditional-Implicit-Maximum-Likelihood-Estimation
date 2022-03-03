@@ -5,12 +5,11 @@ If you just want to use the SimCLR component of this, look under TBD instead.
 Install and activate the following Python environment:
 ```
 gdown==4.2.0
-lpips==0.1.4
 python==3.9.7
 pytorch==1.10.0
-tensorboard==2.7.0
 torchvision==0.11.1
 tqdm==4.62.2
+wandb==12.1
 ```
 
 Download and set up the datasets to use. To get the datasets we use in the paper, run
