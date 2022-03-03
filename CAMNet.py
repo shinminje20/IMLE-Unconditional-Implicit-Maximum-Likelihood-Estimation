@@ -53,7 +53,8 @@ class CAMNet(nn.Module):
     def __init__(self, res=[32, 64, 128, 256], levels=4, code_nc=5, in_nc=3,
         out_nc=3, map_nc=128, latent_nc=512, resid_nc=[128, 64, 64, 64],
         dense_nc=[256, 192, 128, 64], n_blocks=6, act_type="leakyrelu",
-        feat_scales=None, color_space="rgb", **kwargs):
+        feat_scales=None, color_space="rgb", init_scale=.1, init_type="kaiming",
+        **kwargs):
         super(CAMNet, self).__init__()
 
         ########################################################################
