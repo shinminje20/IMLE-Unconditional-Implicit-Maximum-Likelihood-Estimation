@@ -103,7 +103,7 @@ def get_new_codes(z_dims, corrupted_data, backbone, loss_type, code_bs=6,
         sp = min(ns, sample_parallelism[level_idx])
         shape = z_dims[level_idx]
 
-        tqdm.write(f"ns {ns} | sp {sp} | sp1 {sample_parallelism[idx]}")
+        tqdm.write(f"ns {ns} | sp {sp} | sp1 {sample_parallelism[level_idx]}")
 
         for i in tqdm(range(ns // sp), desc="Sampling", leave=False, dynamic_ncols=True):
             for idx,(cx,ys) in enumerate(loader):
