@@ -16,6 +16,7 @@ from Corruptions import Corruption
 from Data import *
 from utils.Utils import *
 from utils.UtilsColorSpace import *
+from utils.UtilsLoss import *
 from utils.UtilsLPIPS import LPIPSFeats
 from utils.UtilsNN import *
 
