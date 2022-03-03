@@ -367,12 +367,11 @@ if __name__ == "__main__":
         results_file = f"{save_dir}/val_images/with_no_training.png"
         save_image_grid(get_images(corruptor, model, data_eval), results_file)
         wandb.log({"before_training": wandb.Image(results_file)})
+
     tqdm.write(f"----- Beginning Training -----")
 
-    tqdm.write(f"1 ---------------- {args.ns}")
-    assert False
-
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
+        tqdm.write(f"1 ---------------- {args.ns}")
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor, model, optimizer, scheduler, data_tr,
             loss_type=args.loss, bs=args.bs, mini_bs=args.mini_bs,
