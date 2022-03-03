@@ -317,7 +317,7 @@ class CorruptedDataset(Dataset):
     """
     def __init__(self, source, corruptor, bs=1):
         super(CorruptedDataset, self).__init__()
-        loader = DataLoader(source, num_workers=num_workers, batch_size=1,
+        loader = DataLoader(source, num_workers=num_workers, batch_size=8,
             collate_fn=collate_fn, pin_memory=True)
         self.corrupted_xs = []
         self.ys = []
