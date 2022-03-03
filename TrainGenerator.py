@@ -372,6 +372,7 @@ if __name__ == "__main__":
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         tqdm.write(f"1 ---------------- {args.ns}")
+        assert False
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor, model, optimizer, scheduler, data_tr,
             loss_type=args.loss, bs=args.bs, mini_bs=args.mini_bs,
