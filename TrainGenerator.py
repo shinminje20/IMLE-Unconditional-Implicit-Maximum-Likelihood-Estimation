@@ -508,7 +508,7 @@ if __name__ == "__main__":
         images_file = f"{save_dir}/val_images/epoch{e}.png"
         save_image_grid(get_images(corruptor, model, data_eval), images_file)
         wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
-                   "results": wandb.Image(images_file)}, step=e)
+                   "results": wandb.Image(images_file)})
         state_file = f"{save_dir}/{e}.pt"
         wandb_save({"run_id": run_id, "corruptor": corruptor.cpu(),
             "model": model.cpu(), "optimizer": optimizer, "last_epoch": e,
