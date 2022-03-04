@@ -481,6 +481,8 @@ if __name__ == "__main__":
         save_image_grid(get_images(corruptor, model, data_eval), results_file)
         wandb.log({"before_training": wandb.Image(results_file)})
 
+    tqdm.write(f"----- Final Arguments -----")
+    tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
