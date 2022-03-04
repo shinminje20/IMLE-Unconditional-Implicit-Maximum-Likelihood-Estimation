@@ -246,7 +246,7 @@ def dict_to_nice_str(dict, max_line_length=80):
             s += f"\n{k}: {dict[k]} "
             last_line_length = item_len
         else:
-            f"{k}: {dict[k]} "
+            s += f"{k}: {dict[k]} "
             last_line_length += item_len
     return s
 
