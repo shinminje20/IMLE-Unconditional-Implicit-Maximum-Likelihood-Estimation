@@ -341,7 +341,7 @@ if __name__ == "__main__":
         help="resolutions to see data at")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
-    P.add_argument("--verbose", choices=[0, 1, 2], default=0, type=int,
+    P.add_argument("--verbose", choices=[0, 1, 2], default=1, type=int,
         help="verbosity level")
     P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
         help="path to data if not in normal place")
