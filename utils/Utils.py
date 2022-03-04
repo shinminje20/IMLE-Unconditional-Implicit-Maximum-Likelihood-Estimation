@@ -239,6 +239,7 @@ def wandb_save(dictionary, path):
 def dict_to_nice_str(dict, max_line_length=80):
     """
     """
+    print(dict)
     s, last_line_length = "", 0
     for k in sorted(dict.items()):
         item_len = len(f"{k}: {dict[k]} ")
