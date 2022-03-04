@@ -242,7 +242,7 @@ def dict_to_nice_str(dict, max_line_length=80):
     s, last_line_length = "", 0
     for k in sorted(dict.items()):
         item_len = len(f"{k}: {dict[k]} ")
-        if last_line_length + item_len > max_line_length
+        if last_line_length + item_len > max_line_length:
             s += f"\n{k}: {dict[k]} "
             last_line_length = item_len
         else:
