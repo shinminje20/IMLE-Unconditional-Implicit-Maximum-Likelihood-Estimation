@@ -197,7 +197,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     return make_cpu(make_3dim(results))
 
 
-def get_new_codes(corrupted_data, backbone, loss_type, code_bs=6,
+def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
     ns=128, sp=2, in_color_space="rgb", out_color_space="rgb",
     proj_dim=None, verbose=1):
     """Returns a list of new latent codes found via hierarchical sampling. For
@@ -262,7 +262,7 @@ def get_new_codes(corrupted_data, backbone, loss_type, code_bs=6,
     return make_cpu(level_codes)
 
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
-    loss_type="lpips", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
+    loss_type="resolution", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
     ns=1, sp=1, in_color_space="rgb", out_color_space="rgb", verbose=0,
     num_prints=10, proj_dim=None):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
@@ -341,7 +341,7 @@ if __name__ == "__main__":
         help="resolutions to see data at")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
-    P.add_argument("--verbose", choices=[0, 1, 2], default=0, type=int,
+    P.add_argument("--verbose", choices=[0, 1, 2], default=1, type=int,
         help="verbosity level")
     P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
         help="path to data if not in normal place")
@@ -352,21 +352,17 @@ if __name__ == "__main__":
 
     P.add_argument("--arch", default="camnet", choices=["camnet"],
         help="Model architecture to use. Architecture hyperparameters are parsed later based on this")
-    P.add_argument("--loss", default="resolution", choices=["mse", "lpips", "resolution"],
-        help="loss function to use")
-    P.add_argument("--proj_dim", default=None, type=int,
+    P.add_argument("--proj_dim", default=1000, type=int,
         help="projection dimensionality")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
-    P.add_argument("--n_ramp", default=1, type=int,
-        help="number of epochs to ramp learning rate")
     P.add_argument("--bs", type=int, default=8,
         help="batch size")
     P.add_argument("--mini_bs", type=int, default=4,
         help="minibatch size")
     P.add_argument("--code_bs", type=int, default=4,
         help="batch size to use for sampling codes")
-    P.add_argument("--ns", type=int, nargs="+", default=[512, 64, 32, 16],
+    P.add_argument("--ns", type=int, nargs="+", default=[256, 64, 64, 64],
         help="number of samples for IMLE")
     P.add_argument("--ipcpe", type=int, default=2,
         help="iters_per_code_per_ex")
@@ -376,9 +372,9 @@ if __name__ == "__main__":
         help="weight decay")
     P.add_argument("--mm", nargs="+", default=(.9, .999), type=float,
         help="momentum (one arg for SGD, two—beta1 and beta2 for Adam)")
-    P.add_argument("--color_space", choices=["rgb", "lab"], default="lab",
+    P.add_argument("--color_space", choices=["rgb", "lab"], default="rgb",
         help="Color space to use during training")
-    P.add_argument("--sp", type=int, default=[1], nargs="+",
+    P.add_argument("--sp", type=int, default=128, nargs="+",
         help="parallelism across samples during code training")
     P.add_argument("--gpus", type=int, default=[0], nargs="+",
         help="GPU ids")
@@ -403,12 +399,10 @@ if __name__ == "__main__":
         help="list of numbers of dense channels in RRDB blocks for each CAMNet level")
     P.add_argument("--n_blocks", default=6, type=int,
         help="number of RRDB blocks inside each level")
-    P.add_argument("--act_type", default="leakyrelu",
-        choices=["leakyrelu"],
+    P.add_argument("--act_type", default="leakyrelu", choices=["leakyrelu"],
         help="activation type")
-    P.add_argument("--feat_scales", default=None, type=int,
-        help="amount by which to scale features, or None")
-    P.add_argument("--init_type", choices=["kaiming", "normal"], default="kaiming",
+    P.add_argument("--init_type", choices=["kaiming", "normal"],
+        default="kaiming",
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
@@ -416,11 +410,9 @@ if __name__ == "__main__":
     P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
         help="grayscale corruption")
     P.add_argument("--pix_mask_size", default=8, type=int,
-        help="fraction of pixels to mask at 16x16 resolution")
+        help="sidelength of image at which to do masking")
     P.add_argument("--pix_mask_frac", default=.1, type=float,
-        help="fraction of pixels to mask at 16x16 resolution")
-    P.add_argument("--rand_illumination", default=0, type=float,
-        help="amount by which the illumination of an image can change")
+        help="fraction of pixels to mask")
     P.add_argument("--fill", default="zero", choices=["color", "zero"],
         help="how to fill masked out areas")
     args = P.parse_args()
@@ -474,7 +466,7 @@ if __name__ == "__main__":
 
     # Setup the color spaces
     in_color_space = "lab" if "_lab" in args.data else "rgb"
-    out_color_space = "rgb" if args.loss in ["lpips", "resolution"] or args.color_space == "rgb" else "lab"
+    out_color_space = "rgb" # for now
     tqdm.write(f"Color space settings: input {in_color_space} | internal {args.color_space} | output {out_color_space}")
 
     # Setup the scheduler
@@ -489,13 +481,14 @@ if __name__ == "__main__":
         save_image_grid(get_images(corruptor, model, data_eval), results_file)
         wandb.log({"before_training": wandb.Image(results_file)})
 
+    tqdm.write(f"----- Final Arguments -----")
+    tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
             corruptor, model, optimizer, scheduler, data_tr,
-            loss_type=args.loss, bs=args.bs, mini_bs=args.mini_bs,
-            code_bs=args.code_bs, ns=args.ns,
+            bs=args.bs, mini_bs=args.mini_bs, code_bs=args.code_bs, ns=args.ns,
             iters_per_code_per_ex=args.ipcpe, verbose=args.verbose,
             in_color_space=in_color_space, out_color_space=out_color_space,
             sp=args.sp, proj_dim=args.proj_dim)
