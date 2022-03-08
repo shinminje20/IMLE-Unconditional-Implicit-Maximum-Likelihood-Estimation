@@ -175,6 +175,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
+    ns = 4 # reject bad samples but keep average and good ones
     model = model.module
     idxs = list(range(len(dataset))) if idxs is None else idxs
     images_dataset = Subset(dataset, idxs)
