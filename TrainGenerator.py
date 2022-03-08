@@ -14,6 +14,7 @@ from torch.cuda.amp import autocast, GradScaler
 from CAMNet import CAMNet, get_z_dims
 from Corruptions import Corruption
 from Data import *
+from EvalGenerator import get_images
 from utils.Utils import *
 from utils.UtilsColorSpace import *
 from utils.UtilsLPIPS import LPIPSFeats
@@ -162,7 +163,9 @@ class BroadcastMSELoss(nn.Module):
             raise ValueError(f"Unknown reduction {self.reduction}")
 
 def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
-    samples_per_image=5, in_color_space="rgb", out_color_space="rgb"):
+    samples_per_image=5, in_color_space="rgb", out_color_space="rgb", ns=10,
+    sp=128, code_bs=4, loss_type="resolution", in_color_space="rgb",
+    out_color_space="rgb", proj_dim=None, **kwargs):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 
@@ -181,9 +184,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
 
     corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
-    codes = [torch.randn((len(corrupted_data),)+z, device=device)
-        for z in get_z_dims(model)]
-    codes = ZippedDataset(*codes)
+    codes = ZippedDataset(*get_new_codes(corrupted_data, model, **kwargs))
     batch_dataset = ZippedDataset(codes, corrupted_data)
 
     with torch.no_grad():
@@ -199,7 +200,7 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
 
 def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
     ns=128, sp=2, in_color_space="rgb", out_color_space="rgb",
-    proj_dim=None, verbose=1):
+    proj_dim=None, verbose=1, **kwargs):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -264,7 +265,7 @@ def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss_type="resolution", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
     ns=1, sp=1, in_color_space="rgb", out_color_space="rgb", verbose=0,
-    num_prints=10, proj_dim=None):
+    num_prints=10, proj_dim=None, **kwargs):
     """Returns a (corruptor, model, optimizer) tuple after training [model] and
     optionally [corruptor] for one epoch on data from [loader] via cIMLE.
 
@@ -298,9 +299,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
                 images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx+bs])
                 corrupted_data = CorruptedDataset(images_data, corruptor)
                 codes_data = ZippedDataset(*get_new_codes(corrupted_data, model,
-                    loss_type=loss_type, code_bs=code_bs, ns=ns, sp=sp,
-                    in_color_space=in_color_space,
-                    out_color_space=out_color_space, verbose=verbose))
+                    **kwargs))
                 batch_dataset = ZippedDataset(codes_data, corrupted_data)
                 loader = DataLoader(batch_dataset, batch_size=mini_bs,
                     shuffle=True, num_workers=num_workers, pin_memory=True)
@@ -465,9 +464,9 @@ if __name__ == "__main__":
     data_eval = GeneratorDataset(data_eval, get_gen_augs())
 
     # Setup the color spaces
-    in_color_space = "lab" if "_lab" in args.data else "rgb"
-    out_color_space = "rgb" # for now
-    tqdm.write(f"Color space settings: input {in_color_space} | internal {args.color_space} | output {out_color_space}")
+    args.in_color_space = "lab" if "_lab" in args.data else "rgb"
+    args.out_color_space = "rgb"
+    tqdm.write(f"Color space settings: input {args.in_color_space} | internal {args.color_space} | output {args.out_color_space}")
 
     # Setup the scheduler
     scheduler = CosineAnnealingLR(optimizer,
@@ -478,7 +477,7 @@ if __name__ == "__main__":
     ############################################################################
     if args.resume is None:
         results_file = f"{save_dir}/val_images/with_no_training.png"
-        save_image_grid(get_images(corruptor, model, data_eval), results_file)
+        save_image_grid(get_images(corruptor, model, data_eval, **vars(args)), results_file)
         wandb.log({"before_training": wandb.Image(results_file)})
 
     tqdm.write(f"----- Final Arguments -----")
@@ -487,11 +486,7 @@ if __name__ == "__main__":
 
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         corruptor, model, optimizer, scheduler, loss_tr = one_epoch_imle(
-            corruptor, model, optimizer, scheduler, data_tr,
-            bs=args.bs, mini_bs=args.mini_bs, code_bs=args.code_bs, ns=args.ns,
-            iters_per_code_per_ex=args.ipcpe, verbose=args.verbose,
-            in_color_space=in_color_space, out_color_space=out_color_space,
-            sp=args.sp, proj_dim=args.proj_dim)
+            corruptor, model, optimizer, scheduler, data_tr, **vars(args))
 
         ########################################################################
         # After each epoch, log results and data
@@ -499,7 +494,7 @@ if __name__ == "__main__":
         lr = scheduler._last_lr[0]
         tqdm.write(f"loss_tr {loss_tr:.5f} | lr {lr:.5f}")
         images_file = f"{save_dir}/val_images/epoch{e}.png"
-        save_image_grid(get_images(corruptor, model, data_eval), images_file)
+        save_image_grid(get_images(corruptor, model, data_eval, **vars(args)), images_file)
         wandb.log({"loss_tr": loss_tr, "epochs": e, "lr": lr,
                    "results": wandb.Image(images_file)})
         state_file = f"{save_dir}/{e}.pt"
