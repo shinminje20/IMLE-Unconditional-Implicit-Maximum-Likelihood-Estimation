@@ -75,17 +75,31 @@ def get_data_splits(data_str, eval_str, res=None, data_folder_path=f"{project_di
                     - if specified, validation data will include the minimum and
                         maximum resolutions
     """
+    ############################################################################
+    # CIFAR-10 has its own weird logic
+    ############################################################################
+    if data_str == "cifar10":
+        if eval_str == "test":
+            return (CIFAR10(root=data_folder_path, train=True, transform=None,
+                            download=True),
+                    CIFAR10(root=data_folder_path, train=False, transform=None,
+                            download=True))
+        else:
+            return (CIFAR10(root=data_folder_path, train=True, transform=None,
+                            download=True),
+                    CIFAR10(root=data_folder_path, train=True, transform=None,
+                            download=True))
+
     def paths_to_datasets(data_paths):
         """Returns ImageFolder(s) given [data_paths], a list of data paths for a
         list of ImageFolders, or a string for a single ImageFolder.
         """
-        if isinstance(data_paths, (list, OrderedDict)):
+        if len(data_paths) > 1 and isinstance(data_paths, (OrderedDict, list)):
             return [ImageFolder(data_path) for data_path in data_paths]
+        elif isinstance(data_paths, (OrderedDict, list)):
+            return ImageFolder(list(data_paths)[0])
         else:
-            if data_str == "cifar10":
-                return CIFAR10(root=data_folder_path, train=True, transform=None, download=True)
-            else:
-                return ImageFolder(data_paths)
+            return ImageFolder(data_paths)
 
     data_path = f"{data_folder_path}/{data_str}"
 
@@ -103,8 +117,10 @@ def get_data_splits(data_str, eval_str, res=None, data_folder_path=f"{project_di
         data_paths_tr = [f"{data_path}_{r}x{r}/train" for r in res]
         data_paths_eval = [
              f"{data_path}_{min(res)}x{min(res)}/{eval_split_specifier}",
-             f"{data_path}_{max(res)}x{max(res)}/{eval_split_specifier}"
-        ]
+             f"{data_path}_{max(res)}x{max(res)}/{eval_split_specifier}"]
+
+        data_paths_tr = remove_duplicates(data_paths_tr)
+        data_paths_eval = remove_duplicates(data_paths_tr)
 
         check_paths_exist([data_paths_tr, data_paths_eval])
     return paths_to_datasets(data_paths_tr), paths_to_datasets(data_paths_eval)

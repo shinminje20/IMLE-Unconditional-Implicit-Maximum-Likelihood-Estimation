@@ -172,6 +172,7 @@ if __name__ == "__main__":
     augs_tr, augs_fn, augs_te = get_simclr_augs(crop_size=args.crop_size,
         gaussian_blur=args.gaussian_blur, color_s=args.color_s)
     data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
+
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True,
         **seed_kwargs(cur_seed))

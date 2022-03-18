@@ -270,3 +270,17 @@ def save_image_grid(images, path):
         os.makedirs(os.path.dirname(path))
     plt.savefig(path, dpi=512)
     tqdm.write(f"Saved image grid to {path}")
+
+
+def remove_duplicates(x):
+    """Removes duplicates from order 1 list [x]."""
+    seen_elements = set()
+    result = []
+    for e in x:
+        if e in seen_elements:
+            continue
+        else:
+            result.append(e)
+            seen_elements.add(e)
+
+    return result
