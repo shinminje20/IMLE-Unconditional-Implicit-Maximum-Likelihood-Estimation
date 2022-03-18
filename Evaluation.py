@@ -117,7 +117,7 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, 
     return accuracy(nn.Sequential(F, model), loader_te)
 
 def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
-    precompute_feats=True, ex_per_class="all", trials=3, epochs=100, bs=16,
+    precompute_feats=True, ex_per_class="all", trials=3, epochs=100, bs=64,
     data_name=None, data_split=None):
     """Returns evaluation accuracy of feature extractor [feature_extractor].
 
