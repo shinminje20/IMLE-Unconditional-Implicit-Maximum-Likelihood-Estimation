@@ -124,7 +124,7 @@ class CAMNet(nn.Module):
         # Linear algebra soup
         ########################################################################
         bs = level_output.shape[0]
-        feat = torch.tensor([], device=device)
+        feat = torch.tensor([], device="cuda:1")
         outputs = []
         for idx,(code,(_,level)) in enumerate(zip(codes, self.levels.items())):
 
@@ -213,6 +213,9 @@ class CAMNetModule(nn.Module):
         code        -- the code for the current level
         feature     -- the feature computed by the previous layer
         """
+
+
+
         bs, _, w, h = level_input.shape
         level_input = torch.cat([
             level_input,

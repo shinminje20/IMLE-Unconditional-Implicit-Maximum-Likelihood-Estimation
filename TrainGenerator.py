@@ -14,7 +14,6 @@ from torch.cuda.amp import autocast, GradScaler
 from CAMNet import CAMNet, get_z_dims
 from Corruptions import Corruption
 from Data import *
-from EvalGenerator import get_images
 from utils.Utils import *
 from utils.UtilsColorSpace import *
 from utils.UtilsLPIPS import LPIPSFeats
@@ -164,8 +163,7 @@ class BroadcastMSELoss(nn.Module):
 
 def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     samples_per_image=5, in_color_space="rgb", out_color_space="rgb", ns=10,
-    sp=128, code_bs=4, loss_type="resolution", in_color_space="rgb",
-    out_color_space="rgb", proj_dim=None, **kwargs):
+    sp=128, code_bs=4, loss_type="resolution", proj_dim=None, **kwargs):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 

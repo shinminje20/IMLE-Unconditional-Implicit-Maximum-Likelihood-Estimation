@@ -18,7 +18,7 @@ from utils.UtilsNN import *
 
 from TrainGenerator import get_z_dims
 
-def get_images(corruptor, generator, images, **kwargs, bs=256, res=128):
+def get_images(corruptor, generator, images, code_bs=256, res=128):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 
@@ -28,20 +28,22 @@ def get_images(corruptor, generator, images, **kwargs, bs=256, res=128):
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
-    model = model.module
-    z_dims = get_z_dims(model)
-    result = torch.zeros(len(images), 3, res, res), device=device)
+    generator = generator.module
+    z_dims = get_z_dims(generator)
+    result = torch.zeros(len(images), 3, res, res, device="cuda:1")
 
-    for idx in range():
-        x = images[idx:idx + bs]
-        c = [torch.randn((bs,)+z, device=device) for z in z_dims]
-        fx = generator(x.to(device), c.to(device), loi=-1)
-        result[idx:idx+bs] = fx
+    with autocast():
+        with torch.no_grad():
+            for idx in tqdm(range(0, len(images), code_bs), desc="Sampling images", leave=False):
+                x = images[idx:idx + code_bs]
+                c = [torch.randn((code_bs,)+z, device="cuda:1") for z in z_dims]
+                x = x.to("cuda:1")
+                result[idx:idx+code_bs] = generator(x, c, loi=-1)
 
     return result
 
 
-def one_epoch_contrastive(model, optimizer, loader, temp=.5):
+def one_epoch_isicle(corruptor, generator, model, optimizer, loader, temp=.5, code_bs=128):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch.
 
@@ -61,7 +63,10 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
 
 
         images = torch.cat([x1,x2], axis=0)
-        images = get_images(corruptor, model, TensorDataset(images), idxs=None, samples_per_image=1)
+        images = get_images(corruptor, generator, images, code_bs=code_bs)
+        x1 = images[:len(images) // 2]
+        x1 = images[len(images) // 2]
+
 
         with autocast():
 
@@ -93,6 +98,12 @@ if __name__ == "__main__":
         help="suffix")
     P.add_argument("--generator", required=True, type=str,
         help="Path to generator")
+    P.add_argument("--gpus", type=int, default=[0], nargs="+",
+        help="GPU ids")
+    P.add_argument("--res", type=int, default=128, choices=[64, 128],
+        help="resolutions to see data at")
+    P.add_argument("--crop_size", type=int, default=32,
+        help="resolution at which to feed images to the network")
 
     # Non-hyperparameter arguments
     P.add_argument("--num_workers", default=24, type=int,
@@ -166,21 +177,21 @@ if __name__ == "__main__":
         args.run_id = wandb.util.generate_id()
         save_dir = simclr_folder(args)
 
-        #
-        generator = resume_data["model"].to(device)
-        optimizer = resume_data["optimizer"]
-        corruptor = resume_data["corruptor"].to(device)
-        gen_args = resume_data["args"]
-        gen_args_dict = {f"gen_{k}": v for k,v in gen_args.items()}
+        _, generator_data = wandb_load(args.generator)
+        generator = generator_data["model"].cpu().to("cuda:1")
+
+        corruptor = generator_data["corruptor"].cpu().to("cuda:1")
+        gen_args = generator_data["args"]
+        gen_args.__dict__ = {f"gen_{k}": v for k,v in vars(gen_args).items()}
         tqdm.write(f"Generator arguments:\n{dict_to_nice_str(vars(gen_args))}")
 
         wandb.init(anonymous="allow", id=args.run_id, project="isicle-simclr",
-            mode="online" if args.wandb else "disabled", config=vars(args) | gen_args_dict,
+            mode="online" if args.wandb else "disabled", config=args,
             name=f"{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}")
 
         model = HeadedResNet(args.backbone, args.proj_dim,
             head_type="projection",
-            small_image=(args.data in small_image_datasets)).to(device)
+            small_image=(args.data in small_image_datasets)).to("cuda:0")
         if args.opt == "adam":
             optimizer = Adam(get_param_groups(model, args.lars), lr=args.lr,
                 betas=args.mm, weight_decay=1e-6)
@@ -200,10 +211,10 @@ if __name__ == "__main__":
     scheduler = CosineAnnealingWarmupRestarts(optimizer,
         first_cycle_steps=args.epochs, max_lr=args.lr,  min_lr=1e-6,
         warmup_steps=args.n_ramp, last_epoch=last_epoch)
-    data_tr, data_eval = get_data_splits(args.data, args.eval, res=args.res,
+    data_tr, data_eval = get_data_splits(args.data, args.eval, res=[args.res],
         data_folder_path=args.data_folder_path)
-    augs_tr, augs_fn, augs_te = get_simclr_augs(crop_size=args.crop_size,
-        gaussian_blur=args.gaussian_blur, color_s=args.color_s)
+    augs_tr, augs_fn, augs_te = get_contrastive_augs(crop_size=args.crop_size,
+        gaussian_blur=False, color_s=0)
     data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
 
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
