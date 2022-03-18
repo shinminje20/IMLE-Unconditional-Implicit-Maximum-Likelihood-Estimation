@@ -65,7 +65,7 @@ if __name__ == "__main__":
         help="image resolution to load")
 
     # Non-hyperparameter arguments
-    P.add_argument("--num_workers", default=6, type=int,
+    P.add_argument("--num_workers", default=24, type=int,
         help="Number of workers for data loading")
     P.add_argument("--eval_iter", default=10, type=int,
         help="number of epochs between linear evaluations")

@@ -52,7 +52,7 @@ def accuracy(model, loader):
 
     return correct / total
 
-def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True):
+def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True, num_workers=24):
     """Returns validation training and testing datasets. The testing dataset may
     be a string 'cv' to indicate cross validation if [data_te] is 'cv'.
 
