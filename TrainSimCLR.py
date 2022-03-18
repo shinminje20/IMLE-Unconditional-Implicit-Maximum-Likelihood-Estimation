@@ -8,6 +8,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler, autocast
 
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
+
 from Data import *
 from Evaluation import classification_eval
 from utils.UtilsContrastive import *
@@ -25,6 +27,7 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     loader          -- a DataLoader over the data to train on
     temp            -- contrastive loss temperature
     """
+    return model, optimizer, 1
     model.train()
     loss_fn = NTXEntLoss(temp)
     loss_total = 0
@@ -165,8 +168,9 @@ if __name__ == "__main__":
     ############################################################################
     # Instantiate the scheduler and get the data
     ############################################################################
-    scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
-        last_epoch=last_epoch)
+    scheduler = CosineAnnealingWarmupRestarts(optimizer,
+        first_cycle_steps=args.epochs, max_lr=args.lr,  min_lr=1e-6,
+        warmup_steps=args.n_ramp, last_epoch=last_epoch)
     data_tr, data_eval = get_data_splits(args.data, args.eval, res=args.res,
         data_folder_path=args.data_folder_path)
     augs_tr, augs_fn, augs_te = get_simclr_augs(crop_size=args.crop_size,
@@ -197,12 +201,12 @@ if __name__ == "__main__":
                 data_split=args.eval, trials=1, num_workers=args.num_workers)
 
             wandb.log({"epoch": e, "loss_tr": loss_tr / len(loader),
-                "acc_val": val_acc_avg, "lr": scheduler.get_last_lr()[0]})
-            tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss_tr {loss_tr / len(loader):.5f} | val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
+                "acc_val": val_acc_avg, "lr": scheduler.get_lr()[0]})
+            tqdm.write(f"End of epoch {e} | lr {scheduler.get_lr()[0]:.5f} | loss_tr {loss_tr / len(loader):.5f} | val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
         else:
             wandb.log({"epoch": e, "loss_tr": loss_tr / len(loader),
-                "lr": scheduler.get_last_lr()[0]})
-            tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss_tr {loss_tr / len(loader):.5f}")
+                "lr": scheduler.get_lr()[0]})
+            tqdm.write(f"End of epoch {e} | lr {scheduler.get_lr()[0]:.5f} | loss_tr {loss_tr / len(loader):.5f}")
 
         if e % args.save_iter == 0 and not e == 0:
             save_simclr({"model": model, "optimizer": optimizer, "args": args,

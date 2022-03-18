@@ -10,6 +10,8 @@ pytorch==1.10.0
 torchvision==0.11.1
 tqdm==4.62.2
 wandb==12.1
+pip install 'git+https://github.com/katsura-jp/pytorch-cosine-annealing-with-warmup'
+
 ```
 
 Download and set up the datasets to use. To get the datasets we use in the paper, run
