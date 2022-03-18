@@ -66,12 +66,12 @@ def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True):
     precompute_feats    -- whether to precompute features.
     """
     if precompute_feats:
-        return (FeatureDataset(XYDataset(data_tr, augs_fn), F),
-                FeatureDataset(XYDataset(data_te, augs_te), F))
+        return (FeatureDataset(XYDataset(data_tr, augs_fn), F, bs=bs, num_workers=num_workers),
+                FeatureDataset(XYDataset(data_te, augs_te), F, bs=bs, num_workers=num_workers))
     else:
         return XYDataset(data_tr, augs_fn), XYDataset(data_te, augs_te)
 
-def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, epochs=100, bs=64):
+def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, epochs=100, bs=64, num_workers=24):
     """Returns the accuracy of a linear model trained on features from [F] of
     [data_tr] on [data_te].
 
@@ -85,9 +85,9 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, 
     """
     loader_tr = DataLoader(data_tr, shuffle=True, pin_memory=True,
         batch_size=bs, drop_last=False,
-        num_workers=6, **seed_kwargs(trial))
+        num_workers=num_workers, **seed_kwargs(trial))
     loader_te = DataLoader(data_te, pin_memory=True, batch_size=1024,
-        drop_last=False, num_workers=6, **seed_kwargs(trial))
+        drop_last=False, num_workers=num_workers, **seed_kwargs(trial))
 
     model = nn.Linear(out_dim, num_classes).to(device)
     optimizer = Adam(model.parameters(), lr=1e-3, weight_decay=1e-6)
@@ -118,7 +118,7 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, 
 
 def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
     precompute_feats=True, ex_per_class="all", trials=3, epochs=100, bs=64,
-    data_name=None, data_split=None):
+    data_name=None, data_split=None, num_workers=24):
     """Returns evaluation accuracy of feature extractor [feature_extractor].
 
     Args:
@@ -180,12 +180,12 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
 
         trial_data_tr, trial_data_te = get_eval_data(trial_data_tr, trial_data_te,
             augs_fn, augs_te, F=feature_extractor,
-            precompute_feats=precompute_feats)
+            precompute_feats=precompute_feats, num_workers=num_workers)
 
         accuracies.append(get_eval_trial_accuracy(trial_data_tr, trial_data_te,
             (None if precompute_feats else feature_extractor),
             out_dim, num_classes,
-            epochs=epochs, bs=bs, trial=t))
+            epochs=epochs, bs=bs, trial=t, num_workers=num_workers))
 
     return np.mean(accuracies), np.std(accuracies) * 1.96 / np.sqrt(trials)
 

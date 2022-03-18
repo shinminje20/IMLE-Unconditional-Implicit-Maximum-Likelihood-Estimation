@@ -65,7 +65,7 @@ if __name__ == "__main__":
         help="image resolution to load")
 
     # Non-hyperparameter arguments
-    P.add_argument("--n_workers", default=6, type=int,
+    P.add_argument("--num_workers", default=6, type=int,
         help="Number of workers for data loading")
     P.add_argument("--eval_iter", default=10, type=int,
         help="number of epochs between linear evaluations")
@@ -174,7 +174,7 @@ if __name__ == "__main__":
     data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
 
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
-        drop_last=True, num_workers=args.n_workers, pin_memory=True,
+        drop_last=True, num_workers=args.num_workers, pin_memory=True,
         **seed_kwargs(cur_seed))
 
     tqdm.write(f"Dataset length {len(data_tr)}")
@@ -194,7 +194,7 @@ if __name__ == "__main__":
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
             val_acc_avg, val_acc_std = classification_eval(model.backbone,
                 data_tr, data_eval, augs_fn, augs_te, data_name=args.data,
-                data_split=args.eval, trials=1)
+                data_split=args.eval, trials=1, num_workers=args.num_workers)
 
             wandb.log({"epoch": e, "loss_tr": loss_tr / len(loader),
                 "acc_val": val_acc_avg, "lr": scheduler.get_last_lr()[0]})

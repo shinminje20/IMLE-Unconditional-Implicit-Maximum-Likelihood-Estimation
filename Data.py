@@ -249,9 +249,9 @@ class FeatureDataset(Dataset):
     bs      -- the batch size to use for feature extraction
     """
 
-    def __init__(self, data, F, bs=500):
+    def __init__(self, data, F, bs=1000, num_workers=24):
         super(FeatureDataset, self).__init__()
-        loader = DataLoader(data, batch_size=bs, drop_last=False, pin_memory=True)
+        loader = DataLoader(data, batch_size=bs, drop_last=False, pin_memory=True, num_workers=num_workers)
 
         data_x, data_y = [], []
         F = F.to(device)
