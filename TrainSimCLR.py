@@ -27,7 +27,6 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     loader          -- a DataLoader over the data to train on
     temp            -- contrastive loss temperature
     """
-    return model, optimizer, 1
     model.train()
     loss_fn = NTXEntLoss(temp)
     loss_total = 0
