@@ -60,6 +60,8 @@ if __name__ == "__main__":
         help="file to resume from")
     P.add_argument("--suffix", default="", type=str,
         help="suffix")
+    P.add_argument("--res", default=None, choices=[32, 64, 128, 256], type=int,
+        help="image resolution to load")
 
     # Non-hyperparameter arguments
     P.add_argument("--n_workers", default=6, type=int,
@@ -164,7 +166,8 @@ if __name__ == "__main__":
     ############################################################################
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
-    data_tr, data_eval = get_data_splits(args.data, args.eval, data_folder_path=args.data_folder_path)
+    data_tr, data_eval = get_data_splits(args.data, args.eval, res=args.res,
+        data_folder_path=args.data_folder_path)
     augs_tr, augs_fn, augs_te = get_simclr_augs(crop_size=args.crop_size,
         gaussian_blur=args.gaussian_blur, color_s=args.color_s)
     data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
