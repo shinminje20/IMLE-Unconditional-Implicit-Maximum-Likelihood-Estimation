@@ -130,7 +130,7 @@ def get_data_splits(data_str, eval_str, res=None, data_folder_path=f"{project_di
 ################################################################################
 
 
-def get_simclr_augs(crop_size=32, gaussian_blur=False, color_s=.5):
+def get_contrastive_augs(crop_size=32, gaussian_blur=False, color_s=0):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
 
@@ -386,6 +386,14 @@ class ManyTransformsDataset(Dataset):
     def __getitem__(self, idx):
         x = self.source_dataset[idx][0]
         return tuple([t(x) for t in self.transforms])
+
+class TensorDataset(Dataset):
+    def __init__(self, source):
+        super(TensorDataset, self).__init__()
+        self.source = source
+
+    def __len__(self): return len(source)
+    def __getitem__(self, idx): return source[idx]
 
 class ZippedDataset(Dataset):
     """A Dataset that zips together iterables. Its transform should be
