@@ -58,12 +58,16 @@ def get_smaller_dataset(source, splits=["train", "val", "test"],
     ############################################################################
 
     # Resort arguments so that they are in alphabetical order
-    sorted_idxs = np.array(sorted(range(len(splits)), key=lambda i: splits[i]))
-    split_n_cls = np.array(split_n_cls)[sorted_idxs]
-    split_npc = np.array(split_npc)[sorted_idxs]
+    # sorted_idxs = np.array(sorted(range(len(splits)), key=lambda i: splits[i]))
+    # split_n_cls = np.array(split_n_cls)[sorted_idxs]
+    # split_npc = np.array(split_npc)[sorted_idxs]
+    #
+    # print(sorted_idxs, split_n_cls, split_npc)
 
     split2paths = defaultdict(lambda: [])
     for split, n_cls, npc in zip(splits, split_n_cls, split_npc):
+
+        print(split, n_cls, npc)
 
         random.seed(seed)
         classes = random.sample(

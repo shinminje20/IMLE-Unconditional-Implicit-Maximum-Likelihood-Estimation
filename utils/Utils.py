@@ -46,6 +46,8 @@ def set_seed(seed):
     else:
         raise ValueError(f"Seed should be int or contain resuming keys")
 
+    return seed
+
 ################################################################################
 # Miscellaneous utilities
 ################################################################################
@@ -142,51 +144,9 @@ def suffix_str(args):
     """Returns the suffix string for [args]."""
     return f"-{args.suffix}" if not args.suffix == "" else ""
 
-def new_camnet_folder(args):
-    """Returns the folder for saving a CAMNet model trained with [args].
-
-    Due to CAMNet's existing workings, models will actually be saved to
-    project_directory/models/camnet/camnet_folder(args)
-    """
-    folder = f"{project_dir}/models/new_camnet/{args.data}{opts_str(args)}{suffix_str(args)}"
-    if not os.path.exists(folder): os.makedirs(folder)
-    return folder
-
-def camnet_folder(args):
-    """Returns the folder for saving a CAMNet model trained with [args].
-
-    Due to CAMNet's existing workings, models will actually be saved to
-    project_directory/models/camnet/camnet_folder(args)
-    """
-    folder = f"{args.task}/{args.data}{opts_str(args)}{suffix_str(args)}"
-    actual_folder = f"{project_dir}/models/camnet/{folder}"
-    if not os.path.exists(actual_folder): os.makedirs(actual_folder)
-    return actual_folder
-
-def load_simclr(file):
-    """Returns a (model, optimizer, last_epoch, args, tensorboard results) tuple
-    from [file].
-    """
-    data = torch.load(file)
-    model = data["model"].to(device)
-    optimizer = data["optimizer"]
-    last_epoch = data["last_epoch"]
-    args = data["args"]
-    tb_results = data["tb_results"]
-    return model, optimizer, last_epoch, args, tb_results
-
-def save_simclr(model, optimizer, last_epoch, args, tb_results, folder):
-    """Saves input experiment objects to the [last_epoch].pt file [folder]."""
-    tb_results.flush()
-    tb_results.close()
-    torch.save({"model": model.cpu(), "optimizer": optimizer,
-        "last_epoch": last_epoch, "args": args, "tb_results": tb_results},
-        f"{folder}/{last_epoch}.pt")
-    model.to(device)
-
 def simclr_folder(args):
     """Returns the folder to which to save a resnet trained with [args]."""
-    folder = f"{project_dir}/models/simclr/{args.data}/{args.backbone}/{opts_str(args)}{suffix_str(args)}"
+    folder = f"{project_dir}/models_simclr/{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
@@ -201,19 +161,12 @@ def generator_folder(args):
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
-################################################################################
-# WandB stuff. WandB is finnicky to work with, and for actually managing model
-# checkpoints, it would be nice to just be able to do pass either of
-#
-#   --resume PATH_TO_CHECKPOINT or --resume RUN_ID/CHECKPOINT
-#
-# into a training script. Then, when the --resume argument isn't None, we just
-# fetch the required data—which will include a [run_id] and a [save_dir]. Then,
-# we create the path [save_dir/checkpoint] after mapping it onto our filesystem,
-# and return the required data for resuming. By returning [run_id], we have an
-# object that can be easily passed into `wandb.init()` to resume the run if
-# desired.
-################################################################################
+def isicle_folder(args):
+    """
+    """
+    folder = f"{project_dir}/models_isicle/{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}"
+    if not os.path.exists(folder): os.makedirs(folder)
+    return folder
 
 def wandb_load(checkoint):
     """Returns a (wandb run ID, data) tuple.
@@ -235,6 +188,24 @@ def wandb_save(dictionary, path):
     }
     torch.save(dictionary | resume_dictionary, path)
     tqdm.write(f"Saved files to {path}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 def dict_to_nice_str(dict, max_line_length=80):
     """

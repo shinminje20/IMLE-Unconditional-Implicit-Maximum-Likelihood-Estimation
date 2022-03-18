@@ -7,6 +7,7 @@ training and evaluation ImageFolders, and the various Dataset subclasses that
 can be used to construct various useful datasets.
 """
 from collections import OrderedDict
+import numpy as np
 import PIL
 import random
 import sys
@@ -15,7 +16,7 @@ from tqdm import tqdm
 import torch
 from torch.utils.data import Dataset, DataLoader, ConcatDataset, Subset, random_split
 
-from torchvision.datasets import ImageFolder
+from torchvision.datasets import ImageFolder, CIFAR10
 from torchvision import transforms
 from torchvision.transforms.functional import hflip
 
@@ -47,7 +48,7 @@ def seed_kwargs(seed=0):
     """Returns kwargs to be passed into a DataLoader to give it seed [seed]."""
     def seed_worker(worker_id):
         worker_seed = torch.initial_seed() % 2**32
-        numpy.random.seed(worker_seed)
+        np.random.seed(worker_seed)
         random.seed(worker_seed)
 
     g = torch.Generator()
@@ -59,7 +60,7 @@ def seed_kwargs(seed=0):
 # Functionality for loading datasets
 ################################################################################
 
-def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data"):
+def get_data_splits(data_str, eval_str, res=None, data_folder_path=f"{project_dir}/data"):
     """Returns data for training and evaluation. All Datasets returned are
     ImageFolders, meaning that another kind of dataset likely needs to be built
     on top of them.
@@ -81,9 +82,12 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
         if isinstance(data_paths, (list, OrderedDict)):
             return [ImageFolder(data_path) for data_path in data_paths]
         else:
-            return ImageFolder(data_paths)
+            if data_str == "cifar10":
+                return CIFAR10(root=data_folder_path, train=True, transform=None, download=True)
+            else:
+                return ImageFolder(data_paths)
 
-    data_path = f"{data_path}/{data_str}"
+    data_path = f"{data_folder_path}/{data_str}"
 
     if eval_str == "test":
         eval_split_specifier = "test"
@@ -102,7 +106,7 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
              f"{data_path}_{max(res)}x{max(res)}/{eval_split_specifier}"
         ]
 
-    check_paths_exist([data_paths_tr, data_paths_eval])
+        check_paths_exist([data_paths_tr, data_paths_eval])
     return paths_to_datasets(data_paths_tr), paths_to_datasets(data_paths_eval)
 
 ################################################################################
@@ -110,7 +114,7 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
 ################################################################################
 
 
-def get_simclr_augs(crop_size=32, gaussian_blur=False, color_s=.5, strong=True):
+def get_simclr_augs(crop_size=32, gaussian_blur=False, color_s=.5):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
 

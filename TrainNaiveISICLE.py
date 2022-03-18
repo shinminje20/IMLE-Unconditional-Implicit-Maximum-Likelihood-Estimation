@@ -1,62 +1,56 @@
-import math
+import argparse
 import sys
 from tqdm import tqdm
-
-from lpips import LPIPS
 
 import torch
 from torch.optim import Adam, SGD
 import torch.nn as nn
-from torch.nn.functional import normalize
 from torch.utils.data import DataLoader, Subset
-from torch.utils.tensorboard import SummaryWriter
 
 from torchvision.datasets import CIFAR10
 import torchvision.transforms as transforms
 
 from Data import *
 from Evaluation import classification_eval
-from ContrastiveUtils import *
-from Utils import *
+from utils.UtilsContrastive import *
+from utils.Utils import *
+from utils.NestedNamespace import *
 
-def one_epoch_naive_isicle(generator, model, optimizer, loader, temp=.5):
+def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch.
 
     The returned loss is averaged over batches.
 
-    generator   -- a generator to make real images from the images from [loader]
-    model       -- a model of the form projection_head(feature_extractor())
-    optimizer   -- the optimizer for [model]
-    loader      -- a DataLoader over the data to train on. It should return
-                    corrupted views of images so that [generator] can decorrupt
-                    them
-    temp        -- contrastive loss temperature
+    model           -- a model of the form projection_head(feature_extractor())
+    optimizer       -- the optimizer for [model]
+    loader          -- a DataLoader over the data to train on
+    temp            -- contrastive loss temperature
     """
     model.train()
     loss_fn = NTXEntLoss(temp)
     loss_total = 0
 
-    for i,(x, ys) in tqdm(enumerate(loader), desc="Batches", file=sys.stdout, total=len(loader), leave=False):
+    for x1,x2 in tqdm(loader, desc="Batches", file=sys.stdout, total=len(loader), leave=False):
 
-        with torch.no_grad():
-            x1 = generator(x1.float().to(device, non_blocking=True))
-            x2 = generator(x2.float().to(device, non_blocking=True))
+
 
         model.zero_grad()
-        loss = loss_fn(model(x1), model(x2))
+        loss = loss_fn(model(x1.float().to(device, non_blocking=True)),
+                       model(x2.float().to(device, non_blocking=True)))
         loss.backward()
         optimizer.step()
-
         loss_total += loss.item()
 
     return model, optimizer, loss_total / len(loader)
 
 if __name__ == "__main__":
-    P = argparse.ArgumentParser(description="ISICLE training")
+    P = argparse.ArgumentParser(description="SimCLR training")
     P.add_argument("--data", choices=["cifar10", "miniImagenet"],
-        default="cifar10",
+        default="miniImagenet",
         help="dataset to load images from")
+    P.add_argument("--generator", required=True, type=str,
+        help="Path to generative model for the dataset")
     P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
         help="The data to evaluate linear finetunings on")
 
@@ -78,8 +72,10 @@ if __name__ == "__main__":
         help="Resnet backbone to use")
     P.add_argument("--bs", default=1000, type=int,
         help="batch size")
-    P.add_argument("--color_distort", default=1, type=float,
+    P.add_argument("--color_s", default=1, type=float,
         help="color distortion strength")
+    P.add_argument("--strong", default=1, choices=[0, 1],
+        help="whether augmentations should be strong or not")
     P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
     P.add_argument("--lars", default=1, choices=[0, 1],
@@ -100,12 +96,12 @@ if __name__ == "__main__":
         help="LARS trust coefficient")
     P.add_argument("--seed", default=0, type=int,
         help="random seed")
-    args = P.parse_args()
+    args = NestedNamespace(P.parse_args())
 
     args.options = sorted([
         f"bs{args.bs}",
         f"epochs{args.epochs}",
-        f"color_distort{args.color_distort}",
+        f"color_s{args.color_s}",
         f"eval_{args.eval}",
         f"lars{args.lars}",
         f"lr{args.lr}",
@@ -113,6 +109,7 @@ if __name__ == "__main__":
         f"n_ramp{args.n_ramp}",
         f"opt_{args.opt}",
         f"seed{args.seed}",
+        f"strong{args.strong}",
         f"temp{args.temp}",
         f"trust{args.trust}",
     ])
@@ -124,10 +121,11 @@ if __name__ == "__main__":
     if args.opt == "sgd" and len(args.mm) == 2:
         raise ValueError("--mm must be a single momentum parameter if --opt is 'sgd'.")
     if args.data in no_val_split_datasets and args.eval == "val":
-        args.eval = "cv"
-        tqdm.write(f"--eval is set to 'val' but no validation split exists for {args.data}. Falling back to cross-validation.")
+        raise ValueError("The requested dataset has no validation split. Run with --eval test or cv instead.")
 
+    # This needs to be a tuple or a float depending on its length
     args.mm = args.mm[0] if len(args.mm) == 1 else args.mm
+    tqdm.write(f"Will save model to {simclr_folder(args)}")
 
     ############################################################################
     # Load prior state if it exists, otherwise instantiate a new training run.
@@ -135,15 +133,17 @@ if __name__ == "__main__":
     if args.resume is not None:
         raise NotImplementedError()
     else:
-        generator = Generator(**vars(args))
 
-        # Get the model and optimizer. [get_param_groups()] ensures that the
-        # correct param groups are fed to the optimizer so that if the otimizer
-        # is wrapped in LARS, LARS will see the right param groups.
-        model = get_resnet_with_head(args.backbone, args.proj_dim,
+        save_dir = generator_folder(args)
+        run_id = wandb.util.generate_id()
+        wandb.init(anonymous="allow", id=run_id, project="isicle-generator",
+            mode="online" if args.wandb else "disabled", config=args,
+            name=save_dir.replace(f"{project_dir}/generators/", ""))
+
+
+        model = HeadedResNet(args.backbone, args.proj_dim,
             head_type="projection",
             small_image=(args.data in small_image_datasets)).to(device)
-
         if args.opt == "adam":
             optimizer = Adam(get_param_groups(model, args.lars), lr=args.lr,
                 betas=args.mm, weight_decay=1e-6)
@@ -152,20 +152,21 @@ if __name__ == "__main__":
                 momentum=args.mm, weight_decay=1e-6, nesterov=True)
         else:
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
-
         optimizer = LARS(optimizer, args.trust) if args.lars else optimizer
 
-        tb_results = SummaryWriter(resnet_folder(args), max_queue=0)
+        # Get the TensorBoard logger and set last_epoch to -1
         last_epoch = -1
 
+    ############################################################################
+    # Instantiate the scheduler and get the data
+    ############################################################################
+    set_seed(args.seed)
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
-
-    data_tr, data_val = get_data_splits(args.data, args.eval)
-    data_gen = MultiTaskDataset(data_tr,
-        get_base_augs(args.data),
-        get_corruptions(get_corruptions_dict(args.gen_config))
-        )
+    data_tr, data_eval = get_data_splits_ssl(args.data, args.eval)
+    augs_tr, augs_fn, augs_te = get_ssl_augs(args.data, color_s=args.color_s,
+        strong=args.strong)
+    data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True,
         **seed_kwargs(args.seed))
@@ -174,15 +175,18 @@ if __name__ == "__main__":
     # Begin training!
     ############################################################################
     for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
-
         model, optimizer, loss_tr = one_epoch_contrastive(model, optimizer,
             loader, args.temp)
 
         # Perform a classification cross validation if desired, and otherwise
         # print/log results or merely that the epoch happened.
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
-            val_acc_avg, val_acc_std = classification_eval(model.backbone,
-                data_tr, data_val, augs_finetune, augs_te)
+            val_acc_avg, val_acc_std = classification_eval(
+                model.backbone,
+                data_tr, data_eval,
+                augs_fn, augs_te,
+                data_name=args.data,
+                data_split=args.eval)
             tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
             tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
             tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
@@ -192,9 +196,9 @@ if __name__ == "__main__":
             tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
             tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f}")
 
-        # Saved the model and any visual validation results if they exist
+        # Saved the model if desired
         if e % args.save_iter == 0 and not e == 0:
-            save_(model, optimizer, e, args, tb_results, resnet_folder(args))
+            save_simclr(model, optimizer, e, args, tb_results, simclr_folder(args))
             tqdm.write("Saved training state")
 
         scheduler.step()

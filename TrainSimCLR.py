@@ -1,21 +1,18 @@
 import argparse
-import sys
 from tqdm import tqdm
+import wandb
 
 import torch
 from torch.optim import Adam, SGD
 import torch.nn as nn
-from torch.utils.data import DataLoader, Subset
-from torch.utils.tensorboard import SummaryWriter
-
-from torchvision.datasets import CIFAR10
-import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+from torch.cuda.amp import GradScaler, autocast
 
 from Data import *
 from Evaluation import classification_eval
-from utils.ContrastiveUtils import *
+from utils.UtilsContrastive import *
 from utils.Utils import *
-from utils.NestedNamespace import *
+from utils.UtilsNN import *
 
 def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     """Returns a (model, optimizer, loss) tuple after training [model] on
@@ -31,30 +28,40 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     model.train()
     loss_fn = NTXEntLoss(temp)
     loss_total = 0
+    scaler = GradScaler()
 
-    for x1,x2 in tqdm(loader, desc="Batches", file=sys.stdout, total=len(loader), leave=False):
-        model.zero_grad()
-        loss = loss_fn(model(x1.float().to(device, non_blocking=True)),
-                       model(x2.float().to(device, non_blocking=True)))
-        loss.backward()
-        optimizer.step()
+    for x1,x2 in tqdm(loader, desc="Batches", total=len(loader), leave=False, dynamic_ncols=True):
+
+        with autocast():
+
+            model.zero_grad(set_to_none=True)
+            loss = loss_fn(model(x1.float().to(device, non_blocking=True)),
+                           model(x2.float().to(device, non_blocking=True))).unsqueeze(0)
+
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
         loss_total += loss.item()
+        scaler.update()
 
     return model, optimizer, loss_total / len(loader)
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="SimCLR training")
+    P.add_argument("--wandb", default=1, choices=[0, 1], type=int,
+        help="Whether to use W&B logging or not")
+    P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
+        help="path to data if not in normal place")
     P.add_argument("--data", choices=["cifar10", "fruit", "miniImagenet"],
         default="cifar10",
         help="dataset to load images from")
     P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
         help="The data to evaluate linear finetunings on")
-
-    # Non-hyperparameter arguments
     P.add_argument("--resume", default=None, type=str,
         help="file to resume from")
     P.add_argument("--suffix", default="", type=str,
         help="suffix")
+
+    # Non-hyperparameter arguments
     P.add_argument("--n_workers", default=6, type=int,
         help="Number of workers for data loading")
     P.add_argument("--eval_iter", default=10, type=int,
@@ -63,15 +70,18 @@ if __name__ == "__main__":
         help="save a model every --save_iter epochs")
 
     # Hyperparameter arguments
-    P.add_argument("--backbone", default="resnet18",
-        choices=["resnet18", "resnet50"],
+    P.add_argument("--backbone", default="resnet18", choices=["resnet18", "resnet50"],
         help="Resnet backbone to use")
-    P.add_argument("--bs", default=1000, type=int,
-        help="batch size")
+
     P.add_argument("--color_s", default=1, type=float,
         help="color distortion strength")
-    P.add_argument("--strong", default=1, choices=[0, 1],
-        help="whether augmentations should be strong or not")
+    P.add_argument("--gaussian_blur", choices=[0, 1], type=int, default=0,
+        help="include Gaussian blur in data augmentation")
+    P.add_argument("--crop_size", type=int, default=32,
+        help="resolution at which to feed images to the network")
+
+    P.add_argument("--bs", default=1000, type=int,
+        help="batch size")
     P.add_argument("--epochs", default=1000, type=int,
         help="number of epochs")
     P.add_argument("--lars", default=1, choices=[0, 1],
@@ -92,23 +102,8 @@ if __name__ == "__main__":
         help="LARS trust coefficient")
     P.add_argument("--seed", default=0, type=int,
         help="random seed")
-    args = NestedNamespace(P.parse_args())
+    args = P.parse_args()
 
-    args.options = sorted([
-        f"bs{args.bs}",
-        f"epochs{args.epochs}",
-        f"color_s{args.color_s}",
-        f"eval_{args.eval}",
-        f"lars{args.lars}",
-        f"lr{args.lr}",
-        f"mm{'_'.join([str(b) for b in flatten([args.mm])])}",
-        f"n_ramp{args.n_ramp}",
-        f"opt_{args.opt}",
-        f"seed{args.seed}",
-        f"strong{args.strong}",
-        f"temp{args.temp}",
-        f"trust{args.trust}",
-    ])
     ############################################################################
     # Check arguments
     ############################################################################
@@ -122,16 +117,32 @@ if __name__ == "__main__":
     # This needs to be a tuple or a float depending on its length
     args.mm = args.mm[0] if len(args.mm) == 1 else args.mm
 
-    tqdm.write(f"Will save model to {simclr_folder(args)}")
-
     ############################################################################
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
     if args.resume is not None:
-        model, optimizer, last_epoch, args, tb_results = load_(args.resume)
-        model = model.to(device)
-        last_epoch -= 1
+        run_id, resume_data = wandb_load(args.resume)
+        cur_seed = set_seed(resume_data["seed"])
+        data_folder_path = args.data_folder_path
+
+        wandb.init(id=run_id, resume="must", project="isicle")
+        wandb.save("*.pt")
+        model = resume_data["model"].to(device)
+        optimizer = resume_data["optimizer"]
+        last_epoch = resume_data["last_epoch"]
+        args = resume_data["args"]
+        args.data_folder_path = data_folder_path
+
+        save_dir = simclr_folder(args)
     else:
+        cur_seed = set_seed(args.seed)
+        args.run_id = wandb.util.generate_id()
+        save_dir = simclr_folder(args)
+
+        wandb.init(anonymous="allow", id=args.run_id, project="isicle-simclr",
+            mode="online" if args.wandb else "disabled", config=args,
+            name=f"{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}")
+
         model = HeadedResNet(args.backbone, args.proj_dim,
             head_type="projection",
             small_image=(args.data in small_image_datasets)).to(device)
@@ -144,53 +155,53 @@ if __name__ == "__main__":
         else:
             raise ValueError(f"--opt was {args.opt} but must be one of 'adam' or 'sgd'")
         optimizer = LARS(optimizer, args.trust) if args.lars else optimizer
-
-        # Get the TensorBoard logger and set last_epoch to -1
-        tb_results = SummaryWriter(simclr_folder(args), max_queue=0)
         last_epoch = -1
+
+    tqdm.write(dict_to_nice_str(vars(args)))
 
     ############################################################################
     # Instantiate the scheduler and get the data
     ############################################################################
-    set_seed(args.seed)
     scheduler = CosineAnnealingLinearRampLR(optimizer, args.epochs, args.n_ramp,
         last_epoch=last_epoch)
-    data_tr, data_eval = get_data_splits_ssl(args.data, args.eval)
-    augs_tr, augs_fn, augs_te = get_ssl_augs(args.data, color_s=args.color_s,
-        strong=args.strong)
-    data_ssl = ImagesFromTransformsDataset(data_tr, augs_tr, augs_tr)
+    data_tr, data_eval = get_data_splits(args.data, args.eval, data_folder_path=args.data_folder_path)
+    augs_tr, augs_fn, augs_te = get_simclr_augs(crop_size=args.crop_size,
+        gaussian_blur=args.gaussian_blur, color_s=args.color_s)
+    data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.n_workers, pin_memory=True,
-        **seed_kwargs(args.seed))
+        **seed_kwargs(cur_seed))
+
+    tqdm.write(f"Dataset length {len(data_tr)}")
 
     ############################################################################
     # Begin training!
     ############################################################################
-    for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", file=sys.stdout):
+    for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1), desc="Epochs", dynamic_ncols=True):
         model, optimizer, loss_tr = one_epoch_contrastive(model, optimizer,
             loader, args.temp)
 
-        # Perform a classification cross validation if desired, and otherwise
-        # print/log results or merely that the epoch happened.
+        ########################################################################
+        # LOG RESULTS OF THE EPOCH. Perform a classification cross validation if
+        # desired, and otherwise print/log results or merely that the epoch
+        # happened
+        ########################################################################
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
-            val_acc_avg, val_acc_std = classification_eval(
-                model.backbone,
-                data_tr, data_eval,
-                augs_fn, augs_te,
-                data_name=args.data,
-                data_split=args.eval)
-            tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
-            tb_results.add_scalar("Accuracy/val", val_acc_avg, e)
-            tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
-            tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f} | val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
-        else:
-            tb_results.add_scalar("Loss/train", loss_tr / len(loader), e)
-            tb_results.add_scalar("LR", scheduler.get_last_lr()[0], e)
-            tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss {loss_tr / len(loader):.5f}")
+            val_acc_avg, val_acc_std = classification_eval(model.backbone,
+                data_tr, data_eval, augs_fn, augs_te, data_name=args.data,
+                data_split=args.eval, trials=1)
 
-        # Saved the model if desired
+            wandb.log({"epoch": e, "loss_tr": loss_tr / len(loader),
+                "acc_val": val_acc_avg, "lr": scheduler.get_last_lr()[0]})
+            tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss_tr {loss_tr / len(loader):.5f} | val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
+        else:
+            wandb.log({"epoch": e, "loss_tr": loss_tr / len(loader),
+                "lr": scheduler.get_last_lr()[0]})
+            tqdm.write(f"End of epoch {e} | lr {scheduler.get_last_lr()[0]:.5f} | loss_tr {loss_tr / len(loader):.5f}")
+
         if e % args.save_iter == 0 and not e == 0:
-            save_simclr(model, optimizer, e, args, tb_results, simclr_folder(args))
+            save_simclr({"model": model, "optimizer": optimizer, "args": args,
+                "last_epoch": e}, simclr_folder(args))
             tqdm.write("Saved training state")
 
         scheduler.step()

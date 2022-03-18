@@ -11,8 +11,9 @@ import torch.nn as nn
 from torch.utils.data import Subset, ConcatDataset, DataLoader
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from Data import *
-from ContrastiveUtils import *
-from Utils import *
+from utils.UtilsContrastive import *
+from utils.Utils import *
+from torch.cuda.amp import GradScaler, autocast
 
 def get_label2idxs(data_tr, data_name=None, data_split=None):
     """Returns a label to indices mapping for [data_tr]."""
@@ -70,7 +71,7 @@ def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True):
     else:
         return XYDataset(data_tr, augs_fn), XYDataset(data_te, augs_te)
 
-def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, epochs=100, bs=16):
+def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, epochs=100, bs=16):
     """Returns the accuracy of a linear model trained on features from [F] of
     [data_tr] on [data_te].
 
@@ -98,23 +99,25 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, epochs=10
     for e in tqdm(range(epochs), desc="Validation epochs", leave=False):
         model.train()
 
+        scaler = GradScaler()
         for x,y in loader_tr:
-            with torch.no_grad():
-                x = x.to(device, non_blocking=True)
-                x = x if F is None else F(x)
+            with autocast():
+                with torch.no_grad():
+                    x = x.to(device, non_blocking=True)
+                    x = x if F is None else F(x)
 
-            model.zero_grad()
-            loss = loss_fn(model(x), y.to(device, non_blocking=True))
-            loss.backward()
-            optimizer.step()
+                model.zero_grad()
+                loss = loss_fn(model(x), y.to(device, non_blocking=True))
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
 
         scheduler.step()
 
     return accuracy(nn.Sequential(F, model), loader_te)
 
 def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
-    precompute_feats=True, ex_per_class="all", trials=3,
-    epochs=100, bs=64,
+    precompute_feats=True, ex_per_class="all", trials=3, epochs=100, bs=16,
     data_name=None, data_split=None):
     """Returns evaluation accuracy of feature extractor [feature_extractor].
 
@@ -150,8 +153,6 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
     num_classes = len(data_tr.class_to_idx)
     accuracies = []
 
-
-    trials = 1 if not data_te == "cv" and ex_per_class == "all" else trials
     for t in tqdm(range(trials), desc="Validation trials"):
 
         if data_te == "cv":
@@ -184,7 +185,7 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
         accuracies.append(get_eval_trial_accuracy(trial_data_tr, trial_data_te,
             (None if precompute_feats else feature_extractor),
             out_dim, num_classes,
-            epochs=epochs, bs=bs))
+            epochs=epochs, bs=bs, trial=t))
 
     return np.mean(accuracies), np.std(accuracies) * 1.96 / np.sqrt(trials)
 
