@@ -35,3 +35,4 @@ models/simclr/*
 generators/*
 generators
 wandb
+*.zip
