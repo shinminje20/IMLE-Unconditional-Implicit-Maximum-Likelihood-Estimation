@@ -60,7 +60,8 @@ if __name__ == "__main__":
         help="file to resume from")
     P.add_argument("--suffix", default="", type=str,
         help="suffix")
-    P.add_argument("--res", default=None, choices=[32, 64, 128, 256], type=int,
+    P.add_argument("--res", nargs="+",
+                   default=None, choices=[32, 64, 128, 256], type=int,
         help="image resolution to load")
 
     # Non-hyperparameter arguments
