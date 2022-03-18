@@ -208,8 +208,8 @@ if __name__ == "__main__":
             tqdm.write(f"End of epoch {e} | lr {scheduler.get_lr()[0]:.5f} | loss_tr {loss_tr / len(loader):.5f}")
 
         if e % args.save_iter == 0 and not e == 0:
-            save_simclr({"model": model, "optimizer": optimizer, "args": args,
-                "last_epoch": e}, simclr_folder(args))
+            wandb_save({"model": model, "optimizer": optimizer, "args": args,
+                "last_epoch": e}, f"{simclr_folder(args)}/{e}.pt")
             tqdm.write("Saved training state")
 
         scheduler.step()
