@@ -71,7 +71,7 @@ def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True):
     else:
         return XYDataset(data_tr, augs_fn), XYDataset(data_te, augs_te)
 
-def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, epochs=100, bs=16):
+def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, epochs=100, bs=64):
     """Returns the accuracy of a linear model trained on features from [F] of
     [data_tr] on [data_te].
 
