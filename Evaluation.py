@@ -52,7 +52,7 @@ def accuracy(model, loader):
 
     return correct / total
 
-def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True, num_workers=24):
+def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True, num_workers=24, bs=1000):
     """Returns validation training and testing datasets. The testing dataset may
     be a string 'cv' to indicate cross validation if [data_te] is 'cv'.
 
@@ -180,7 +180,7 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
 
         trial_data_tr, trial_data_te = get_eval_data(trial_data_tr, trial_data_te,
             augs_fn, augs_te, F=feature_extractor,
-            precompute_feats=precompute_feats, num_workers=num_workers)
+            precompute_feats=precompute_feats, num_workers=num_workers, bs=8 * bs)
 
         accuracies.append(get_eval_trial_accuracy(trial_data_tr, trial_data_te,
             (None if precompute_feats else feature_extractor),
