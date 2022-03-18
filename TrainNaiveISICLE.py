@@ -59,9 +59,8 @@ def one_epoch_contrastive(model, optimizer, loader, temp=.5):
 
     for x1,x2 in tqdm(loader, desc="Batches", total=len(loader), leave=False, dynamic_ncols=True):
 
-
         images = torch.cat([x1,x2], axis=0)
-        images = get_images(corruptor, model, TensorDataset(images), idxs=None, samples_per_image=1)
+        images = get_images(corruptor, model, images, idxs=None, samples_per_image=1)
 
         with autocast():
 
