@@ -27,8 +27,8 @@ data/cls_first
 data/cifar10*
 data/cifar-10*
 data/camnet3*
-data/tinyImagenet
-data/miniImagenet
+data/tinyImagenet*
+data/miniImagenet*
 
 models/camnet/*
 models/simclr/*

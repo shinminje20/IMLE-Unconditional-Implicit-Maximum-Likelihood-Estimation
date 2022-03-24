@@ -60,12 +60,10 @@ def one_epoch_isicle(corruptor, generator, model, optimizer, loader, temp=.5, co
 
     for x1,x2 in tqdm(loader, desc="Batches", total=len(loader), leave=False, dynamic_ncols=True):
 
-
         images = torch.cat([x1,x2], axis=0)
         images = get_images(corruptor, generator, images, code_bs=code_bs)
         x1 = images[:len(images) // 2]
         x1 = images[len(images) // 2]
-
 
         with autocast():
 
