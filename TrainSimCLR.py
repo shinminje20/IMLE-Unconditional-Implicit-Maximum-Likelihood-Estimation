@@ -16,6 +16,7 @@ from utils.UtilsContrastive import *
 from utils.Utils import *
 from utils.UtilsNN import *
 
+
 def one_epoch_contrastive(model, optimizer, loader, temp=.5):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch.
