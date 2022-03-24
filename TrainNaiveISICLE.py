@@ -42,7 +42,6 @@ def get_images(corruptor, generator, images, code_bs=256, res=128):
 
     return result
 
-
 def one_epoch_isicle(corruptor, generator, model, optimizer, loader, temp=.5, code_bs=128):
     """Returns a (model, optimizer, loss) tuple after training [model] on
     [loader] for one epoch.
@@ -178,6 +177,9 @@ if __name__ == "__main__":
         save_dir = simclr_folder(args)
 
         _, generator_data = wandb_load(args.generator)
+
+        print(vars(generator_data["model"]))
+
         generator = generator_data["model"].cpu().to("cuda:1")
 
         corruptor = generator_data["corruptor"].cpu().to("cuda:1")
