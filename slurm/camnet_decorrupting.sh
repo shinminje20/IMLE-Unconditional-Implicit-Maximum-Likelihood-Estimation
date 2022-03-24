@@ -49,16 +49,16 @@ echo "SLURM CHECKPOINT B"
 # Do all the research.
 if [ "$SLURM_ARRAY_TASK_ID" = 1 ]
 then
-    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --n_levels 2 --res 64 64 128 --ns 256 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac 0
+    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac 0
 elif [ "$SLURM_ARRAY_TASK_ID" = 2 ]
 then
-    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --n_levels 2 --res 64 64 128 --ns 256 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac .5 --pix_mask_size 8
+    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac .5 --pix_mask_size 8
 elif [ "$SLURM_ARRAY_TASK_ID" = 3 ]
 then
-    python TrainGenerator.py --epochs 20 --data_folder_path ~/scratch/ISICLE/data --n_levels 2 --res 64 64 128 --ns 256 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --pix_mask_frac 0
+    python TrainGenerator.py --epochs 20 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --pix_mask_frac 0
 elif [ "$SLURM_ARRAY_TASK_ID" = 4 ]
 then
-    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --n_levels 2 --res 64 64 128 --ns 256 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --pix_mask_frac 0
+    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --pix_mask_frac 0
 elif [ "$SLURM_ARRAY_TASK_ID" = 5 ]
 then
     python TrainGenerator.py --epochs 20 --data_folder_path ~/scratch/ISICLE/data --res 64 64 64 64 128 --ns 256 64 64 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac .6 --pix_mask_size 4
