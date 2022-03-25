@@ -7,7 +7,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import transforms
 
 from Data import *
 from utils.NestedNamespace import NestedNamespace
@@ -82,43 +81,43 @@ class Corruption(nn.Module):
 # decorrupted via a generator.
 ################################################################################
 
-if __name__ == "__main__":
-    P = argparse.ArgumentParser(description="SimCLR training")
-    P.add_argument("--data", choices=["cifar10", "miniImagenet", "camnet3"],
-        default="cifar10",
-        help="dataset to load images from")
-    P.add_argument("--res", nargs="+", type=int,
-        default=[64, 128],
-        help="resolutions to see data at")
-    P.add_argument("--grayscale", default=0, type=int, choices=[0, 1],
-        help="grayscale corruption")
-    P.add_argument("--pix_mask_size", default=8, type=int,
-        help="fraction of pixels to mask at 16x16 resolution")
-    P.add_argument("--pix_mask_frac", default=0, type=float,
-        help="fraction of pixels to mask at 16x16 resolution")
-    P.add_argument("--rand_illumination", default=0, type=float,
-        help="amount by which the illumination of an image can change")
-    P.add_argument("--idxs", default=[-10], type=int, nargs="+",
-        help="amount by which the illumination of an image can change")
-    args = P.parse_args()
+# if __name__ == "__main__":
+#     P = argparse.ArgumentParser(description="SimCLR training")
+#     P.add_argument("--data", choices=["cifar10", "miniImagenet", "camnet3"],
+#         default="cifar10",
+#         help="dataset to load images from")
+#     P.add_argument("--res", nargs="+", type=int,
+#         default=[64, 128],
+#         help="resolutions to see data at")
+#     P.add_argument("--grayscale", default=0, type=int, choices=[0, 1],
+#         help="grayscale corruption")
+#     P.add_argument("--pix_mask_size", default=8, type=int,
+#         help="fraction of pixels to mask at 16x16 resolution")
+#     P.add_argument("--pix_mask_frac", default=0, type=float,
+#         help="fraction of pixels to mask at 16x16 resolution")
+#     P.add_argument("--rand_illumination", default=0, type=float,
+#         help="amount by which the illumination of an image can change")
+#     P.add_argument("--idxs", default=[-10], type=int, nargs="+",
+#         help="amount by which the illumination of an image can change")
+#     args = P.parse_args()
 
-    expand_factor = 10
+#     expand_factor = 10
 
-    datasets, _ = get_data_splits(args.data, "val", args.res)
-    data = GeneratorDataset(datasets, get_gen_augs())
+#     datasets, _ = get_data_splits(args.data, "val", args.res)
+#     data = GeneratorDataset(datasets, get_gen_augs())
 
-    if len(args.idxs) == 1 and args.idxs[0] < 0:
-        idxs = random.sample(range(len(data)), abs(args.idxs[0]))
-    else:
-        idxs = args.idxs
+#     if len(args.idxs) == 1 and args.idxs[0] < 0:
+#         idxs = random.sample(range(len(data)), abs(args.idxs[0]))
+#     else:
+#         idxs = args.idxs
 
-    data = Subset(data, idxs)
-    data_expanded = ExpandedDataset(data, expand_factor=expand_factor)
+#     data = Subset(data, idxs)
+#     data_expanded = ExpandedDataset(data, expand_factor=expand_factor)
 
-    corruptor = Corruption(**vars(args))
-    corrupted_data = CorruptedDataset(data_expanded, corruptor)
-    image_grid = [[d[1][-1]] for d in data]
-    for idx,(c,_) in enumerate(corrupted_data):
-        image_grid[idx // expand_factor].append(c)
+#     corruptor = Corruption(**vars(args))
+#     corrupted_data = CorruptedDataset(data_expanded, corruptor)
+#     image_grid = [[d[1][-1]] for d in data]
+#     for idx,(c,_) in enumerate(corrupted_data):
+#         image_grid[idx // expand_factor].append(c)
 
-    show_image_grid(make_cpu(image_grid))
+#     show_image_grid(make_cpu(image_grid))

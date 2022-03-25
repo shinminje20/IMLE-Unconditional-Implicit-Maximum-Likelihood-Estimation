@@ -8,7 +8,6 @@ can be used to construct various useful datasets.
 """
 from collections import OrderedDict
 import numpy as np
-import PIL
 import random
 import sys
 from tqdm import tqdm
@@ -386,14 +385,6 @@ class ManyTransformsDataset(Dataset):
     def __getitem__(self, idx):
         x = self.source_dataset[idx][0]
         return tuple([t(x) for t in self.transforms])
-
-class TensorDataset(Dataset):
-    def __init__(self, source):
-        super(TensorDataset, self).__init__()
-        self.source = source
-
-    def __len__(self): return len(source)
-    def __getitem__(self, idx): return source[idx]
 
 class ZippedDataset(Dataset):
     """A Dataset that zips together iterables. Its transform should be

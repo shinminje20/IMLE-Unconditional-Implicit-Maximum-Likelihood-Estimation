@@ -190,34 +190,34 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
     return np.mean(accuracies), np.std(accuracies) * 1.96 / np.sqrt(trials)
 
 
-if __name__ == "__main__":
-    P = argparse.ArgumentParser(description="IMLE training")
-    P.add_argument("--eval", default="val", choices=["val", "test"],
-        help="The data to evaluate linear finetunings on")
-    P.add_argument("--model", default=None, type=str,
-        help="file to resume from")
-    P.add_argument("--precompute_feats", default=0, choices=[0, 1],
-        help="whether to precompute features")
-    P.add_argument("--suffix", default="", type=str,
-        help="suffix")
-    P.add_argument("--bs", default=256, type=int,
-        help="batch size")
-    P.add_argument("--epochs", default=200, type=int,
-        help="number of epochs")
-    P.add_argument("--seed", default=0, type=int,
-        help="random seed")
-    args = P.parse_args()
+# if __name__ == "__main__":
+#     P = argparse.ArgumentParser(description="IMLE training")
+#     P.add_argument("--eval", default="val", choices=["val", "test"],
+#         help="The data to evaluate linear finetunings on")
+#     P.add_argument("--model", default=None, type=str,
+#         help="file to resume from")
+#     P.add_argument("--precompute_feats", default=0, choices=[0, 1],
+#         help="whether to precompute features")
+#     P.add_argument("--suffix", default="", type=str,
+#         help="suffix")
+#     P.add_argument("--bs", default=256, type=int,
+#         help="batch size")
+#     P.add_argument("--epochs", default=200, type=int,
+#         help="number of epochs")
+#     P.add_argument("--seed", default=0, type=int,
+#         help="random seed")
+#     args = P.parse_args()
 
-    model, _, _, old_args, _ = load_(args.model)
-    model = model.to(device)
+#     model, _, _, old_args, _ = load_(args.model)
+#     model = model.to(device)
 
-    data_tr, data_eval = get_data_splits(args.data, args.eval)
-    augs_tr, augs_fn, augs_te = get_ssl_augs(args.data, args.color_s)
+#     data_tr, data_eval = get_data_splits(args.data, args.eval)
+#     augs_tr, augs_fn, augs_te = get_contrastive_args(args.data, args.color_s)
 
-    val_acc_avg, val_acc_std = classification_eval(model.backbone, data_tr,
-        data_val, augs_fn, augs_te,
-        data_name=old_args.data,
-        ex_per_class="all",
-        precompute_feats=args.precompute_feats,
-        epochs=args.epochs, bs=args.bs)
-    tqdm.write(f"val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")
+#     val_acc_avg, val_acc_std = classification_eval(model.backbone, data_tr,
+#         data_val, augs_fn, augs_te,
+#         data_name=old_args.data,
+#         ex_per_class="all",
+#         precompute_feats=args.precompute_feats,
+#         epochs=args.epochs, bs=args.bs)
+#     tqdm.write(f"val acc {val_acc_avg:.5f} ± {val_acc_std:.5f}")

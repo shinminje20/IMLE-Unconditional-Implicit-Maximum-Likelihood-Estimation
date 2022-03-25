@@ -5,6 +5,7 @@ from tqdm import tqdm
 import wandb
 
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Adam
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR

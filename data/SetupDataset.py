@@ -1,10 +1,9 @@
 """Downloads and sets up a dataset."""
 
 import argparse
-from collections import defaultdict
-import gdown
 import zipfile
-
+import gdown
+from tqdm import tqdm
 from DataUtils import *
 
 def gdown_unzip(url, result):
@@ -56,7 +55,7 @@ if __name__ == "__main__":
         dataset_dir = args.use_existing
 
     if len(args.sizes) == 1 and args.sizes[0] <= 0:
-        tqmd.write("----- Not resizing dataset -----")
+        tqdm.write("----- Not resizing dataset -----")
         all_datasets = [dataset_dir]
     else:
         tqdm.write(f"----- Generating new resolutions: {args.sizes} -----")

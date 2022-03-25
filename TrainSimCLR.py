@@ -172,7 +172,7 @@ if __name__ == "__main__":
         warmup_steps=args.n_ramp, last_epoch=last_epoch)
     data_tr, data_eval = get_data_splits(args.data, args.eval, res=args.res,
         data_folder_path=args.data_folder_path)
-    augs_tr, augs_fn, augs_te = get_simclr_augs(crop_size=args.crop_size,
+    augs_tr, augs_fn, augs_te = get_contrastive_augs(crop_size=args.crop_size,
         gaussian_blur=args.gaussian_blur, color_s=args.color_s)
     data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
 
