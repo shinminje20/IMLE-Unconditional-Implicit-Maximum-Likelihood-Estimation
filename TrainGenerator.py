@@ -459,7 +459,7 @@ if __name__ == "__main__":
 
     # Setup the datasets
     data_tr, data_eval = get_data_splits(args.data, args.eval, args.res,
-        data_path=args.data_folder_path)
+        data_folder_path=args.data_folder_path)
     data_tr = GeneratorDataset(data_tr, get_gen_augs())
     data_eval = GeneratorDataset(data_eval, get_gen_augs())
 

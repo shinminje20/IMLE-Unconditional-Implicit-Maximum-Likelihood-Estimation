@@ -2,9 +2,9 @@
 
 # The SBATCH directives must appear before any executable line in this script.
 
-#SBATCH --array=1-6
-#SBATCH --time=2-23:59:59          # Time: D-H:M:S
-#SBATCH --account=def-keli      # Account: def-keli/rrg-keli
+#SBATCH --array=1-4
+#SBATCH --time=6-23:59:59       # Time: D-H:M:S
+#SBATCH --account=rrg-keli      # Account: def-keli/rrg-keli
 #SBATCH --mem=32G               # Memory in total
 #SBATCH --nodes=1               # Number of nodes requested.
 #SBATCH --cpus-per-task=10      # Number of cores per task.
@@ -15,10 +15,10 @@
 # %N is the hostname (if used, will create output(s) per node).
 # %j is jobid.
 
-#SBATCH --output=job_results/feb11_camnet_20epochs%j.txt
+#SBATCH --output=job_results/march23_%j.txt
 
 # Below sets the email notification, swap to your email to receive notifications
-#SBATCH --mail-user=tme28@cornell.edu
+#SBATCH --mail-user=tristanengst@gmail.com
 #SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=END
 #SBATCH --mail-type=FAIL
@@ -49,22 +49,22 @@ echo "SLURM CHECKPOINT B"
 # Do all the research.
 if [ "$SLURM_ARRAY_TASK_ID" = 1 ]
 then
-    python TrainGenerator.py --res 32 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 1 --pix_mask_frac .4 --pix_mask_size 4  --lr 1e-5
+    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac 0
 elif [ "$SLURM_ARRAY_TASK_ID" = 2 ]
 then
-    python TrainGenerator.py --res 32 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 1 --pix_mask_frac .4 --pix_mask_size 8  --lr 1e-5
+    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac .5 --pix_mask_size 8
 elif [ "$SLURM_ARRAY_TASK_ID" = 3 ]
 then
-    python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .4 --pix_mask_size 4  --lr 1e-5
+    python TrainGenerator.py --epochs 20 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --pix_mask_frac 0
 elif [ "$SLURM_ARRAY_TASK_ID" = 4 ]
 then
-    python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .4 --pix_mask_size 8  --lr 1e-5
+    python TrainGenerator.py --epochs 40 --data_folder_path ~/scratch/ISICLE/data --levels 2 --res 64 64 128 --ns 256 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --pix_mask_frac 0
 elif [ "$SLURM_ARRAY_TASK_ID" = 5 ]
 then
-    python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .6 --pix_mask_size 4  --lr 1e-5
+    python TrainGenerator.py --epochs 20 --data_folder_path ~/scratch/ISICLE/data --res 64 64 64 64 128 --ns 256 64 64 64 --data camnet3 --gpus 0 1 --grayscale 1 --pix_mask_frac .6 --pix_mask_size 4
 elif [ "$SLURM_ARRAY_TASK_ID" = 6 ]
 then
-    python TrainGenerator.py --res 16 32 64 128 --loss lpips --color_space rgb --data camnet3 --bs 8 --mini_bs 4 --code_bs 4 --num_samples 128 --sp 128 128 64 64 --wandb 1 --verbose 1 --gpus 0 1 --grayscale 0 --pix_mask_frac .6 --pix_mask_size 8  --lr 1e-5
+    python TrainGenerator.py --epochs 20 --data_folder_path ~/scratch/ISICLE/data --res 64 64 64 64 128 --ns 256 64 64 64 --data camnet3 --gpus 0 1 --grayscale 0 --pix_mask_frac .6 --pix_mask_size 8
 else
     echo "No case here"
 fi
