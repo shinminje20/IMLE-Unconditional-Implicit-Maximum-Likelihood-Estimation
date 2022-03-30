@@ -124,7 +124,7 @@ class CAMNet(nn.Module):
         # Linear algebra soup
         ########################################################################
         bs = level_output.shape[0]
-        feat = torch.tensor([], device="cuda:1")
+        feat = torch.tensor([], device=device)
         outputs = []
         for idx,(code,(_,level)) in enumerate(zip(codes, self.levels.items())):
 

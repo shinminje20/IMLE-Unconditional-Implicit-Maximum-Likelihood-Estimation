@@ -7,7 +7,7 @@ import wandb
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
 from torch.utils.data import DataLoader, Subset
 from torch.cuda.amp import autocast, GradScaler
@@ -15,9 +15,9 @@ from torch.cuda.amp import autocast, GradScaler
 from CAMNet import CAMNet, get_z_dims
 from Corruptions import Corruption
 from Data import *
+from Losses import *
 from utils.Utils import *
 from utils.UtilsColorSpace import *
-from utils.UtilsLPIPS import LPIPSFeats
 from utils.UtilsNN import *
 
 def check_args(args, data_tr_len):
@@ -36,132 +36,6 @@ def check_args(args, data_tr_len):
 
     return args
 
-def reduce_loss_over_batch(loss):
-    """Returns unreduced loss [loss] reduced over the batch dimension."""
-    return torch.mean(loss.view(loss.shape[0], -1), axis=1)
-
-def compute_loss(fx, y, loss_fn, reduction="batch", list_reduction="mean"):
-    """Returns the loss of output [fx] against target [y] using loss function
-    [loss_fn] and reduction strategies [reduction] and [list_reduction].
-
-    Args:
-    fx              -- list of or single BSxCxHxW generated images
-    y               -- list of or single BSxCxHxW ground-truth image
-    loss_fn         -- unreduced loss function that acts on 4D tensors
-    reduction       -- how to reduce across the images
-    list_reduction  -- how to reduce across the list if inputs include lists
-    """
-    if isinstance(fx, list) and isinstance(y, list):
-        losses = [compute_loss(f, t, loss_fn, reduction) for f,t in zip(fx, y)]
-        if list_reduction == "mean":
-            return torch.mean(torch.stack(losses), axis=0)
-        else:
-            raise ValueError(f"Unknown list_reduction '{list_reduction}'")
-    else:
-        if reduction == loss_fn.reduction:
-            return loss_fn(fx, y)
-        elif reduction == "batch" and loss_fn.reduction == "none":
-            return reduce_loss_over_batch(loss_fn(fx, y))
-        elif reduction == "mean":
-            return torch.mean(loss_fn(fx, y))
-        else:
-            raise ValueError(f"Requested reduction '{reduction}' and/or loss_fn reduction '{loss_fn.reduction}' are invalid or can't be used together.")
-
-class ResolutionLoss(nn.Module):
-    """Loss function for computing MSE loss on low resolution images and LPIPS
-    loss on higher resolution images.
-    """
-    def __init__(self, reduction="batch", alpha=.1):
-        super(ResolutionLoss, self).__init__()
-        self.mse = get_unreduced_loss_fn("mse")
-        self.lpips = get_unreduced_loss_fn("lpips")
-        self.alpha = alpha
-
-        if not reduction == "batch":
-            raise ValueError("ResolutionLoss can only be used with a batch reduction")
-        self.reduction = "batch"
-
-    def forward(self, fx, y):
-        if fx.shape[-1] >= 64:
-            result = reduce_loss_over_batch(self.lpips(fx, y))
-            return result
-        else:
-            lpips_loss = reduce_loss_over_batch(self.lpips(fx, y))
-            mse_loss = reduce_loss_over_batch(self.mse(fx, y))
-            result = lpips_loss + self.alpha * mse_loss
-
-class LPIPSLoss(nn.Module):
-    """Returns loss between LPIPS features of generated and target images."""
-    def __init__(self, reduction="mean", proj_dim=None):
-        super(LPIPSLoss, self).__init__()
-        self.lpips = LPIPSFeats()
-        self.reduction = "none"
-        self.loss = BroadcastMSELoss(reduction=self.reduction)
-
-        self.proj_dim = proj_dim
-        self.projections = {}
-
-    def project_tensor(self, t):
-        """Returns a projection matrix for a tensor with last size [dim]."""
-        if not t.shape[-1] in self.projections:
-            projection = torch.randn(t.shape[-1], self.proj_dim, device=device)
-            projection = F.normalize(projection, p=2, dim=1)
-            self.projections[t.shape[-1]] = projection
-
-        return torch.matmul(t, self.projections[t.shape[-1]])
-
-    def reset_projections(self): self.projections = {}
-
-    def forward(self, fx, y):
-        fx, y = self.lpips(fx), self.lpips(y)
-
-        if self.proj_dim is not None:
-            fx, y = self.project_tensor(fx), self.project_tensor(y)
-
-        return self.loss(fx, y)
-
-lpips_loss = None
-def get_unreduced_loss_fn(loss_fn, proj_dim=None):
-    """Returns an unreduced loss function of type [loss_fn]. The LPIPS loss
-    function is memoized.
-    """
-    if loss_fn == "lpips":
-        global lpips_loss
-        if lpips_loss is None:
-            lpips_loss = LPIPSLoss(reduction="batch", proj_dim=proj_dim).to(device)
-
-        lpips_loss.reset_projections()
-        return lpips_loss
-    elif loss_fn == "mse":
-        return nn.MSELoss(reduction="none")
-    elif loss_fn == "resolution":
-        return ResolutionLoss().to(device)
-    else:
-        raise ValueError(f"Unknown loss type {loss_fn}")
-
-class BroadcastMSELoss(nn.Module):
-    def __init__(self, reduction="batch"):
-        super(BroadcastMSELoss, self).__init__()
-        self.reduction = reduction
-
-    def forward(self, x, y):
-        # tqdm.write(f"INPUT BroadcastMSELoss SHAPES: x {x.shape} y {y.shape}")
-        if len(y.shape) == 2:
-            y = y.unsqueeze(1)
-        if len(x.shape) == 2:
-            x = x.view(y.shape[0], x.shape[0] // y.shape[0], x.shape[-1])
-        if not (len(x.shape) == 3 and x.shape[0] == y.shape[0] and x.shape[2] == y.shape[2]):
-            raise ValueError(f"Got invalid shapes for BroadcastMSELoss. x shape was {x.shape} and y shape was {y.shape}")
-
-        result = torch.cdist(x, y)
-
-        if self.reduction == "batch" or self.reduction == "none":
-            return result.view(result.shape[0] * result.shape[1], 1)
-        elif self.reduction == "mean":
-            return torch.mean(result)
-        else:
-            raise ValueError(f"Unknown reduction {self.reduction}")
-
 def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     samples_per_image=5, in_color_space="rgb", out_color_space="rgb", ns=10,
     sp=128, code_bs=4, loss_type="resolution", proj_dim=None, **kwargs):
@@ -174,33 +48,57 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
-    ns = 4 # reject bad samples but keep average and good ones
-    model = model.module
-    idxs = list(range(len(dataset))) if idxs is None else idxs
-    images_dataset = Subset(dataset, idxs)
-    corrupted_data = CorruptedDataset(images_dataset, corruptor)
-
-    results = [[ys[-1], cx] for cx,ys in corrupted_data]
-    results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
-
-    corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
-    codes = ZippedDataset(*get_new_codes(corrupted_data, model, **kwargs))
-    batch_dataset = ZippedDataset(codes, corrupted_data)
-
     with torch.no_grad():
-        for idx,(codes,(cx,_)) in enumerate(batch_dataset):
-            codes = [c.unsqueeze(0) for c in make_device(codes)]
-            fx = model(cx.to(device).unsqueeze(0), codes, loi=-1,
-                       in_color_space=in_color_space,
-                       out_color_space=out_color_space)
-            results[idx // samples_per_image].append(fx.cpu())
+        ns = 4 # reject bad samples but keep average and good ones
+        model = model.module
+        idxs = list(range(len(dataset))) if idxs is None else idxs
+        images_dataset = Subset(dataset, idxs)
+        corrupted_data = CorruptedDataset(images_dataset, corruptor)
 
-    return make_cpu(make_3dim(results))
+        results = [[ys[-1], cx] for cx,ys in corrupted_data]
+        results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
 
+        corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
+        codes = ZippedDataset(*get_new_codes(corrupted_data, model, ns=ns, code_bs=len(idxs), **kwargs))
+        batch_dataset = ZippedDataset(codes, corrupted_data)
+
+        with torch.no_grad():
+            for idx,(codes,(cx,_)) in enumerate(batch_dataset):
+                codes = [c.unsqueeze(0) for c in make_device(codes)]
+                fx = model(cx.to(device).unsqueeze(0), codes, loi=-1,
+                           in_color_space=in_color_space,
+                           out_color_space=out_color_space)
+                results[idx // samples_per_image].append(fx.cpu())
+
+        return make_cpu(make_3dim(results))
+
+fixed_prior = None
+def generate_z(bs, shape, sample_method="normal", prior_components=10):
+    """Returns a latent code of shape[shape] on device [device]."""
+    def generate_prior(n_components, shape, sample_method="random_prior"):
+        """
+        """
+        global fixed_prior
+        if fixed_prior is not None:
+            return fixed_prior
+        elif sample_method == "random_prior":
+            fixed_prior = torch.rand((n_components,) + shape, device=device) - .5 * 2
+            return fixed_prior
+        else:
+            raise ValueError
+
+    if sample_method == "normal":
+        return torch.randn((bs,) + shape, device=device)
+    elif sample_method == "random_prior":
+        prior = generate_prior(prior_components, shape, sample_method=sample_method)
+        samples_from_prior = prior[torch.rand(bs, device=device)]
+        return samples_from_prior + torch.randn((bs,) + shape, device=device) / 4
+    else:
+        raise ValueError
 
 def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
     ns=128, sp=2, in_color_space="rgb", out_color_space="rgb",
-    proj_dim=None, verbose=1, **kwargs):
+    proj_dim=None, verbose=1, sample_method="normal", **kwargs):
     """Returns a list of new latent codes found via hierarchical sampling. For
     a batch size of size BS, and N elements to [z_dims], returns a list of codes
     that where the ith code is of the size of the ith elmenent of [z_dims]
@@ -222,7 +120,7 @@ def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
 
     bs = len(corrupted_data)
     loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
-    level_codes = [torch.randn((bs,)+z, device=device) for z in z_dims]
+    level_codes = [generate_z(bs, z, sample_method=sample_method) for z in z_dims]
     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers, pin_memory=True)
 
     for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
@@ -237,8 +135,11 @@ def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
+                print("    ", level_idx, [y.shape for y in ys])
+
+
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
-                new_codes = torch.randn((code_bs * sp,) + shape, device=device)
+                new_codes = generate_z(code_bs * sp, shape, sample_method="normal")
                 test_codes = old_codes + [new_codes]
 
                 fx = backbone(cx.to(device), test_codes, loi=level_idx,
@@ -252,6 +153,9 @@ def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
                     new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
                     new_codes = new_codes[torch.arange(code_bs), idxs]
                     losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
+
+
+                print("     ", losses.shape, least_losses_batch.shape, start_idx, end_idx, len(loader))
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
@@ -299,7 +203,7 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
                 images_data = Subset(dataset, rand_idxs[batch_idx:batch_idx+bs])
                 corrupted_data = CorruptedDataset(images_data, corruptor)
                 codes_data = ZippedDataset(*get_new_codes(corrupted_data, model,
-                    **kwargs))
+                    ns=ns, sp=sp, code_bs=code_bs, in_color_space=in_color_space, out_color_space=out_color_space, **kwargs))
                 batch_dataset = ZippedDataset(codes_data, corrupted_data)
                 loader = DataLoader(batch_dataset, batch_size=mini_bs,
                     shuffle=True, num_workers=num_workers, pin_memory=True)
@@ -321,12 +225,13 @@ def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
         model.zero_grad(set_to_none=True)
         scheduler.step()
 
+        wandb.log({"loss_tr": loss, "lr": scheduler.get_last_lr()[0]})
         if verbose > 0 and batch_idx % print_iter == 0:
             tqdm.write(f"    current loss {loss.item():.5f} | lr {scheduler.get_last_lr()[0]:.5f}")
 
     model.zero_grad(set_to_none=True)
-    loss = total_loss * mini_bs / iters_per_code_per_ex / len(dataset)
-    return corruptor, model, optimizer, scheduler, loss
+    total_loss = total_loss * mini_bs / iters_per_code_per_ex / len(dataset)
+    return corruptor, model, optimizer, scheduler, total_loss
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
@@ -342,7 +247,7 @@ if __name__ == "__main__":
         help="optional training suffix")
     P.add_argument("--verbose", choices=[0, 1, 2], default=1, type=int,
         help="verbosity level")
-    P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
+    P.add_argument("--data_path", default=f"{project_dir}/data", type=str,
         help="path to data if not in normal place")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
@@ -423,7 +328,7 @@ if __name__ == "__main__":
     if not args.resume is None:
         run_id, resume_data = wandb_load(args.resume)
         set_seed(resume_data["seed"])
-        data_folder_path = args.data_folder_path
+        data_path = args.data_path
 
         wandb.init(id=run_id, resume="must", project="isicle-generator")
         wandb.save("*.pt")
@@ -433,7 +338,7 @@ if __name__ == "__main__":
         last_epoch = resume_data["last_epoch"]
         args = resume_data["args"]
         args.resume = True
-        args.data_folder_path = data_folder_path
+        args.data_path = data_path
 
         save_dir = generator_folder(args)
     else:
@@ -451,7 +356,7 @@ if __name__ == "__main__":
         model = nn.DataParallel(model, device_ids=args.gpus).to(device)
         core_params = [p for n,p in model.named_parameters() if not "map" in n]
         map_params = [p for n,p in model.named_parameters() if "map" in n]
-        optimizer = Adam([{"params": core_params},
+        optimizer = AdamW([{"params": core_params},
                           {"params": map_params, "lr": 1e-2 * args.lr}],
                           lr=args.lr, weight_decay=args.wd, betas=args.mm)
         corruptor = Corruption(**vars(args)).to(device)
@@ -459,7 +364,8 @@ if __name__ == "__main__":
 
     # Setup the datasets
     data_tr, data_eval = get_data_splits(args.data, args.eval, args.res,
-        data_folder_path=args.data_folder_path)
+        data_path=args.data_path)
+
     data_tr = GeneratorDataset(data_tr, get_gen_augs())
     data_eval = GeneratorDataset(data_eval, get_gen_augs())
 

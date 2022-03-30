@@ -34,7 +34,8 @@ from utils.Utils import *
 #
 # but only `cifar10` would be recorded here.
 ################################################################################
-datasets = ["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi", "camnet3_milli", "miniImagenet", "miniImagenet_deci"]
+datasets = ["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi",
+    "camnet3_milli", "miniImagenet", "miniImagenet_deci"]
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
 data2split2n_class = {
@@ -54,12 +55,11 @@ def seed_kwargs(seed=0):
     g.manual_seed(0)
     return {"generator": g, "worker_init_fn": seed_worker}
 
-
 ################################################################################
 # Functionality for loading datasets
 ################################################################################
 
-def get_data_splits(data_str, eval_str, res=None, data_folder_path=f"{project_dir}/data"):
+def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data"):
     """Returns data for training and evaluation. All Datasets returned are
     ImageFolders, meaning that another kind of dataset likely needs to be built
     on top of them.
@@ -68,67 +68,53 @@ def get_data_splits(data_str, eval_str, res=None, data_folder_path=f"{project_di
     data_str    -- string specifying the dataset to load. It must exactly exist
                     in the data directory, ie. data/data_str exists.
     eval_str    -- how to get validation/testing data
-    resolutions -- resolutions in which to return data
-                    - leave empty (no arguments) to get data for plain
-                        contrastive learning
-                    - if specified, validation data will include the minimum and
-                        maximum resolutions
+    res         -- resolutions in which to return data
+                    - if None, returned data will correspond to [data_str]
+                    - if a single int, returned data will correspond to
+                        [data_str] at resolution [res]
+                    - if a list of ints, returned data will be a list of
+                        datasets with the ith value in [res] the [ith]
+                        resolution of the returned data. Evaluation data will
+                        have two resolutions, sequentially, the min and max of
+                        [res]
+    data_path   -- path to dataset; data can be found at data_path/data_str
     """
+    def path_to_imagefolder(paths):
+        """Returns ImageFolder(s) given [paths], a list of data paths for a
+        list of ImageFolders, or a string for a single ImageFolder.
+        """
+        if isinstance(paths, list):
+            return [ImageFolder(p) for p in paths]
+        else:
+            return ImageFolder(paths)
+
     ############################################################################
     # CIFAR-10 has its own weird logic
     ############################################################################
     if data_str == "cifar10":
-        if eval_str == "test":
-            return (CIFAR10(root=data_folder_path, train=True, transform=None,
-                            download=True),
-                    CIFAR10(root=data_folder_path, train=False, transform=None,
-                            download=True))
-        else:
-            return (CIFAR10(root=data_folder_path, train=True, transform=None,
-                            download=True),
-                    CIFAR10(root=data_folder_path, train=True, transform=None,
-                            download=True))
+        return (CIFAR10(root=data_path, train=True, download=True),
+                CIFAR10(root=data_path, train=eval_str in ["val", "cv"],
+                    download=True))
 
-    def paths_to_datasets(data_paths):
-        """Returns ImageFolder(s) given [data_paths], a list of data paths for a
-        list of ImageFolders, or a string for a single ImageFolder.
-        """
-        if len(data_paths) > 1 and isinstance(data_paths, (OrderedDict, list)):
-            return [ImageFolder(data_path) for data_path in data_paths]
-        elif isinstance(data_paths, (OrderedDict, list)):
-            return ImageFolder(list(data_paths)[0])
-        else:
-            return ImageFolder(data_paths)
-
-    data_path = f"{data_folder_path}/{data_str}"
-
-    if eval_str == "test":
-        eval_split_specifier = "test"
-    elif eval_str == "val":
-        eval_split_specifier = "val"
-    elif eval_str == "cv":
-        eval_split_specifier = "train"
+    data_path = f"{data_path}/{data_str}"
+    eval_str = "train" if eval_str == "cv" else eval_str
 
     if res is None:
         data_paths_tr = f"{data_path}/train"
         data_paths_eval = f"{data_path}/{eval_split_specifier}"
+    elif isinstance(res, int) or (isinstance(res, list) and len(res) == 1):
+        res = res if isinstance(res, int) else res[0]
+        data_paths_tr = f"{data_path}_{res}x{res}/train"
+        data_paths_eval = f"{data_path}_{res}x{res}/{eval_split_specifier}"
     else:
         data_paths_tr = [f"{data_path}_{r}x{r}/train" for r in res]
-        data_paths_eval = [
-             f"{data_path}_{min(res)}x{min(res)}/{eval_split_specifier}",
-             f"{data_path}_{max(res)}x{max(res)}/{eval_split_specifier}"]
+        data_paths_eval = [f"{data_path}_{r}x{r}/{eval_str}" for r in res]
 
-        data_paths_tr = remove_duplicates(data_paths_tr)
-        data_paths_eval = remove_duplicates(data_paths_tr)
-
-        check_paths_exist([data_paths_tr, data_paths_eval])
-    return paths_to_datasets(data_paths_tr), paths_to_datasets(data_paths_eval)
+    return path_to_imagefolder(data_paths_tr), path_to_imagefolder(data_paths_eval)
 
 ################################################################################
 # Augmentations
 ################################################################################
-
-
 def get_contrastive_augs(crop_size=32, gaussian_blur=False, color_s=0):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
