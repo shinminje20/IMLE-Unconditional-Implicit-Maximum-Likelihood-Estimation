@@ -48,29 +48,36 @@ def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     dataset     -- GeneratorDataset to load images from
     idxs        -- the indices to [dataset] to get images for
     """
+    if isinstance(idxs, int):
+        idxs = list(range(0, len(dataset), len(dataset) // idxs))
+    elif idxs is None:
+        idxs = list(range(len(dataset)))
+    elif isinstance(idxs, list):
+        idxs = idxs
+    else:
+        raise ValueError(f"Invalid idxs '{idxs}")
+
+    ns = 4 # reject bad samples but keep average and good ones
+    model = model.module
+    images_dataset = Subset(dataset, idxs)
+    corrupted_data = CorruptedDataset(images_dataset, corruptor)
+
+    results = [[ys[-1], cx] for cx,ys in corrupted_data]
+    results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
+    corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
+
     with torch.no_grad():
-        ns = 4 # reject bad samples but keep average and good ones
-        model = model.module
-        idxs = list(range(len(dataset))) if idxs is None else idxs
-        images_dataset = Subset(dataset, idxs)
-        corrupted_data = CorruptedDataset(images_dataset, corruptor)
-
-        results = [[ys[-1], cx] for cx,ys in corrupted_data]
-        results = lab2rgb_with_dims(results) if in_color_space == "lab" else results
-
-        corrupted_data = ExpandedDataset(corrupted_data, samples_per_image)
         codes = ZippedDataset(*get_new_codes(corrupted_data, model, ns=ns, code_bs=len(idxs), **kwargs))
         batch_dataset = ZippedDataset(codes, corrupted_data)
 
-        with torch.no_grad():
-            for idx,(codes,(cx,_)) in enumerate(batch_dataset):
-                codes = [c.unsqueeze(0) for c in make_device(codes)]
-                fx = model(cx.to(device).unsqueeze(0), codes, loi=-1,
-                           in_color_space=in_color_space,
-                           out_color_space=out_color_space)
-                results[idx // samples_per_image].append(fx.cpu())
+        for idx,(codes,(cx,_)) in enumerate(batch_dataset):
+            codes = [c.unsqueeze(0) for c in make_device(codes)]
+            fx = model(cx.to(device).unsqueeze(0), codes, loi=-1,
+                    in_color_space=in_color_space,
+                    out_color_space=out_color_space)
+            results[idx // samples_per_image].append(fx.cpu())
 
-        return make_cpu(make_3dim(results))
+    return make_cpu(make_3dim(results))
 
 fixed_prior = None
 def generate_z(bs, shape, sample_method="normal", prior_components=10):
@@ -135,9 +142,6 @@ def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
                 least_losses_batch = least_losses[start_idx:end_idx]
 
-                print("    ", level_idx, [y.shape for y in ys])
-
-
                 old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
                 new_codes = generate_z(code_bs * sp, shape, sample_method="normal")
                 test_codes = old_codes + [new_codes]
@@ -153,9 +157,6 @@ def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
                     new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
                     new_codes = new_codes[torch.arange(code_bs), idxs]
                     losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
-
-
-                print("     ", losses.shape, least_losses_batch.shape, start_idx, end_idx, len(loader))
 
                 change_idxs = losses < least_losses_batch
                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
