@@ -30,10 +30,13 @@ data/cifar-10*
 data/camnet3*
 data/tinyImagenet*
 data/miniImagenet*
-
+data/gen_*
 models/camnet/*
 models/simclr/*
 generators/*
 generators
 wandb
 *.zip
+
+Data
+

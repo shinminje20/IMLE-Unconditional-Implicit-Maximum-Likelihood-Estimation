@@ -150,7 +150,7 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
 
     label2idxs = get_label2idxs(data_tr, data_name=data_name, data_split=data_split)
     out_dim = feature_extractor.out_dim
-    num_classes = len(data_tr.class_to_idx)
+    num_classes = data_tr.num_classes
     accuracies = []
 
     for t in tqdm(range(trials), desc="Validation trials"):

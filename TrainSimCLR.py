@@ -52,9 +52,9 @@ if __name__ == "__main__":
     P = argparse.ArgumentParser(description="SimCLR training")
     P.add_argument("--wandb", default=1, choices=[0, 1], type=int,
         help="Whether to use W&B logging or not")
-    P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
+    P.add_argument("--data_path", default=f"{project_dir}/data", type=str,
         help="path to data if not in normal place")
-    P.add_argument("--data", choices=["cifar10", "fruit", "miniImagenet"],
+    P.add_argument("--data", choices=["cifar10", "miniImagenet", "gen_miniImagenet"],
         default="cifar10",
         help="dataset to load images from")
     P.add_argument("--eval", default="val", choices=["val", "cv", "test"],
@@ -74,6 +74,8 @@ if __name__ == "__main__":
         help="number of epochs between linear evaluations")
     P.add_argument("--save_iter", default=100, type=int,
         help="save a model every --save_iter epochs")
+    P.add_argument("--unreal_augs", default=1, type=int, choices=[0, 1],
+        help="whether to use augs that can take an image off the real manifold")
 
     # Hyperparameter arguments
     P.add_argument("--backbone", default="resnet18", choices=["resnet18", "resnet50"],
@@ -129,7 +131,7 @@ if __name__ == "__main__":
     if args.resume is not None:
         run_id, resume_data = wandb_load(args.resume)
         cur_seed = set_seed(resume_data["seed"])
-        data_folder_path = args.data_folder_path
+        data_path = args.data_path
 
         wandb.init(id=run_id, resume="must", project="isicle")
         wandb.save("*.pt")
@@ -137,7 +139,7 @@ if __name__ == "__main__":
         optimizer = resume_data["optimizer"]
         last_epoch = resume_data["last_epoch"]
         args = resume_data["args"]
-        args.data_folder_path = data_folder_path
+        args.data_path = data_path
 
         save_dir = simclr_folder(args)
     else:
@@ -172,11 +174,15 @@ if __name__ == "__main__":
         first_cycle_steps=args.epochs, max_lr=args.lr,  min_lr=1e-6,
         warmup_steps=args.n_ramp, last_epoch=last_epoch)
     data_tr, data_eval = get_data_splits(args.data, args.eval, res=args.res,
-        data_folder_path=args.data_folder_path)
-    augs_tr, augs_fn, augs_te = get_contrastive_augs(crop_size=args.crop_size,
-        gaussian_blur=args.gaussian_blur, color_s=args.color_s)
-    data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
+        data_path=args.data_path)
 
+    if args.unreal_augs:
+        augs_tr, augs_fn, augs_te = get_contrastive_augs(crop_size=args.crop_size,
+            gaussian_blur=args.gaussian_blur, color_s=args.color_s)
+    else:
+        augs_tr, augs_fn, augs_te = get_real_augs(crop_size=args.crop_size)
+   
+    data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=args.num_workers, pin_memory=True,
         **seed_kwargs(cur_seed))

@@ -6,7 +6,7 @@ The important portions of this file are get_data_splits(), which returns
 training and evaluation ImageFolders, and the various Dataset subclasses that
 can be used to construct various useful datasets.
 """
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 import numpy as np
 import random
 import sys
@@ -84,9 +84,9 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
         list of ImageFolders, or a string for a single ImageFolder.
         """
         if isinstance(paths, list):
-            return [ImageFolder(p) for p in paths]
+            return [PreAugmentedImageFolder(p) for p in paths]
         else:
-            return ImageFolder(paths)
+            return PreAugmentedImageFolder(paths)
 
     ############################################################################
     # CIFAR-10 has its own weird logic
@@ -101,11 +101,11 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
 
     if res is None:
         data_paths_tr = f"{data_path}/train"
-        data_paths_eval = f"{data_path}/{eval_split_specifier}"
+        data_paths_eval = f"{data_path}/{eval_str}"
     elif isinstance(res, int) or (isinstance(res, list) and len(res) == 1):
         res = res if isinstance(res, int) else res[0]
         data_paths_tr = f"{data_path}_{res}x{res}/train"
-        data_paths_eval = f"{data_path}_{res}x{res}/{eval_split_specifier}"
+        data_paths_eval = f"{data_path}_{res}x{res}/{eval_str}"
     else:
         data_paths_tr = [f"{data_path}_{r}x{r}/train" for r in res]
         data_paths_eval = [f"{data_path}_{r}x{r}/{eval_str}" for r in res]
@@ -115,6 +115,19 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
 ################################################################################
 # Augmentations
 ################################################################################
+def get_real_augs(crop_size=32):
+    augs_tr = transforms.Compose([
+        transforms.RandomResizedCrop(crop_size),
+        transforms.RandomHorizontalFlip(p=0.5),
+        transforms.ToTensor()
+    ])
+
+    augs_te = transforms.Compose([
+        transforms.RandomResizedCrop(crop_size),
+        transforms.ToTensor()])
+
+    return augs_tr, augs_tr, augs_te
+
 def get_contrastive_augs(crop_size=32, gaussian_blur=False, color_s=0):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
@@ -388,3 +401,57 @@ class ZippedDataset(Dataset):
     def __len__(self): return len(self.datasets[0])
 
     def __getitem__(self, idx): return [d[idx] for d in self.datasets]
+
+class PreAugmentedImageFolder(Dataset):
+    """A drop-in replacement for an ImageFolder for use where some
+    augmentations are pre-generated. It will behave differently as described
+    below.
+
+    Args:
+    source      -- path to an folder of images laid out for an ImageFolder.
+                    Files which differ by only an `_augN` string are considered
+                    augmentations of each other.
+    transform   -- transform to apply
+    """
+    def __init__(self, source, transform=None, target_transform=None):
+
+        def remove_aug_info(s):
+            """Returns string [s] without information indicating which
+            augmentation it is. Concretely, this means that the `_augN` where
+            `N` is some (possibly multi-digit) number substring is removed.
+
+            This requires images to be named without breaking this function.
+            """
+            if "aug" in s:
+                underscore_idx = s.find("_")
+                underscore_idx = 0 if underscore_idx == -1 else underscore_idx
+                dot_idx = s.find(".")
+                return f"{s[:underscore_idx]}{s[dot_idx]}"
+            else:
+                return s
+
+        image2augs_idxs = defaultdict(lambda: [])
+        counter = 0
+        for c in tqdm(os.listdir(source), leave=False, desc="Buidling PreAugmentedImageFolder"):
+            for image in os.listdir(f"{source}/{c}"):
+                if image.endswith(".jpg") or image.endswith(".JPEG") or image.endswith(".png"):
+                    image2augs_idxs[remove_aug_info(f"{c}/{image}")].append(counter)
+                    counter += 1
+                else:
+                    continue
+
+        super(PreAugmentedImageFolder, self).__init__()
+        self.data_idx2aug_idxs = [v for v in image2augs_idxs.values() if len(v) > 0]
+        self.data = ImageFolder(source, transform=transform,
+            target_transform=target_transform)
+        self.num_classes = len(os.listdir(source))
+
+        aug_stats = [len(idxs) for idxs in self.data_idx2aug_idxs]
+        s = f"Constructed PreAugmentedImageFolder Dataset over {source}. Length: {len(self.data_idx2aug_idxs)} | Minimum number of augmentations for an image: {min(aug_stats)} | Average: {np.mean(aug_stats)}| Max: {max(aug_stats)}"   
+        tqdm.write(s)
+
+
+    def __len__(self): return len(self.data_idx2aug_idxs)
+
+    def __getitem__(self, idx):
+        return self.data[random.choice(self.data_idx2aug_idxs[idx])]
