@@ -17,6 +17,45 @@ from utils.UtilsColorSpace import rgb2lab_with_dims, lab2rgb_with_dims
 from utils.UtilsNN import *
 from utils.NestedNamespace import NestedNamespace
 
+class LossFnWrappingGenerator(nn.Module):
+    """A module wrapping a generator and an (unreduced) loss function.
+    
+    Args:
+    generator   -- an IMLE generator whose forward function accepts x, z, and
+                    loi arguments
+    loss_fn     -- a loss function that can function with reductions across
+                    everything and across a batch
+    """
+    def __init__(self, generator, loss_fn):
+        super(LossFnGenerator, self).__init__()
+        self.generator = generator
+        self.loss_fn = loss_fn
+
+    def forward(self, x, z, y=None, returned_objects="loss", loss_reduction="batch", loi=None):
+        """
+        Args:
+        x   -- 4D tensor of images
+        z   -- codes
+        y   -- ground truth images
+        returned_objects    -- string describing what to return
+        loss_reuction       -- reduction on the loss
+        loi                 -- level of interest for hierarchical sampling
+        """
+        if not returned_objects in ["loss", "outputs_loss", "outputs"]:
+            raise ValueError()
+        
+        outputs = self.generator(x, z, loi=loi)
+
+        if y is None or returned_objects == "outputs":
+            return outputs
+        elif y is not None and returned_objects == "outputs_loss":
+            loss = self.loss_fn(outputs, y, reduction=loss_reduction)
+            return outputs, loss
+        elif y is not None and returned_objects == "loss":
+            return self.loss_fn(outputs, y, reduction=loss_reduction)
+        else:
+            raise ValueError()
+
 def get_z_dims(model):
     """Returns a list of tuples, where the ith tuple is the shape of the
     latent code required for the ith level without expansion to the batch

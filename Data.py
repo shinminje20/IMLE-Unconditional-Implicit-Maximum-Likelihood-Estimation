@@ -116,6 +116,7 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
 # Augmentations
 ################################################################################
 def get_real_augs(crop_size=32):
+    """Returns augmentations that ensure images remain on the real manifold."""
     augs_tr = transforms.Compose([
         transforms.RandomResizedCrop(crop_size),
         transforms.RandomHorizontalFlip(p=0.5),
@@ -408,12 +409,15 @@ class PreAugmentedImageFolder(Dataset):
     below.
 
     Args:
-    source      -- path to an folder of images laid out for an ImageFolder.
-                    Files which differ by only an `_augN` string are considered
-                    augmentations of each other.
-    transform   -- transform to apply
+    source              -- path to an folder of images laid out for an
+                            ImageFolder. Files which differ by only an `_augN`
+                            string are considered augmentations of each other.
+    transform           -- transform to apply
+    target_transform    -- target transform
+    verbose             -- whether to print info about constructed dataset
     """
-    def __init__(self, source, transform=None, target_transform=None):
+    def __init__(self, source, transform=None, target_transform=None,
+        verbose=True):
 
         def remove_aug_info(s):
             """Returns string [s] without information indicating which
@@ -422,33 +426,33 @@ class PreAugmentedImageFolder(Dataset):
 
             This requires images to be named without breaking this function.
             """
-            if "aug" in s:
+            if "_aug" in s:
                 underscore_idx = s.find("_")
-                underscore_idx = 0 if underscore_idx == -1 else underscore_idx
                 dot_idx = s.find(".")
                 return f"{s[:underscore_idx]}{s[dot_idx]}"
             else:
                 return s
 
-        image2augs_idxs = defaultdict(lambda: [])
-        counter = 0
+        # Build a mapping from keys representing unique images to indices to the
+        # files under [source] that are augmentations of that image
+        image2idxs, counter = defaultdict(lambda: []), 0
         for c in tqdm(os.listdir(source), leave=False, desc="Buidling PreAugmentedImageFolder"):
             for image in os.listdir(f"{source}/{c}"):
-                if image.endswith(".jpg") or image.endswith(".JPEG") or image.endswith(".png"):
-                    image2augs_idxs[remove_aug_info(f"{c}/{image}")].append(counter)
+                if os.path.splitext(image)[1].lower() in [".jpg", ".jpeg", ".png"]:
+                    image2idxs[remove_aug_info(f"{c}/{image}")].append(counter)
                     counter += 1
-                else:
-                    continue
 
         super(PreAugmentedImageFolder, self).__init__()
-        self.data_idx2aug_idxs = [v for v in image2augs_idxs.values() if len(v) > 0]
+        self.data_idx2aug_idxs = [v for v in image2idxs.values() if len(v) > 0]
         self.data = ImageFolder(source, transform=transform,
             target_transform=target_transform)
         self.num_classes = len(os.listdir(source))
 
-        aug_stats = [len(idxs) for idxs in self.data_idx2aug_idxs]
-        s = f"Constructed PreAugmentedImageFolder Dataset over {source}. Length: {len(self.data_idx2aug_idxs)} | Minimum number of augmentations for an image: {min(aug_stats)} | Average: {np.mean(aug_stats)}| Max: {max(aug_stats)}"   
-        tqdm.write(s)
+        # Print dataset statistics
+        if verbose:
+            aug_stats = [len(idxs) for idxs in self.data_idx2aug_idxs]
+            s = f"Constructed PreAugmentedImageFolder over {source}. Length: {len(self.data_idx2aug_idxs)} | Min augmentations for an image: {min(aug_stats)} | Average: {np.mean(aug_stats):.5f}| Max: {max(aug_stats)}"
+            tqdm.write(s)
 
 
     def __len__(self): return len(self.data_idx2aug_idxs)

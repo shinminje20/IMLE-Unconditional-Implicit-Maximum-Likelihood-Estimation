@@ -363,9 +363,9 @@ if __name__ == "__main__":
         corruptor = Corruption(**vars(args)).to(device)
         last_epoch = -1
 
-    # Setup the datasets
-    data_tr, data_eval = get_data_splits(args.data, args.eval, args.res,
-        data_path=args.data_path)
+    # Setup the datasets. Given the application, validating on training data is
+    # totally okay.
+    data_tr, data_eval = get_data_splits(args.data, args.eval, args.res, data_path=args.data_path)
 
     data_tr = GeneratorDataset(data_tr, get_gen_augs())
     data_eval = GeneratorDataset(data_eval, get_gen_augs())

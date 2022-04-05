@@ -189,27 +189,8 @@ def wandb_save(dictionary, path):
     torch.save(dictionary | resume_dictionary, path)
     tqdm.write(f"Saved files to {path}")
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def dict_to_nice_str(dict, max_line_length=80):
-    """
-    """
+    """Returns a pretty string representation of [dict]."""
     s, last_line_length = "", 0
     for k in sorted(dict.keys()):
         item_len = len(f"{k}: {dict[k]}, ")
