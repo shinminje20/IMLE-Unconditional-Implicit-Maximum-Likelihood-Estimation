@@ -20,21 +20,23 @@ from utils.Utils import *
 from utils.UtilsColorSpace import *
 from utils.UtilsNN import *
 
-def check_args(args, data_tr_len):
-    """Returns [args] if they are okay or raises an informative ValueError."""
-    if not evenly_divides(args.bs, data_tr_len) or data_tr_len < args.bs:
-        raise ValueError(f"--bs {args.bs} must be at most and evenly divide the length of the dataset {len(data_tr)}")
-    if not evenly_divides(args.mini_bs, args.bs) or args.bs < args.mini_bs:
-        raise ValueError(f"--mini_bs {args.mini_bs} must be at most and evenly divide --bs {args.bs}")
-    if not evenly_divides(args.code_bs, args.bs) or args.bs < args.code_bs:
-         raise ValueError(f"--code_bs {args.code_bs} must be at most and evenly divide --bs {args.bs}")
+def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None):
+    """Returns a latent code for a model.
 
-    for ns,sp in zip(args.ns, args.sp):
-        if not evenly_divides(sp, ns) and not ns < sp:
-            raise ValueError(f"--sp {args.sp} evenly divide --ns {args.ns} on all indices")
-    tqdm.write(f"Training will take {int(len(data_tr) / args.mini_bs * args.ipcpe * args.epochs)} gradient steps and {args.epochs * len(data_tr)} different codes")
-
-    return args
+    Args:
+    z_dims          -- list of tuples of shapes to generate
+    bs              -- batch size to generate for
+    level           -- the level to generate a shape for or all for 'all' to get
+                        a list of codes, one for each level
+    sample_method   -- the method to use to sample
+    """
+    if sample_method == "normal":
+        if level == "all":
+            return [torch.randn((bs,) + dim) for dim in z_dims]
+        else:
+            return torch.randn((bs,) + z_dims[level])
+    else:
+        raise NotImplementedError()
 
 def get_images(corruptor, model, dataset, idxs=list(range(0, 60, 6)),
     samples_per_image=5, in_color_space="rgb", out_color_space="rgb", ns=10,
@@ -103,69 +105,142 @@ def generate_z(bs, shape, sample_method="normal", prior_components=10):
     else:
         raise ValueError
 
-def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
-    ns=128, sp=2, in_color_space="rgb", out_color_space="rgb",
-    proj_dim=None, verbose=1, sample_method="normal", **kwargs):
-    """Returns a list of new latent codes found via hierarchical sampling. For
-    a batch size of size BS, and N elements to [z_dims], returns a list of codes
-    that where the ith code is of the size of the ith elmenent of [z_dims]
-    expanded across the batch dimension.
+# def get_new_codes(corrupted_data, backbone, loss_type="resolution", code_bs=6,
+#     ns=128, sp=2, in_color_space="rgb", out_color_space="rgb",
+#     proj_dim=None, verbose=1, sample_method="normal", **kwargs):
+#     """Returns a list of new latent codes found via hierarchical sampling. For
+#     a batch size of size BS, and N elements to [z_dims], returns a list of codes
+#     that where the ith code is of the size of the ith elmenent of [z_dims]
+#     expanded across the batch dimension.
+
+#     Args:
+#     z_dims          -- list of shapes describing a latent code
+#     corrupted_data  -- a Subset of the training dataset
+#     backbone    -- model backbone. Must support a 'loi' argument
+#     loss_fn     -- the means of determining distance. For inputs of size Nx...,
+#                     it should return a tensor of N losses.
+#     code_bs     -- batch size to test codes in
+#     num_samples -- number of times we try to find a better code for each image
+
+#     """
+#     z_dims = get_z_dims(model)
+#     sample_parallelism = make_list(sp, length=len(z_dims))
+#     num_samples = make_list(ns, length=len(z_dims))
+
+#     bs = len(corrupted_data)
+#     loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
+#     level_codes = [generate_z(bs, z, sample_method=sample_method) for z in z_dims]
+#     loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers, pin_memory=True)
+
+#     for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
+#         least_losses = torch.ones(bs, device=device) * float("inf")
+
+#         ns = num_samples[level_idx]
+#         sp = min(ns, sample_parallelism[level_idx])
+#         shape = z_dims[level_idx]
+
+#         for i in tqdm(range(ns // sp), desc="Sampling", leave=False, dynamic_ncols=True):
+#             for idx,(cx,ys) in enumerate(loader):
+#                 start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
+#                 least_losses_batch = least_losses[start_idx:end_idx]
+
+#                 old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
+#                 new_codes = generate_z(code_bs * sp, shape, sample_method="normal")
+#                 test_codes = old_codes + [new_codes]
+
+#                 fx = backbone(cx.to(device), test_codes, loi=level_idx,
+#                     in_color_space=in_color_space,
+#                     out_color_space=out_color_space)
+#                 ys = ys[level_idx].to(device)
+#                 losses = compute_loss(fx, ys, loss_fn, reduction="batch")
+
+#                 if sp > 1:
+#                     _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
+#                     new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
+#                     new_codes = new_codes[torch.arange(code_bs), idxs]
+#                     losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
+
+#                 change_idxs = losses < least_losses_batch
+#                 level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
+#                 least_losses[start_idx:end_idx][change_idxs] = losses[change_idxs]
+
+#             if verbose == 2:
+#                 tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
+
+#     return make_cpu(level_codes)
+
+
+
+def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=1, sample_parallelism=1):
+    """Returns a list of new latent codes found via hierarchical sampling.
 
     Args:
-    z_dims          -- list of shapes describing a latent code
-    corrupted_data  -- a Subset of the training dataset
-    backbone    -- model backbone. Must support a 'loi' argument
-    loss_fn     -- the means of determining distance. For inputs of size Nx...,
-                    it should return a tensor of N losses.
-    code_bs     -- batch size to test codes in
-    num_samples -- number of times we try to find a better code for each image
-
+    cx          -- a BSxCxHxW tensor of corrupted images, on device
+    model       -- model backbone. Must support a 'loi' argument and a tensor of
+                    losses, one for each element in an input batch
+    z_gen       -- function mapping from batch sizes and levels to z_dims
+    sp          -- list of sample parallelisms, one for each level
+    num_samples -- list of numbers of samples, one for each level
     """
-    z_dims = get_z_dims(model)
-    sample_parallelism = make_list(sp, length=len(z_dims))
-    num_samples = make_list(ns, length=len(z_dims))
+    if isinstance(num_samples, int):
+        num_samples = make_list(num_samples, length=len(y))
+    if isinstance(sample_parallelism, int):
+        sample_parallelism = make_list(sample_parallelism, length=len(y))
 
-    bs = len(corrupted_data)
-    loss_fn = get_unreduced_loss_fn(loss_type, proj_dim=proj_dim)
-    level_codes = [generate_z(bs, z, sample_method=sample_method) for z in z_dims]
-    loader = DataLoader(corrupted_data, batch_size=code_bs, num_workers=num_workers, pin_memory=True)
+    bs = len(cx)
+    level_codes = z_gen(bs, level="all")
 
-    for level_idx in tqdm(range(len(z_dims)), desc="Levels", leave=False, dynamic_ncols=True):
+    for level_idx in tqdm(range(len(num_samples)), desc="Levels", leave=False, dynamic_ncols=True):
+
+        # Get inputs for sampling for the current level. We need to store the
+        # least losses we have for each example, and to find the level-specific
+        # number of samples [ns], sample parallelism [sp], and shape to sample
+        # noise in [shape].
         least_losses = torch.ones(bs, device=device) * float("inf")
-
         ns = num_samples[level_idx]
         sp = min(ns, sample_parallelism[level_idx])
-        shape = z_dims[level_idx]
 
-        for i in tqdm(range(ns // sp), desc="Sampling", leave=False, dynamic_ncols=True):
-            for idx,(cx,ys) in enumerate(loader):
-                start_idx, end_idx = code_bs * idx, code_bs * (idx + 1)
-                least_losses_batch = least_losses[start_idx:end_idx]
+        # Handle arbitrary sample parallelism. If [sp] evenly divides [ns], then
+        # we just run [ns // sp] tries. Otherwise, we run an extra try where the
+        # sample parallelism is [ns % sp].
+        if ns % sp == 0:
+            iter_range = range(ns // sp)
+            sps = make_list(sp, len(iter_range))
+        else:
+            iter_range = range(ns // sp + 1)
+            sps = make_list(sp, length=ns // sp) + [ns % sp]
 
-                old_codes = [l[start_idx:end_idx] for l in level_codes[:level_idx]]
-                new_codes = generate_z(code_bs * sp, shape, sample_method="normal")
-                test_codes = old_codes + [new_codes]
+        for idx in tqdm(iter_range, desc="Sampling", leave=False, dynamic_ncols=True):
 
-                fx = backbone(cx.to(device), test_codes, loi=level_idx,
-                    in_color_space=in_color_space,
-                    out_color_space=out_color_space)
-                ys = ys[level_idx].to(device)
-                losses = compute_loss(fx, ys, loss_fn, reduction="batch")
+            # Get the sample parallelism for this trial. Then, get new codes to
+            # sample for the CAMNet level currently being sampled with while
+            # using the prior best old codes.
+            sp = sps[idx]
+            old_codes = level_codes[:level_idx]
+            new_codes = z_gen(bs * sp, level=level_idx)
+            test_codes = old_codes + [new_codes]
 
-                if sp > 1:
-                    _, idxs = torch.min(losses.view(code_bs, sp), axis=1)
-                    new_codes = new_codes.view((code_bs, sp) + new_codes.shape[1:])
-                    new_codes = new_codes[torch.arange(code_bs), idxs]
-                    losses = losses.view(code_bs, sp)[torch.arange(code_bs), idxs]
+            # Compute loss for the new codes
+            outputs = model(cx, test_codes, loi=level_idx)
+            losses = loss_fn(outputs, y[level_idx])
 
-                change_idxs = losses < least_losses_batch
-                level_codes[level_idx][start_idx:end_idx][change_idxs] = new_codes[change_idxs]
-                least_losses[start_idx:end_idx][change_idxs] = losses[change_idxs]
+            # [losses] may have multiple values for each input example due to
+            # using sample parallelism. Therefore, we find the best-computed
+            # loss for each example, giving a tensor of new losses of the same
+            # size as [least_losses]. We do the same with the newly sampled
+            # codes.
+            _, idxs = torch.min(losses.view(bs, sp), axis=1)
+            new_codes = new_codes.view((bs, sp) + new_codes.shape[1:])
+            new_codes = new_codes[torch.arange(bs), idxs]
+            losses = losses.view(bs, sp)[torch.arange(bs), idxs]
 
-            if verbose == 2:
-                tqdm.write(f"    Processed {i * sp} samples | mean loss {torch.mean(least_losses):.5f}")
+            # Update [level_codes] and [last_losses] to reflect new codes that
+            # get least loss.
+            change_idxs = losses < least_losses
+            level_codes[level_idx][change_idxs] = new_codes[change_idxs]
+            least_losses[change_idxs] = losses[change_idxs]
 
-    return make_cpu(level_codes)
+    return level_codes
 
 def one_epoch_imle(corruptor, model, optimizer, scheduler, dataset,
     loss_type="resolution", bs=1, mini_bs=1, code_bs=1, iters_per_code_per_ex=1,
@@ -314,9 +389,9 @@ if __name__ == "__main__":
 
     P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
         help="grayscale corruption")
-    P.add_argument("--pix_mask_size", default=8, type=int,
+    P.add_argument("--mask_res", default=8, type=int,
         help="sidelength of image at which to do masking")
-    P.add_argument("--pix_mask_frac", default=.1, type=float,
+    P.add_argument("--mask_frac", default=.1, type=float,
         help="fraction of pixels to mask")
     P.add_argument("--fill", default="zero", choices=["color", "zero"],
         help="how to fill masked out areas")

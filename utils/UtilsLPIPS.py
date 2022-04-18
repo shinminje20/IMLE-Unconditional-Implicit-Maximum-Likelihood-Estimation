@@ -29,24 +29,6 @@ def normalize_tensor(x, eps=1e-10):
     norm_factor = torch.sqrt(torch.sum(x ** 2, dim=1, keepdim=True) + eps)
     return x / (norm_factor + eps)
 
-class NetLinLayer(nn.Module):
-    """A single linear layer used as placeholder for LPIPS learnt weights."""
-
-    def __init__(self, weight):
-        super(NetLinLayer, self).__init__()
-        self.weight = weight
-
-    def forward(self, inp): return self.weight * inp
-
-class ScalingLayer(nn.Module):
-    def __init__(self):
-        super(ScalingLayer, self).__init__()
-        self.register_buffer('shift', torch.Tensor([-.030,-.088,-.188])[None,:,None,None])
-        self.register_buffer('scale', torch.Tensor([.458,.448,.450])[None,:,None,None])
-
-    def forward(self, inp):
-        return (inp - self.shift) / self.scale
-
 class vgg16(torch.nn.Module):
     def __init__(self, requires_grad=False, pretrained=True):
         super(vgg16, self).__init__()
@@ -58,18 +40,30 @@ class vgg16(torch.nn.Module):
         self.slice5 = torch.nn.Sequential()
         self.N_slices = 5
         for x in range(4):
-            self.slice1.add_module(str(x), vgg_pretrained_features[x])
+            if isinstance(vgg_pretrained_features[x], nn.ReLU):
+                self.slice1.add_module(str(x), nn.ReLU(inplace=False))
+            else:
+                self.slice1.add_module(str(x), vgg_pretrained_features[x])
         for x in range(4, 9):
-            self.slice2.add_module(str(x), vgg_pretrained_features[x])
+            if isinstance(vgg_pretrained_features[x], nn.ReLU):
+                self.slice2.add_module(str(x), nn.ReLU(inplace=False))
+            else:
+                self.slice2.add_module(str(x), vgg_pretrained_features[x])
         for x in range(9, 16):
-            self.slice3.add_module(str(x), vgg_pretrained_features[x])
+            if isinstance(vgg_pretrained_features[x], nn.ReLU):
+                self.slice3.add_module(str(x), nn.ReLU(inplace=False))
+            else:
+                self.slice3.add_module(str(x), vgg_pretrained_features[x])
         for x in range(16, 23):
-            self.slice4.add_module(str(x), vgg_pretrained_features[x])
+            if isinstance(vgg_pretrained_features[x], nn.ReLU):
+                self.slice4.add_module(str(x), nn.ReLU(inplace=False))
+            else:
+                self.slice4.add_module(str(x), vgg_pretrained_features[x])
         for x in range(23, 30):
-            self.slice5.add_module(str(x), vgg_pretrained_features[x])
-        if not requires_grad:
-            for param in self.parameters():
-                param.requires_grad = False
+            if isinstance(vgg_pretrained_features[x], nn.ReLU):
+                self.slice5.add_module(str(x), nn.ReLU(inplace=False))
+            else:
+                self.slice5.add_module(str(x), vgg_pretrained_features[x])
 
     def forward(self, X):
         h = self.slice1(X)
@@ -92,12 +86,18 @@ class LPIPSFeats(nn.Module):
 
     def __init__(self):
         super(LPIPSFeats, self).__init__()
-        self.scaling_layer = ScalingLayer()
         self.vgg = vgg16()
+
+        self.shift = nn.Parameter(torch.Tensor([-.030,-.088,-.188])[None,:,None,None])
+        self.scale = nn.Parameter(torch.Tensor([.458,.448,.450])[None,:,None,None])
 
         get_lpips_weights()
         W = torch.load(f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth")
-        self.lin_layers = [NetLinLayer(torch.sqrt(W[k])) for k in W]
+        self.lin0 = nn.Parameter(torch.sqrt(W["lin0.model.1.weight"]))
+        self.lin1 = nn.Parameter(torch.sqrt(W["lin1.model.1.weight"]))
+        self.lin2 = nn.Parameter(torch.sqrt(W["lin2.model.1.weight"]))
+        self.lin3 = nn.Parameter(torch.sqrt(W["lin3.model.1.weight"]))
+        self.lin4 = nn.Parameter(torch.sqrt(W["lin4.model.1.weight"]))
 
         self.eval()
 
@@ -109,7 +109,17 @@ class LPIPSFeats(nn.Module):
         normalize   -- whether to normalize the input in 0...1 to -1...1
         """
         x = 2 * x - 1 if normalize else x
-        x = self.scaling_layer(x)
+        x = (x - self.shift) / self.scale
         vgg_feats = [normalize_tensor(v) for v in self.vgg(x)]
-        feats = [l(v) for l,v in zip(self.lin_layers, vgg_feats)]
-        return torch.cat([l.flatten(start_dim=1) for l in feats], axis=1)
+
+        feats = [
+            torch.multiply(self.lin0, vgg_feats[0]),
+            torch.multiply(self.lin1, vgg_feats[1]),
+            torch.multiply(self.lin2, vgg_feats[2]),
+            torch.multiply(self.lin3, vgg_feats[3]),
+            torch.multiply(self.lin4, vgg_feats[4])
+        ]
+
+        result = torch.cat([l.flatten(start_dim=1) for l in feats], axis=1)
+
+        return result

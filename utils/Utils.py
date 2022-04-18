@@ -88,6 +88,10 @@ def flatten(xs):
     else:
         return [xs]
 
+def round_so_evenly_divides(x, y):
+    """Returns [x] adjusted up or down by up to so [y] divides it evenly."""
+    return x + (y - (x % y)) if ((x % y) > y / 2) else x - (x % y)
+
 def make_list(x, length=1):
     """Returns a list of length [length] where each elment is [x], or, if [x]
     is a list of length [length], returns [x].
@@ -157,7 +161,7 @@ def generator_folder(args):
     them all into a file name, so we need to use times to keep track of things.
     This is also the reason we use WandB!
     """
-    return f"{project_dir}/generators/{args.arch}_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.pix_mask_frac}-mask_size{args.pix_mask_size}-mini_bs{args.mini_bs}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
+    return f"{project_dir}/generators/camnet_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 

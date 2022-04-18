@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import Adam, AdamW
-from torch.optim.lr_scheduler import MultiStepLR, CosineAnnealingLR
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 from torch.utils.data import DataLoader, Subset
 from torch.cuda.amp import autocast, GradScaler
 import torchvision.utils as tv_utils
@@ -24,6 +24,10 @@ from utils.UtilsNN import *
 from torch.cuda.amp import autocast, GradScaler
 from functools import partial
 
+def get_z_dims(args):
+    """Returns a list of random noise dimensionalities for one sampling."""
+    return [(args.map_nc + args.code_nc * r ** 2,) for r in args.res[:-1]]
+
 def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None):
     """Returns a latent code for a model.
 
@@ -36,9 +40,9 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None):
     """
     if sample_method == "normal":
         if level == "all":
-            return [torch.randn((bs,) + dim, device=device) for dim in z_dims]
+            return [torch.randn((bs,) + dim) for dim in z_dims]
         else:
-            return torch.randn((bs,) + z_dims[level], device=device)
+            return torch.randn((bs,) + z_dims[level])
     else:
         raise NotImplementedError()
 
@@ -59,58 +63,58 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
     bs = len(cx)
     level_codes = z_gen(bs, level="all")
     with torch.no_grad():
-        with autocast():
-            for level_idx in tqdm(range(len(num_samples)), desc="Levels", leave=False, dynamic_ncols=True):
+        for level_idx in tqdm(range(len(num_samples)), desc="Levels", leave=False, dynamic_ncols=True):
 
-                # Get inputs for sampling for the current level. We need to
-                # store the least losses we have for each example, and to find
-                # the level-specific number of samples [ns], sample parallelism
-                # [sp], and shape to sample noise in [shape].
-                least_losses = torch.ones(bs, device=device) * float("inf")
-                ns = num_samples[level_idx]
-                sp = min(ns, sample_parallelism[level_idx])
+            # Get inputs for sampling for the current level. We need to
+            # store the least losses we have for each example, and to find
+            # the level-specific number of samples [ns], sample parallelism
+            # [sp], and shape to sample noise in [shape].
+            least_losses = torch.ones(bs, device=device) * float("inf")
+            ns = num_samples[level_idx]
+            sp = min(ns, sample_parallelism[level_idx])
 
-                # Handle arbitrary sample parallelism. If [sp] evenly divides
-                # [ns], then we just run [ns // sp] tries. Otherwise, we run an
-                # extra try where the sample parallelism is [ns % sp].
-                if ns % sp == 0:
-                    iter_range = range(ns // sp)
-                    sps = make_list(sp, len(iter_range))
-                else:
-                    iter_range = range(ns // sp + 1)
-                    sps = make_list(sp, length=ns // sp) + [ns % sp]
+            # Handle arbitrary sample parallelism. If [sp] evenly divides
+            # [ns], then we just run [ns // sp] tries. Otherwise, we run an
+            # extra try where the sample parallelism is [ns % sp].
+            if ns % sp == 0:
+                iter_range = range(ns // sp)
+                sps = make_list(sp, len(iter_range))
+            else:
+                iter_range = range(ns // sp + 1)
+                sps = make_list(sp, length=ns // sp) + [ns % sp]
 
-                for idx in tqdm(iter_range, desc="Sampling", leave=False, dynamic_ncols=True):
+            for idx in tqdm(iter_range, desc="Sampling", leave=False, dynamic_ncols=True):
 
-                    # Get the sample parallelism for this trial. Then, get new
-                    # codes to sample for the CAMNet level currently being
-                    # sampled with while using the prior best old codes.
-                    sp = sps[idx]
-                    old_codes = level_codes[:level_idx]
-                    new_codes = z_gen(bs * sp, level=level_idx)
-                    test_codes = old_codes + [new_codes]
+                # Get the sample parallelism for this trial. Then, get new
+                # codes to sample for the CAMNet level currently being
+                # sampled with while using the prior best old codes.
+                sp = sps[idx]
+                old_codes = level_codes[:level_idx]
+                new_codes = z_gen(bs * sp, level=level_idx)
+                test_codes = old_codes + [new_codes]
 
-                    # Compute loss for the new codes
+                # Compute loss for the new codes
+                with autocast():
                     outputs = model(cx, test_codes, loi=level_idx)
-                    losses = loss_fn(outputs, y[level_idx])
+                losses = loss_fn(outputs, y[level_idx])
 
-                    # [losses] may have multiple values for each input example
-                    # due to using sample parallelism. Therefore, we find the
-                    # best-comuted loss for each example, giving a tensor of new
-                    # losses of the same size as [least_losses]. We do the same
-                    # with the newly sampled codes.
-                    _, idxs = torch.min(losses.view(bs, sp), axis=1)
-                    new_codes = new_codes.view((bs, sp) + new_codes.shape[1:])
-                    new_codes = new_codes[torch.arange(bs), idxs]
-                    losses = losses.view(bs, sp)[torch.arange(bs), idxs]
+                # [losses] may have multiple values for each input example
+                # due to using sample parallelism. Therefore, we find the
+                # best-comuted loss for each example, giving a tensor of new
+                # losses of the same size as [least_losses]. We do the same
+                # with the newly sampled codes.
+                _, idxs = torch.min(losses.view(bs, sp), axis=1)
+                new_codes = new_codes.view((bs, sp) + new_codes.shape[1:])
+                new_codes = new_codes[torch.arange(bs), idxs]
+                losses = losses.view(bs, sp)[torch.arange(bs), idxs]
 
-                    # Update [level_codes] and [last_losses] to reflect new
-                    # codes that get least loss.
-                    change_idxs = losses < least_losses
-                    level_codes[level_idx][change_idxs] = new_codes[change_idxs]
-                    least_losses[change_idxs] = losses[change_idxs]
+                # Update [level_codes] and [last_losses] to reflect new
+                # codes that get least loss.
+                change_idxs = losses < least_losses
+                level_codes[level_idx][change_idxs] = new_codes[change_idxs]
+                least_losses[change_idxs] = losses[change_idxs]
 
-    return level_codes
+return level_codes
 
 def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
     """Returns a list of lists, where each sublist contains first a ground-truth
@@ -126,23 +130,23 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
     results = []
     loss = 0
     with torch.no_grad():
-        with autocast():
-            for x,y in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
-                bs = len(x)
-                cx = corruptor(x)
-                cx_expanded = cx.repeat_interleave(spi, dim=0)
-                codes = z_gen(bs * spi, level="all")
+        for x,y in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
+            bs = len(x)
+            cx = corruptor(x)
+            cx_expanded = cx.repeat_interleave(spi, dim=0)
+            codes = z_gen(bs * spi, level="all")
+            with autocast():
                 outputs = model(cx_expanded, codes, loi=-1)
-                losses = loss_fn(outputs, y[-1])
-                outputs = outputs.view(bs, spi, 3, args.res[-1], args.res[-1])
+            losses = loss_fn(outputs, y[-1])
+            outputs = outputs.view(bs, spi, 3, args.res[-1], args.res[-1])
 
-                idxs = torch.argsort(losses.view(bs, spi), dim=-1)
-                outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
-                images = [[s for s in samples] for samples in outputs]
-                images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
-                
-                loss += losses.mean().item()
-                results += images
+            idxs = torch.argsort(losses.view(bs, spi), dim=-1)
+            outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
+            images = [[s for s in samples] for samples in outputs]
+            images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
+            
+            loss += losses.mean().item()
+            results += images
 
     return results, loss / len(loader_eval)
 
@@ -250,6 +254,11 @@ if __name__ == "__main__":
             project="isicle-generator", config=args,
             mode="online" if args.wandb else "disabled", 
             name=save_dir.replace(f"{project_dir}/generators/", ""))
+
+        tqdm.write(f"----- Final Arguments -----")
+        tqdm.write(dict_to_nice_str(vars(args)))
+        tqdm.write(f"----- Beginning Training -----")
+
         last_epoch = -1
     
         # Set up the corruptor and the model
@@ -277,9 +286,10 @@ if __name__ == "__main__":
             batch_size=max(len(args.gpus), args.bs // args.spi), drop_last=True)
 
         # Set up the learning rate scheduler
-        scheduler = CosineAnnealingLR(optimizer,
-            args.epochs * (len(data_tr) // args.bs),
-            last_epoch=last_epoch)
+        scheduler = CosineAnnealingWarmupRestarts(optimizer,
+            max_lr=args.lr,  min_lr=1e-6,
+            first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
+            last_epoch=max(-1, last_epoch * len(loader_tr)))
 
         # Get a function that returns random codes given a level. We will use
         # this to do cool things with non-Gaussian sampling via the
@@ -327,7 +337,7 @@ if __name__ == "__main__":
                     # gradients lurking around.
                     optimizer.zero_grad(set_to_none=True)
                 
-                wandb.log({"training loss": loss.item(), "learning rate": scheduler.get_last_lr()[0]})
+                wandb.log({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
 
                 loss_tr += loss.detach()
 
