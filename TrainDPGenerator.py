@@ -177,7 +177,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--wandb", default=1, choices=[0, 1], type=int,
+    P.add_argument("--wandb", default=1, choices=[0, 1, 2], type=int,
         help="Whether to use W&B logging or not")
     P.add_argument("--data", default="cifar10", choices=datasets,
         help="data to train on")
