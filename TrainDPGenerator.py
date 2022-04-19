@@ -272,6 +272,7 @@ if __name__ == "__main__":
     if not args.resume is None:
         raise NotImplementedError()
     else:
+        set_seed(args.seed)
         args.run_id = wandb.util.generate_id()
         save_dir = generator_folder(args)
         

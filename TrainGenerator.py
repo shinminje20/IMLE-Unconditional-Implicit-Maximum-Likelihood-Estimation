@@ -391,7 +391,7 @@ if __name__ == "__main__":
         help="grayscale corruption")
     P.add_argument("--mask_res", default=8, type=int,
         help="sidelength of image at which to do masking")
-    P.add_argument("--mask_frac", default=.1, type=float,
+    P.add_argument("--mask_frac", default=0, type=float,
         help="fraction of pixels to mask")
     P.add_argument("--fill", default="zero", choices=["color", "zero"],
         help="how to fill masked out areas")

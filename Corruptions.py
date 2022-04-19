@@ -24,27 +24,27 @@ from kornia.augmentation import AugmentationBase2D
 ################################################################################
 #
 class RandomPixelMask(nn.Module):
-    """Returns images with in expectation [pix_mask_frac] of the pixels set to
+    """Returns images with in expectation [mask_frac] of the pixels set to
     zero.
 
     Args:
-    pix_mask_frac   -- expected fraction of pixels to mask out
+    mask_frac   -- expected fraction of pixels to mask out
     size            -- resolution (SIZExSIZE) at which to set pixels to zero.
                         Decreasing this makes for larger blotches of erased
                         image
     fill            -- how to fill the image, one of 'zero' or 'color'
     """
-    def __init__(self, pix_mask_frac, pix_mask_size=16, fill="zero"):
+    def __init__(self, mask_frac, mask_res=16, fill="zero"):
         super(RandomPixelMask, self).__init__()
-        self.pix_mask_frac = pix_mask_frac
-        self.size = pix_mask_size
+        self.mask_frac = mask_frac
+        self.size = mask_res
         self.fill = fill
 
     def forward(self, x):
         mask = torch.rand(size=(x.shape[0], self.size * self.size), device=device)
         _, indices = torch.sort(mask)
         indices = indices.view(x.shape[0], self.size, self.size).unsqueeze(1)
-        cutoff = self.pix_mask_frac  * self.size * self.size
+        cutoff = self.mask_frac  * self.size * self.size
         mask = (indices < cutoff).float()
 
         mask = mask.expand(x.shape[0], x.shape[1], -1, -1)
@@ -62,15 +62,15 @@ class RandomPixelMask(nn.Module):
 
 class Corruption(nn.Module):
 
-    def __init__(self, pix_mask_frac=0, pix_mask_size=1, fill="zero", grayscale=1, **kwargs):
+    def __init__(self, mask_frac=0, mask_res=1, fill="zero", grayscale=1, **kwargs):
         super(Corruption, self).__init__()
         corruptions = []
 
         if grayscale:
             corruptions.append(K.augmentation.RandomGrayscale(p=1))
-        if pix_mask_frac > 0:
-            corruptions.append(RandomPixelMask(pix_mask_frac=pix_mask_frac,
-                pix_mask_size=pix_mask_size, fill=fill))
+        if mask_frac > 0:
+            corruptions.append(RandomPixelMask(mask_frac=mask_frac,
+                mask_res=mask_res, fill=fill))
         self.model = nn.Sequential(*corruptions)
 
     def forward(self, x): return self.model(x)
@@ -91,9 +91,9 @@ class Corruption(nn.Module):
 #         help="resolutions to see data at")
 #     P.add_argument("--grayscale", default=0, type=int, choices=[0, 1],
 #         help="grayscale corruption")
-#     P.add_argument("--pix_mask_size", default=8, type=int,
+#     P.add_argument("--mask_res", default=8, type=int,
 #         help="fraction of pixels to mask at 16x16 resolution")
-#     P.add_argument("--pix_mask_frac", default=0, type=float,
+#     P.add_argument("--mask_frac", default=0, type=float,
 #         help="fraction of pixels to mask at 16x16 resolution")
 #     P.add_argument("--rand_illumination", default=0, type=float,
 #         help="amount by which the illumination of an image can change")
