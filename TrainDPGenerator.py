@@ -276,9 +276,10 @@ if __name__ == "__main__":
         args.run_id = wandb.util.generate_id()
         save_dir = generator_folder(args)
         
+        wandb2mode = {0: "disabled", 1: "online", 2: "offline"}
         wandb_run = wandb.init(anonymous="allow", id=args.run_id,
             project="isicle-generator", config=args,
-            mode="online" if args.wandb else "disabled", 
+            mode=wandb2mode[args.wandb],
             name=save_dir.replace(f"{project_dir}/generators/", ""))
 
         tqdm.write(f"----- Final Arguments -----")
