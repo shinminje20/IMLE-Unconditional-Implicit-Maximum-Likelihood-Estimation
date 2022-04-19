@@ -278,7 +278,7 @@ if __name__ == "__main__":
         
         wandb2mode = {0: "disabled", 1: "online", 2: "offline"}
         wandb_run = wandb.init(anonymous="allow", id=args.run_id,
-            project="isicle-generator", config=args,
+            project="isicle", config=args,
             mode=wandb2mode[args.wandb],
             name=save_dir.replace(f"{project_dir}/generators/", ""))
 
