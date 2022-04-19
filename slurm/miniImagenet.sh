@@ -15,7 +15,7 @@
 # %N is the hostname (if used, will create output(s) per node).
 # %j is jobid.
 
-#SBATCH --output=job_results/mixture_%A_%a.txt
+#SBATCH --output=job_results/miniImagenet_generation_%A_%a.txt
 
 # Below sets the email notification, swap to your email to receive notifications
 #SBATCH --mail-user=tristanengst@gmail.com
@@ -45,13 +45,13 @@ export PYTHONUNBUFFERED=1
 # Do all the research.
 if [ "$SLURM_ARRAY_TASK_ID" = 1 ]
 then
-    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data camnet3 --gpus 0 1 --grayscale 1 --mask_frac 0 --sample_method mixture --seed 0 --suffix mixture_test
+    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 8 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --mask_frac 0 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128
 if [ "$SLURM_ARRAY_TASK_ID" = 2 ]
 then
-    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data camnet3 --gpus 0 1 --grayscale 1 --mask_frac 0 --sample_method mixture --seed 1 --suffix mixture_test
+    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 8 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --mask_frac .5 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128
 if [ "$SLURM_ARRAY_TASK_ID" = 3 ]
 then
-    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data camnet3 --gpus 0 1 --grayscale 1 --mask_frac 0 --sample_method mixture --seed 2 --suffix mixture_test
+    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 8 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 1 --mask_frac .25 --mask_res 6 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128
 else
     echo "No case here"
 fi

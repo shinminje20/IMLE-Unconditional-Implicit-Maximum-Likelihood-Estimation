@@ -34,8 +34,7 @@ from utils.Utils import *
 #
 # but only `cifar10` would be recorded here.
 ################################################################################
-datasets = ["strawberry", "cifar10", "camnet3", "camnet3_deci", "camnet3_centi",
-    "camnet3_milli", "miniImagenet", "miniImagenet_deci"]
+datasets = ["cifar10", "camnet3", "camnet3_deci", "miniImagenet", "miniImagenet_deci"]
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
 data2split2n_class = {
