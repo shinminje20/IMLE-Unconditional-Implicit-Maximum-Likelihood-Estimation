@@ -28,7 +28,8 @@ def get_z_dims(args):
     """Returns a list of random noise dimensionalities for one sampling."""
     return [(args.map_nc + args.code_nc * r ** 2,) for r in args.res[:-1]]
 
-def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None):
+mm = None
+def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_components=5,  **kwargs):
     """Returns a latent code for a model.
 
     Args:
@@ -37,12 +38,36 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None):
     level           -- the level to generate a shape for or all for 'all' to get
                         a list of codes, one for each level
     sample_method   -- the method to use to sample
+    input           -- input for test-time sampling
+    num_components  -- number of components for mixture-based sampling
     """
     if sample_method == "normal":
         if level == "all":
             return [torch.randn((bs,) + dim) for dim in z_dims]
         else:
             return torch.randn((bs,) + z_dims[level])
+    elif sample_method == "mixture":
+        global mm
+        if mm is None:
+            mm = [torch.rand(1, num_components, *dim) for dim in z_dims]
+            mm = [nn.functional.normalize(m, dim=2) for m in mm]
+        
+        if input is None:
+            idxs = torch.tensor(random.choices(range(num_components), k=bs))
+        elif input == "show_components":
+            idxs = torch.tensor([i % num_components for i in range(bs)])
+        elif isinstance(input, torch.Tensor):
+            idxs = input
+        else:
+            pass
+
+        neg_ones = [[-1] * (1 + len(dim)) for dim in z_dims]
+        if level == "all":
+            means = [mm[level].expand(bs, *neg_ones[level])[torch.arange(bs), idxs] for level in range(len(mm))]
+            return [m + torch.randn(m.shape) / num_components for m in means]
+        else:
+            means = mm[level].expand(bs, *neg_ones[level])[torch.arange(bs), idxs]
+            return means + torch.randn(means.shape) / num_components
     else:
         raise NotImplementedError()
 
@@ -114,7 +139,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 level_codes[level_idx][change_idxs] = new_codes[change_idxs]
                 least_losses[change_idxs] = losses[change_idxs]
 
-return level_codes
+    return level_codes
 
 def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
     """Returns a list of lists, where each sublist contains first a ground-truth
@@ -134,7 +159,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
             bs = len(x)
             cx = corruptor(x)
             cx_expanded = cx.repeat_interleave(spi, dim=0)
-            codes = z_gen(bs * spi, level="all")
+            codes = z_gen(bs * spi, level="all", input="show_components")
             with autocast():
                 outputs = model(cx_expanded, codes, loi=-1)
             losses = loss_fn(outputs, y[-1])
@@ -190,7 +215,7 @@ if __name__ == "__main__":
     P.add_argument("--gpus", type=int, default=[0], nargs="+",
         help="GPU ids")
 
-    P.add_argument("--sample_method", choices=["normal"], default="normal",
+    P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
         help="GPU ids")
 
     P.add_argument("--code_nc", default=5, type=int,
