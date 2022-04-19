@@ -46,10 +46,10 @@ export PYTHONUNBUFFERED=1
 if [ "$SLURM_ARRAY_TASK_ID" = 1 ]
 then
     python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data camnet3 --gpus 0 1 --grayscale 1 --mask_frac 0 --sample_method mixture --seed 0 --suffix mixture_test
-if [ "$SLURM_ARRAY_TASK_ID" = 2 ]
+elif [ "$SLURM_ARRAY_TASK_ID" = 2 ]
 then
     python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data camnet3 --gpus 0 1 --grayscale 1 --mask_frac 0 --sample_method mixture --seed 1 --suffix mixture_test
-if [ "$SLURM_ARRAY_TASK_ID" = 3 ]
+elif [ "$SLURM_ARRAY_TASK_ID" = 3 ]
 then
     python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data camnet3 --gpus 0 1 --grayscale 1 --mask_frac 0 --sample_method mixture --seed 2 --suffix mixture_test
 else
