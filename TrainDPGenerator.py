@@ -355,6 +355,8 @@ if __name__ == "__main__":
 
                     loss = compute_loss_over_list(fx, ys, loss_fn)
                     scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    clip_grad_norm_(model.parameters(), max_norm=2.0)
                     scaler.step(optimizer)
                     scaler.update()
 
