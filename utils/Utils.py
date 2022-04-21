@@ -88,6 +88,13 @@ def flatten(xs):
     else:
         return [xs]
 
+def get_all_files(f):
+    """Returns absolute paths to all files under [f]."""
+    if os.path.isdir(f):
+        return flatten([get_all_files(f"{f}/{x}") for x in os.listdir(f)])
+    else:
+        return f
+
 def round_so_evenly_divides(x, y):
     """Returns [x] adjusted up or down by up to so [y] divides it evenly."""
     return x + (y - (x % y)) if ((x % y) > y / 2) else x - (x % y)
@@ -108,6 +115,17 @@ def make_list(x, length=1):
 ################################################################################
 # File I/O Utils
 ################################################################################
+def find_latest(folder):
+    """Returns the latest.pt file under [folder] or None if it doesn't exist."""
+    files = [f for f in get_all_files(folder) if "latest.pt" in f]
+
+    if len(files) > 1:
+        raise ValueError(f"Got multiple latest files: {files}")
+    elif len(files) == 1:
+        return files[0]
+    else:
+        return None
+
 def check_paths_exist(paths):
     """Raises a ValueError if every path in [paths] exists, otherwise does
     nothing.
@@ -156,14 +174,8 @@ def simclr_folder(args):
 
 def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args].
-
-    Because there are so many arguments to a generator, it's impossible to get
-    them all into a file name, so we need to use times to keep track of things.
-    This is also the reason we use WandB!
     """
     return f"{project_dir}/generators/camnet_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
-    if not os.path.exists(folder): os.makedirs(folder)
-    return folder
 
 def isicle_folder(args):
     """

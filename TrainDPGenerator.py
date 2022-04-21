@@ -177,8 +177,9 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--wandb", default=1, choices=[0, 1, 2], type=int,
-        help="Whether to use W&B logging or not")
+    P.add_argument("--wandb", choices=["disabled", "online", "offline"],
+        default="online",
+        help="disabled: no W&B logging, online: normal W&B logging")
     P.add_argument("--data", default="cifar10", choices=datasets,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
@@ -191,10 +192,13 @@ if __name__ == "__main__":
         help="path to data if not in normal place")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
-    P.add_argument("--resume", type=str, default=None,
-        help="WandB run to resume from")
+    P.add_argument("--resume", type=str, default="allow",
+        help="`allow`, `prevent`, or a path to resume from")
     P.add_argument("--spi", type=int, default=6,
         help="Samples per image to log.")
+    P.add_argument("--run_epochs", type=int, default=float("inf"),
+        help="Number of epochs to run before exiting. The number of total epochs is set with the --epoch flag; this is to allow for better cluster usage.")
+        
 
     P.add_argument("--proj_dim", default=1000, type=int,
         help="projection dimensionality")
@@ -254,6 +258,9 @@ if __name__ == "__main__":
         help="how to fill masked out areas")
     args = P.parse_args()
 
+    ############################################################################
+    # Check and improve arguments
+    ############################################################################
     args.levels = len(args.res) - 1
     args.ns = make_list(args.ns, length=args.levels)
     args.sp = make_list(args.sp, length=args.levels)
@@ -266,133 +273,158 @@ if __name__ == "__main__":
     args.spi = args.spi - (args.spi % len(args.gpus))
 
     ############################################################################
-    # If resuming, resume; otherwise, validate arguments and construct training
-    # objects.
+    # Handle resuming. When [args.resume] is set to 'prevent' or nothing is in
+    # the folder storing experiment data, create a new experiment from scratch.
+    # If it's set to 'allow', we find the resume file from the folder storing
+    # experiment data. If it's the folder storing the data, resume there.
     ############################################################################
-    if not args.resume is None:
-        raise NotImplementedError()
-    else:
+    wandb2mode = {0: "disabled", 1: "online", 2: "offline"}
+    if args.resume == "prevent" or find_latest(generator_folder(args)) is None:
+        tqdm.write("Starting new experiment.")
         set_seed(args.seed)
         args.run_id = wandb.util.generate_id()
         save_dir = generator_folder(args)
-        
-        wandb2mode = {0: "disabled", 1: "online", 2: "offline"}
-        wandb_run = wandb.init(anonymous="allow", id=args.run_id,
-            project="isicle", config=args,
-            mode=wandb2mode[args.wandb],
+        resumed = False
+        wandb.init(anonymous="allow", id=args.run_id, project="isicle",
+            config=args, mode=args.wandb,
             name=save_dir.replace(f"{project_dir}/generators/", ""))
-
-        tqdm.write(f"----- Final Arguments -----")
-        tqdm.write(dict_to_nice_str(vars(args)))
-        tqdm.write(f"----- Beginning Training -----")
-
         last_epoch = -1
-    
+
         # Set up the corruptor and the model
         corruptor = Corruption(**vars(args))
-        loss_fn = nn.DataParallel(ResolutionLoss(), device_ids=args.gpus).to(device)
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
+    else:
+        if args.resume == "allow":
+            resume_file = find_latest(generator_folder(args))
+        else:
+            resume_file = args.resume
 
-        # Set up the training and evaluation DataLoaders
-        data_tr, data_eval = get_data_splits(args.data, "val", args.res,
-            data_path=args.data_path)
-        data_tr = GeneratorDataset(data_tr, get_gen_augs())
+        tqdm.write(f"Resuming from {resume_file.replace(project_dir, '')}")
+        run_id, resume_data = wandb_load(resume_file)
+        set_seed(resume_data["seed"])
+        data_path = args.data_path
+        wandb.init(id=run_id, resume="must", project="isicle", mode=args.wandb)
+        wandb.save("*.pt")
+        model = resume_data["model"].to(device)
+        optimizer = resume_data["optimizer"]
+        corruptor = resume_data["corruptor"].to(device)
+        last_epoch = resume_data["last_epoch"]
+        scheduler = resume_data["scheduler"]
+        args = resume_data["args"]
+        args.data_path = data_path
+        resumed = True
+        save_dir = generator_folder(args)
+    
+    tqdm.write(f"----- Final Arguments -----")
+    tqdm.write(dict_to_nice_str(vars(args)))
+    tqdm.write(f"----- Beginning Training -----")
 
-        # Get the evaluation data. We need to do this carefully so as to use
-        # DataParallel and not have the data get dropped in the DataLoader.
-        data_eval = GeneratorDataset(data_eval, get_gen_augs())
-        eval_len = len(data_eval) // (args.spi + 2)
-        eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-        data_eval = Subset(data_eval,
-            indices=range(0, len(data_eval), eval_len))
-        
-        loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
-            batch_size=max(len(args.gpus), args.bs))
-        loader_eval = DataLoader(data_eval, pin_memory=True, shuffle=True,
-            batch_size=max(len(args.gpus), args.bs // args.spi), drop_last=True)
+    # Set up the loss function
+    loss_fn = nn.DataParallel(ResolutionLoss(), device_ids=args.gpus).to(device)
 
-        # Set up the learning rate scheduler
+    # Set up the training and evaluation DataLoaders
+    data_tr, data_eval = get_data_splits(args.data, "val", args.res,
+        data_path=args.data_path)
+    data_tr = GeneratorDataset(data_tr, get_gen_augs())
+
+    # Get the evaluation data. We need to do this carefully so as to use
+    # DataParallel and not have the data get dropped in the DataLoader.
+    data_eval = GeneratorDataset(data_eval, get_gen_augs())
+    eval_len = len(data_eval) // (args.spi + 2)
+    eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
+    data_eval = Subset(data_eval,
+        indices=range(0, len(data_eval), eval_len))
+    
+    loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
+        batch_size=max(len(args.gpus), args.bs))
+    loader_eval = DataLoader(data_eval, pin_memory=True, shuffle=True,
+        batch_size=max(len(args.gpus), args.bs // args.spi), drop_last=True)    
+
+    # Get a function that returns random codes given a level. We will use
+    # this to do cool things with non-Gaussian sampling via the
+    # [sample_method] input.
+    z_gen = partial(get_z_gen,
+        get_z_dims(args),
+        sample_method=args.sample_method)
+
+    ########################################################################
+    # Construct the scheduler and save some initial images. Strictly speaking,
+    # constructing the scheduler makes no sense here, but we need to do it only
+    # if we're starting a new run.
+    ########################################################################
+    if not resumed:
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
             max_lr=args.lr,  min_lr=1e-6,
             first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
             last_epoch=max(-1, last_epoch * len(loader_tr)))
 
-        # Get a function that returns random codes given a level. We will use
-        # this to do cool things with non-Gaussian sampling via the
-        # [sample_method] input.
-        z_gen = partial(get_z_gen,
-            get_z_dims(args),
-            sample_method=args.sample_method)
+        images_before, _ = validate(corruptor, model, z_gen, loader_eval,
+            loss_fn, spi=args.spi)
+        images_file = f"{save_dir}/val_images/before_training.png"
+        images_before = save_image_grid(images_before, images_file)
+        wandb.log({"before training": wandb.Image(images_file)})
 
-        ########################################################################
-        # Save images generated by the model before any training.
-        ########################################################################
-        if args.resume is None:
-            images_before, _ = validate(corruptor, model, z_gen, loader_eval,
-                loss_fn, spi=args.spi)
-            images_file = f"{save_dir}/val_images/before_training.png"
-            images_before = save_image_grid(images_before, images_file)
-            wandb.log({"before training": wandb.Image(images_file)})
+    scaler = GradScaler()
+    start_epoch = last_epoch + 1
+    end_epoch = min(args.epochs, last_epoch + 1 + args.run_epochs)
+    for e in tqdm(range(start_epoch, end_epoch), desc="Epochs", dynamic_ncols=True):
 
-        scaler = GradScaler()
-        for e in tqdm(range(last_epoch+1, args.epochs), desc="Epochs", dynamic_ncols=True):
+        ####################################################################
+        # Train for one epoch epoch.
+        ####################################################################
+        loss_tr = 0
+        for batch_idx,(x,ys) in tqdm(enumerate(loader_tr), desc="Batches", leave=False, dynamic_ncols=True, total=len(loader_tr)):
+            x = x.to(device)
+            ys = [y.to(device) for y in ys]
+            cx = corruptor(x)
+            codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
+                num_samples=args.ns, sample_parallelism=args.sp)
 
-            ####################################################################
-            # Train for one epoch epoch.
-            ####################################################################
-            loss_tr = 0
-            for batch_idx,(x,ys) in tqdm(enumerate(loader_tr), desc="Batches", leave=False, dynamic_ncols=True, total=len(loader_tr)):
-                x = x.to(device)
-                ys = [y.to(device) for y in ys]
-                cx = corruptor(x)
-                codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
-                    num_samples=args.ns, sample_parallelism=args.sp)
+            for _ in range(args.ipcpe):
+                with autocast():
+                    fx = model(cx, codes, loi=None)
 
-                for _ in range(args.ipcpe):
-                    with autocast():
-                        fx = model(cx, codes, loi=None)
+                loss = compute_loss_over_list(fx, ys, loss_fn)
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                clip_grad_norm_(model.parameters(), max_norm=2.0)
+                scaler.step(optimizer)
+                scaler.update()
 
-                    loss = compute_loss_over_list(fx, ys, loss_fn)
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                    clip_grad_norm_(model.parameters(), max_norm=2.0)
-                    scaler.step(optimizer)
-                    scaler.update()
+                # Deleting gradients here means they're not taking up space
+                # during sampling. We only run the forward pass without a
+                # no_grad() context above, so there should be no other
+                # gradients lurking around.
+                optimizer.zero_grad(set_to_none=True)
+            
+            wandb.log({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
 
-                    # Deleting gradients here means they're not taking up space
-                    # during sampling. We only run the forward pass without a
-                    # no_grad() context above, so there should be no other
-                    # gradients lurking around.
-                    optimizer.zero_grad(set_to_none=True)
-                
-                wandb.log({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
+            loss_tr += loss.detach()
 
-                loss_tr += loss.detach()
+            # This can sometimes throw a warning claiming that optimizer was
+            # never stepped. This is because [scaler] chose a too-high
+            # value, got a NaN, and didn't step the optimizer. This can be
+            # ignored.
+            scheduler.step()
 
-                # This can sometimes throw a warning claiming that optimizer was
-                # never stepped. This is because [scaler] chose a too-high
-                # value, got a NaN, and didn't step the optimizer. This can be
-                # ignored.
-                scheduler.step()
+        ####################################################################
+        # Log some generations at the end of each epoch.
+        ####################################################################
+        images_val, loss_val = validate(corruptor, model, z_gen,
+            loader_eval, loss_fn, spi=args.spi)
+        tqdm.write(f"End of epoch {e} | loss_tr {loss_tr.item() / len(loader_tr)} | loss_val {loss_val}")
 
-            ####################################################################
-            # Log some generations at the end of each epoch.
-            ####################################################################
-            images_val, loss_val = validate(corruptor, model, z_gen,
-                loader_eval, loss_fn, spi=args.spi)
-            tqdm.write(f"End of epoch {e} | loss_tr {loss_tr.item() / len(loader_tr)} | loss_val {loss_val}")
-
-            images_file = f"{save_dir}/val_images/epoch{e}.png"
-            save_image_grid(images_val, images_file)
-            wandb.log({"epochs": e, "validation loss": loss_val,
-                "generated images": wandb.Image(images_file)})
-        
-            state_file = f"{save_dir}/{e}.pt"
-            wandb_save({
-                "run_id": args.run_id,
-                "corruptor": corruptor.state_dict(),
-                "model": model.state_dict(),
-                "last_epoch": e,
-                "args": args},
-                state_file)
+        images_file = f"{save_dir}/val_images/epoch{e}.png"
+        save_image_grid(images_val, images_file)
+        wandb.log({"epochs": e, "validation loss": loss_val,
+            "generated images": wandb.Image(images_file)})
+    
+        save_file = f"{save_dir}/{e}.pt"
+        wandb_save({"run_id": args.run_id, "corruptor": corruptor.cpu(),
+            "model": model.cpu(), "last_epoch": e, "args": args,
+            "scheduler": scheduler, "optimizer": optimizer}, save_file)
+        wandb_save({"run_id": args.run_id, "corruptor": corruptor.cpu(),
+            "model": model.cpu(), "last_epoch": e, "args": args,
+            "optimizer": optimizer, "scheduler": scheduler}, f"{save_dir}/latest.pt")
+        corruptor, model = corruptor.to(device), model.to(device)
