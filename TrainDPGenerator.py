@@ -398,9 +398,11 @@ if __name__ == "__main__":
                 # gradients lurking around.
                 optimizer.zero_grad(set_to_none=True)
             
-            wandb.log({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
-
             loss_tr += loss.detach()
+            wandb.log({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
+            
+            if batch_idx % 10 == 0:
+                tqdm.write(f"{batch_idx} | loss_tr {loss_tr.item() / batch_idx} | lr {scheduler.get_lr()[0]}")
 
             # This can sometimes throw a warning claiming that optimizer was
             # never stepped. This is because [scaler] chose a too-high
