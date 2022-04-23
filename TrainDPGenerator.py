@@ -2,7 +2,7 @@ import argparse
 from collections import defaultdict
 from datetime import datetime
 from tqdm import tqdm
-import wandb
+from comet_ml import Experiment, ExistingExperiment
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -177,8 +177,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--wandb", choices=["disabled", "online", "offline"],
-        default="online",
+    P.add_argument("--comet", choices=[0, 1], default=1,
         help="disabled: no W&B logging, online: normal W&B logging")
     P.add_argument("--data", default="cifar10", choices=datasets,
         help="data to train on")
@@ -196,7 +195,7 @@ if __name__ == "__main__":
         help="`allow`, `prevent`, or a path to resume from")
     P.add_argument("--spi", type=int, default=6,
         help="Samples per image to log.")
-    P.add_argument("--run_epochs", type=int, default=float("inf"),
+    P.add_argument("--chunk_epochs", type=int, default=float("inf"),
         help="Number of epochs to run before exiting. The number of total epochs is set with the --epoch flag; this is to allow for better cluster usage.")
         
 
@@ -278,43 +277,60 @@ if __name__ == "__main__":
     # If it's set to 'allow', we find the resume file from the folder storing
     # experiment data. If it's the folder storing the data, resume there.
     ############################################################################
-    wandb2mode = {0: "disabled", 1: "online", 2: "offline"}
     if args.resume == "prevent" or find_latest(generator_folder(args)) is None:
         tqdm.write("Starting new experiment.")
         set_seed(args.seed)
-        args.run_id = wandb.util.generate_id()
-        save_dir = generator_folder(args)
-        resumed = False
-        wandb.init(anonymous="allow", id=args.run_id, project="isicle",
-            config=args, mode=args.wandb,
-            name=save_dir.replace(f"{project_dir}/generators/", ""))
+        
+        # Setup the experiment. Importantly, we copy the experiment's ID to
+        # [args] so that we can resume it later.
+        experiment = Experiment(
+            project_name="isicle-generator",
+            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
+            disabled=not args.comet)
+        args.experiment_key = experiment.get_key()
+        experiment.log_parameters(args_to_hparams(args))
+        
         last_epoch = -1
 
         # Set up the corruptor and the model
         corruptor = Corruption(**vars(args))
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
+
+        save_dir = generator_folder(args)
+        resumed = False
     else:
         if args.resume == "allow":
             resume_file = find_latest(generator_folder(args))
         else:
             resume_file = args.resume
-
+       
+        curr_args = args
         tqdm.write(f"Resuming from {resume_file.replace(project_dir, '')}")
-        run_id, resume_data = wandb_load(resume_file)
-        set_seed(resume_data["seed"])
-        data_path = args.data_path
-        wandb.init(id=run_id, resume="must", project="isicle", mode=args.wandb)
-        wandb.save("*.pt")
+       
+        resume_data = torch.load(resume_file)
+        set_seed(resume_data["seed"])        
+
+        # Copy non-hyperparameter information from the current arguments to the
+        # ones we're resuming
+        args = resume_data["args"]
+        args.data_path = curr_args.data_path
+        args.gpus = curr_args.gpus
+        args.chunk_epochs = curr_args.chunk_epochs
+        
+        experiment = ExistingExperiment(
+            project_name="isicle-generator",
+            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
+            disabled=not args.comet,
+            experiment_key=args.experiment_key)
+
         model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
         corruptor = resume_data["corruptor"].to(device)
         last_epoch = resume_data["last_epoch"]
         scheduler = resume_data["scheduler"]
-        args = resume_data["args"]
-        args.data_path = data_path
-        resumed = True
         save_dir = generator_folder(args)
+        resumed = True
     
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
@@ -363,11 +379,15 @@ if __name__ == "__main__":
             loss_fn, spi=args.spi)
         images_file = f"{save_dir}/val_images/before_training.png"
         images_before = save_image_grid(images_before, images_file)
-        wandb.log({"before training": wandb.Image(images_file)})
+        experiment.log_image(images_file, name="before_training.png")
 
     scaler = GradScaler()
+
+    # Define the starting and ending epoch. These are so we can chunk training
+    # and better use our ComputeCanada allocation.
     start_epoch = last_epoch + 1
-    end_epoch = min(args.epochs, last_epoch + 1 + args.run_epochs)
+    end_epoch = min(args.epochs, last_epoch + 1 + args.chunk_epochs)
+    
     for e in tqdm(range(start_epoch, end_epoch), desc="Epochs", dynamic_ncols=True):
 
         ####################################################################
@@ -399,10 +419,14 @@ if __name__ == "__main__":
                 optimizer.zero_grad(set_to_none=True)
             
             loss_tr += loss.detach()
-            wandb.log({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
+            experiment.log_metric("training loss", loss_tr.item() / (batch_idx + 1), step=batch_idx)
+            experiment.log_metric("learning rate", scheduler.get_lr()[0], step=batch_idx)
+            
+            
+            ({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
             
             if batch_idx % 10 == 0:
-                tqdm.write(f"{batch_idx} | loss_tr {loss_tr.item() / batch_idx} | lr {scheduler.get_lr()[0]}")
+                tqdm.write(f"{batch_idx} | loss_tr {loss_tr.item() / (batch_idx + 1)} | lr {scheduler.get_lr()[0]}")
 
             # This can sometimes throw a warning claiming that optimizer was
             # never stepped. This is because [scaler] chose a too-high
@@ -413,20 +437,19 @@ if __name__ == "__main__":
         ####################################################################
         # Log some generations at the end of each epoch.
         ####################################################################
-        images_val, loss_val = validate(corruptor, model, z_gen,
-            loader_eval, loss_fn, spi=args.spi)
+        images_val, loss_val = validate(corruptor, model, z_gen, loader_eval,
+            loss_fn, spi=args.spi)
         tqdm.write(f"End of epoch {e} | loss_tr {loss_tr.item() / len(loader_tr)} | loss_val {loss_val}")
 
         images_file = f"{save_dir}/val_images/epoch{e}.png"
         save_image_grid(images_val, images_file)
-        wandb.log({"epochs": e, "validation loss": loss_val,
-            "generated images": wandb.Image(images_file)})
+        experiment.log_image(images_file, name=f"epoch_{e}.png")
+        experiment.log_metric("validation loss", loss_val, step=len(loader_tr) * (e+1))
     
-        save_file = f"{save_dir}/{e}.pt"
-        wandb_save({"run_id": args.run_id, "corruptor": corruptor.cpu(),
-            "model": model.cpu(), "last_epoch": e, "args": args,
-            "scheduler": scheduler, "optimizer": optimizer}, save_file)
-        wandb_save({"run_id": args.run_id, "corruptor": corruptor.cpu(),
-            "model": model.cpu(), "last_epoch": e, "args": args,
-            "optimizer": optimizer, "scheduler": scheduler}, f"{save_dir}/latest.pt")
+        save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
+            "last_epoch": e, "args": args, "scheduler": scheduler,
+            "optimizer": optimizer}, f"{save_dir}/{e}.pt")
+        save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
+            "last_epoch": e, "args": args, "scheduler": scheduler,
+            "optimizer": optimizer}, f"{save_dir}/latest.pt")
         corruptor, model = corruptor.to(device), model.to(device)

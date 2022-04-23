@@ -10,7 +10,6 @@ import os
 import random
 import shutil
 from tqdm import tqdm
-import wandb
 
 import torch
 import torch.nn as nn
@@ -28,7 +27,6 @@ torch.backends.cudnn.benchmark = True
 num_workers = 6
 
 # Turn off WandB console logging, since we don't need it and it breaks TQDM.
-os.environ["WANDB_CONSOLE"] = "off"
 
 # Make non-determinism work out. This function should be called first
 def set_seed(seed):
@@ -184,25 +182,29 @@ def isicle_folder(args):
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
-def wandb_load(checkoint):
-    """Returns a (wandb run ID, data) tuple.
 
-    Args:
-    checkpoint  -- either a local checkpoint dictionary to resume from, or
-                    something of the form RUN_PATH/CHECKPOINT, eg.
-                    'tristanengst/isicle-generator/abc123/40.pt'
-    """
-    saved_data = torch.load(checkoint)
-    return saved_data["run_id"], saved_data
+################################################################################
+# File I/O
+################################################################################
+def args_to_hparams(args):
+    """Returns a dictionary of hyperparameters from Namespace [args]."""
+    excluded_args =  ["resume", "chunk_epochs", "gpus", "comet", "data_path"]
+    return {k: v for k,v in vars(args).items() if not k in excluded_args}
 
-def wandb_save(dictionary, path):
-    """Saves [file] to WandB folder [path] and uploads the result to WandB."""
-    resume_dictionary = {"seed": {
+def args_to_hparam_str(args):
+    """Returns the string uniquely given by the hyperparametes in [args]."""
+    hparams_str = [f"{k}_{v}" if isinstance(v, str) else f"{k}{v}"
+        for k,v in args_to_hparams(args).items()]
+    return "-".join(sorted(hparams_str))
+
+def save_checkpoint(dictionary, path):
+    """Saves contents of [dictionary] along with random states to [file]."""
+    seed_states = {"seed": {
         "pytorch_seed": torch.get_rng_state(),
         "numpy_seed": np.random.get_state(),
         "random_seed": random.getstate()}
     }
-    torch.save(dictionary | resume_dictionary, path)
+    torch.save(dictionary | seed_states, path)
     tqdm.write(f"Saved files to {path}")
 
 def dict_to_nice_str(dict, max_line_length=80):
