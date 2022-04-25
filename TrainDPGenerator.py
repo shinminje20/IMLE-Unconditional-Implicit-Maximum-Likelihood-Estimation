@@ -118,7 +118,8 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 new_codes = z_gen(bs * sp, level=level_idx)
                 test_codes = old_codes + [new_codes]
 
-                # Compute loss for the new codes
+                # Compute loss for the new codes. Note that because we have to
+                # use cdist here, we can't use half precision to compute loss.
                 with autocast():
                     outputs = model(cx, test_codes, loi=level_idx)
                 losses = loss_fn(outputs, y[level_idx])
@@ -177,7 +178,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
-    P.add_argument("--comet", choices=[0, 1], default=1,
+    P.add_argument("--comet", choices=[0, 1], default=1, type=int,
         help="disabled: no W&B logging, online: normal W&B logging")
     P.add_argument("--data", default="cifar10", choices=datasets,
         help="data to train on")
@@ -406,6 +407,18 @@ if __name__ == "__main__":
                     fx = model(cx, codes, loi=None)
 
                 loss = compute_loss_over_list(fx, ys, loss_fn)
+
+                if any([torch.isnan(torch.sum(f)) for f in fx]):
+                    print("      FX NAN")
+                if torch.isnan(torch.sum(loss)):
+                     print("      LOSS NAN")
+                
+                if any([torch.isnan(torch.sum(f)) for f in fx]) or torch.isnan(torch.sum(loss)) or True:
+                    torch.save({"model": model.cpu(), "cx": cx.cpu(), "x": x.cpu(), "ys": [y.cpu() for y in ys], "fx": [f.cpu() for f in fx], "loss": loss.cpu()},
+                    "nan_results.pt")
+                    import sys
+                    sys.exit(0)
+
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 clip_grad_norm_(model.parameters(), max_norm=2.0)
@@ -421,10 +434,7 @@ if __name__ == "__main__":
             loss_tr += loss.detach()
             experiment.log_metric("training loss", loss_tr.item() / (batch_idx + 1), step=batch_idx)
             experiment.log_metric("learning rate", scheduler.get_lr()[0], step=batch_idx)
-            
-            
-            ({"training loss": loss.item(), "learning rate": scheduler.get_lr()[0]})
-            
+                        
             if batch_idx % 10 == 0:
                 tqdm.write(f"{batch_idx} | loss_tr {loss_tr.item() / (batch_idx + 1)} | lr {scheduler.get_lr()[0]}")
 

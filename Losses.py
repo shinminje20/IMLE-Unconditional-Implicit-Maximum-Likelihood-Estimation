@@ -71,9 +71,8 @@ class ResolutionLoss(nn.Module):
         if fx.shape[-1] > 64:
             return lpips_loss
         else:
-            with autocast():
-                mse_loss = self.mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1)).view(-1)
-                return lpips_loss + self.alpha * mse_loss
+            mse_loss = self.mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1)).view(-1)
+            return lpips_loss + self.alpha * mse_loss
 
 class LPIPSLoss(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
@@ -101,8 +100,9 @@ class LPIPSLoss(nn.Module):
     def reset_projections(self): self.projections = {}
 
     def forward(self, fx, y):
-        fx = self.lpips(fx)
-        y = self.lpips(y)
+        with autocast():
+            fx = self.lpips(fx)
+            y = self.lpips(y)
 
         if self.proj_dim is not None:
             fx, y = self.project_tensor(fx), self.project_tensor(y)
@@ -142,7 +142,9 @@ class BroadcastMSELoss(nn.Module):
         if not (len(x.shape) == 3 and x.shape[0] == y.shape[0] and x.shape[2] == y.shape[2]):
             raise ValueError(f"Got invalid shapes for BroadcastMSELoss. x shape was {x.shape} and y shape was {y.shape}")
 
-        result = torch.cdist(x, y)
+        # We can't use torch.cdist() with half-precision inputs, and we always
+        # want to run LPIPS with half-precision.
+        result = torch.cdist(x.float(), y)
 
         if self.reduction == "batch" or self.reduction == "none":
             return result.view(result.shape[0] * result.shape[1], 1)

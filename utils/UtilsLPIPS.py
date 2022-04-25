@@ -120,6 +120,4 @@ class LPIPSFeats(nn.Module):
             torch.multiply(self.lin4, vgg_feats[4])
         ]
 
-        result = torch.cat([l.flatten(start_dim=1) for l in feats], axis=1)
-
-        return result
+        return torch.cat([l.flatten(start_dim=1) for l in feats], axis=1)
