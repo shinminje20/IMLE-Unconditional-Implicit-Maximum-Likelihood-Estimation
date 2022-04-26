@@ -192,8 +192,8 @@ if __name__ == "__main__":
         help="path to data if not in normal place")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
-    P.add_argument("--resume", type=str, default="allow",
-        help="`allow`, `prevent`, or a path to resume from")
+    P.add_argument("--resume", type=str, default=None,
+        help="a path or epoch number to resume from or nothing for no resuming")
     P.add_argument("--spi", type=int, default=6,
         help="Samples per image to log.")
     P.add_argument("--chunk_epochs", type=int, default=float("inf"),
@@ -278,7 +278,7 @@ if __name__ == "__main__":
     # If it's set to 'allow', we find the resume file from the folder storing
     # experiment data. If it's the folder storing the data, resume there.
     ############################################################################
-    if args.resume == "prevent" or find_latest(generator_folder(args)) is None:
+    if args.resume is None or not os.path.exists(generator_folder(args)):
         tqdm.write("Starting new experiment.")
         set_seed(args.seed)
         
@@ -290,19 +290,17 @@ if __name__ == "__main__":
             disabled=not args.comet)
         args.experiment_key = experiment.get_key()
         experiment.log_parameters(args_to_hparams(args))
-        
-        last_epoch = -1
 
-        # Set up the corruptor and the model
         corruptor = Corruption(**vars(args))
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
 
         save_dir = generator_folder(args)
+        last_epoch = -1
         resumed = False
     else:
-        if args.resume == "allow":
-            resume_file = find_latest(generator_folder(args))
+        if is_integer(args.resume):
+            resume_file = f"{generator_folder(args)}/{args.resume}.pt"
         else:
             resume_file = args.resume
        
@@ -413,7 +411,7 @@ if __name__ == "__main__":
                 if torch.isnan(torch.sum(loss)):
                      print("      LOSS NAN")
                 
-                if any([torch.isnan(torch.sum(f)) for f in fx]) or torch.isnan(torch.sum(loss)) or True:
+                if any([torch.isnan(torch.sum(f)) for f in fx]) or torch.isnan(torch.sum(loss)):
                     torch.save({"model": model.cpu(), "cx": cx.cpu(), "x": x.cpu(), "ys": [y.cpu() for y in ys], "fx": [f.cpu() for f in fx], "loss": loss.cpu()},
                     "nan_results.pt")
                     import sys
