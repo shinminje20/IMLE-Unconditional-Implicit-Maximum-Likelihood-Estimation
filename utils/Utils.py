@@ -122,6 +122,8 @@ def is_integer(x):
             return True
         except:
             return False
+    else:
+        return False
 
 ################################################################################
 # File I/O Utils

@@ -278,16 +278,24 @@ if __name__ == "__main__":
     # If it's set to 'allow', we find the resume file from the folder storing
     # experiment data. If it's the folder storing the data, resume there.
     ############################################################################
-    if args.resume is None or not os.path.exists(generator_folder(args)):
+    save_dir = generator_folder(args)
+    if is_integer(args.resume) and os.path.exists(f"{save_dir}/{args.resume}"):
+        resume_file = f"{save_dir}/{args.resume}"
+    elif isinstance(args.resume, str) and os.path.exists(args.resume):
+        resume_file = args.resume
+    else:
+        resume_file = None
+
+    resumed = (not resume_file is None)
+    if resume_file is None:
+        save_dir = generator_folder(args)
         tqdm.write("Starting new experiment.")
         set_seed(args.seed)
         
         # Setup the experiment. Importantly, we copy the experiment's ID to
         # [args] so that we can resume it later.
-        experiment = Experiment(
-            project_name="isicle-generator",
-            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
-            disabled=not args.comet)
+        experiment = Experiment( project_name="isicle-generator",
+            api_key="iUYYQgU5SMNOOfZegluYPSUgv", disabled=not args.comet)
         args.experiment_key = experiment.get_key()
         experiment.log_parameters(args_to_hparams(args))
 
@@ -295,32 +303,24 @@ if __name__ == "__main__":
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
 
-        save_dir = generator_folder(args)
+        
         last_epoch = -1
-        resumed = False
-    else:
-        if is_integer(args.resume):
-            resume_file = f"{generator_folder(args)}/{args.resume}.pt"
-        else:
-            resume_file = args.resume
-       
-        curr_args = args
-        tqdm.write(f"Resuming from {resume_file.replace(project_dir, '')}")
-       
+    else:   
+        tqdm.write(f"Resuming from {resume_file}")
         resume_data = torch.load(resume_file)
-        set_seed(resume_data["seed"])        
-
+        
         # Copy non-hyperparameter information from the current arguments to the
         # ones we're resuming
+        curr_args = args
         args = resume_data["args"]
         args.data_path = curr_args.data_path
         args.gpus = curr_args.gpus
         args.chunk_epochs = curr_args.chunk_epochs
-        
-        experiment = ExistingExperiment(
-            project_name="isicle-generator",
-            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
-            disabled=not args.comet,
+        save_dir = generator_folder(args)
+        set_seed(resume_data["seed"])        
+
+        experiment = ExistingExperiment(project_name="isicle-generator",
+            api_key="iUYYQgU5SMNOOfZegluYPSUgv", disabled=not args.comet,
             experiment_key=args.experiment_key)
 
         model = resume_data["model"].to(device)
@@ -328,8 +328,6 @@ if __name__ == "__main__":
         corruptor = resume_data["corruptor"].to(device)
         last_epoch = resume_data["last_epoch"]
         scheduler = resume_data["scheduler"]
-        save_dir = generator_folder(args)
-        resumed = True
     
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
