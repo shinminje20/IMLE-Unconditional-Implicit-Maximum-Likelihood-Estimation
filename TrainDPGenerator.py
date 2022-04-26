@@ -302,8 +302,6 @@ if __name__ == "__main__":
         corruptor = Corruption(**vars(args))
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
-
-        
         last_epoch = -1
     else:   
         tqdm.write(f"Resuming from {resume_file}")
