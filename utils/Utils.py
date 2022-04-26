@@ -113,17 +113,6 @@ def make_list(x, length=1):
 ################################################################################
 # File I/O Utils
 ################################################################################
-def find_latest(folder):
-    """Returns the latest.pt file under [folder] or None if it doesn't exist."""
-    files = [f for f in get_all_files(folder) if "latest.pt" in f]
-
-    if len(files) > 1:
-        raise ValueError(f"Got multiple latest files: {files}")
-    elif len(files) == 1:
-        return files[0]
-    else:
-        return None
-
 def check_paths_exist(paths):
     """Raises a ValueError if every path in [paths] exists, otherwise does
     nothing.
@@ -173,12 +162,14 @@ def simclr_folder(args):
 def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args].
     """
-    return f"{project_dir}/generators/camnet_{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
+    folder = f"{project_dir}/generators/{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
+    if not os.path.exists(folder): os.makedirs(folder)
+    return folder
 
 def isicle_folder(args):
     """
     """
-    folder = f"{project_dir}/models_isicle/{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}"
+    return f"{project_dir}/models_isicle/{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}"
     if not os.path.exists(folder): os.makedirs(folder)
     return folder
 
@@ -268,7 +259,7 @@ def save_image_grid(images, path):
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
     plt.savefig(path, dpi=512)
-    tqdm.write(f"Saved image grid to {path}")
+    tqdm.write(f"Saved image grid to {path.replace(project_dir, '')}")
 
 
 def remove_duplicates(x):
