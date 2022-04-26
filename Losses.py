@@ -68,7 +68,7 @@ class ResolutionLoss(nn.Module):
         lpips_loss = self.lpips(fx, y)
         lpips_loss = torch.mean(lpips_loss.view(lpips_loss.shape[0], -1), axis=1)
 
-        if fx.shape[-1] > 64:
+        if fx.shape[-1] >= 64:
             return lpips_loss
         else:
             mse_loss = self.mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1)).view(-1)

@@ -122,6 +122,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 # use cdist here, we can't use half precision to compute loss.
                 with autocast():
                     outputs = model(cx, test_codes, loi=level_idx)
+
                 losses = loss_fn(outputs, y[level_idx])
 
                 # [losses] may have multiple values for each input example
@@ -278,18 +279,20 @@ if __name__ == "__main__":
     # If it's set to 'allow', we find the resume file from the folder storing
     # experiment data. If it's the folder storing the data, resume there.
     ############################################################################
-    save_dir = generator_folder(args)
-    if is_integer(args.resume) and os.path.exists(f"{save_dir}/{args.resume}"):
-        resume_file = f"{save_dir}/{args.resume}"
+    if str(args.resume).isdigit():
+        args.resume = int(args.resume) - 1
+        save_dir = generator_folder(args)
+        if args.resume == -1:
+            resume_file = None
+        elif os.path.exists(f"{save_dir}/{args.resume}.pt"):
+            resume_file = f"{save_dir}/{args.resume}.pt"
+        else:
+            raise ValueError(f"File {save_dir}/{args.resume}.pt doesn't exist")
     elif isinstance(args.resume, str) and os.path.exists(args.resume):
         resume_file = args.resume
-    elif (is_integer(args.resume) and int(args.resume) > 0
-        and not os.path.exists(f"{save_dir}/{args.resume}")):
-        raise ValueError(f"File {save_dir}/{args.resume} doesn't exist")
     else:
         resume_file = None
 
-    resumed = (not resume_file is None)
     if resume_file is None:
         save_dir = generator_folder(args)
         tqdm.write("Starting new experiment.")
@@ -358,16 +361,15 @@ if __name__ == "__main__":
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
     # [sample_method] input.
-    z_gen = partial(get_z_gen,
-        get_z_dims(args),
+    z_gen = partial(get_z_gen, get_z_dims(args),
         sample_method=args.sample_method)
 
     ########################################################################
-    # Construct the scheduler and save some initial images. Strictly speaking,
-    # constructing the scheduler makes no sense here, but we need to do it only
-    # if we're starting a new run.
+    # Construct the scheduler and save some initial images. We construct the
+    # scheduler here because we need to know the length of the training
+    # DataLoader and because we can only do it for new runs.
     ########################################################################
-    if not resumed:
+    if resume_file is None:
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
             max_lr=args.lr,  min_lr=1e-6,
             first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
@@ -430,7 +432,7 @@ if __name__ == "__main__":
             experiment.log_metric("learning rate", scheduler.get_lr()[0], step=batch_idx)
                         
             if batch_idx % 10 == 0:
-                tqdm.write(f"{batch_idx} | loss_tr {loss_tr.item() / (batch_idx + 1)} | lr {scheduler.get_lr()[0]}")
+                tqdm.write(f"\t{batch_idx} | loss_tr {loss_tr.item() / (batch_idx + 1)} | lr {scheduler.get_lr()[0]}")
 
             # This can sometimes throw a warning claiming that optimizer was
             # never stepped. This is because [scaler] chose a too-high

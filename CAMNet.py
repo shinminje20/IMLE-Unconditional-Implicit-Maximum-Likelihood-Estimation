@@ -252,9 +252,6 @@ class CAMNetModule(nn.Module):
         code        -- the code for the current level
         feature     -- the feature computed by the previous layer
         """
-
-
-
         bs, _, w, h = level_input.shape
         level_input = torch.cat([
             level_input,

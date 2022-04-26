@@ -110,21 +110,6 @@ def make_list(x, length=1):
     else:
         return [x] * length
 
-def is_integer(x):
-    """Returns if [x] is an integer."""
-    if isinstance(x, int):
-        return True
-    elif isinstance(x, float) and x == int(x):
-        return True
-    elif isinstance(x, str):
-        try:
-            _ = int(x)
-            return True
-        except:
-            return False
-    else:
-        return False
-
 ################################################################################
 # File I/O Utils
 ################################################################################
