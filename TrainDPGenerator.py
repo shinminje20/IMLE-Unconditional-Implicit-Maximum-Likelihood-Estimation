@@ -283,6 +283,9 @@ if __name__ == "__main__":
         resume_file = f"{save_dir}/{args.resume}"
     elif isinstance(args.resume, str) and os.path.exists(args.resume):
         resume_file = args.resume
+    elif (is_integer(args.resume) and int(args.resume) > 0
+        and not os.path.exists(f"{save_dir}/{args.resume}")):
+        raise ValueError(f"File {save_dir}/{args.resume} doesn't exist")
     else:
         resume_file = None
 
@@ -397,9 +400,7 @@ if __name__ == "__main__":
                 num_samples=args.ns, sample_parallelism=args.sp)
 
             for _ in range(args.ipcpe):
-                with autocast():
-                    fx = model(cx, codes, loi=None)
-
+                fx = model(cx, codes, loi=None)
                 loss = compute_loss_over_list(fx, ys, loss_fn)
 
                 if any([torch.isnan(torch.sum(f)) for f in fx]):
@@ -408,8 +409,7 @@ if __name__ == "__main__":
                      print("      LOSS NAN")
                 
                 if any([torch.isnan(torch.sum(f)) for f in fx]) or torch.isnan(torch.sum(loss)):
-                    torch.save({"model": model.cpu(), "cx": cx.cpu(), "x": x.cpu(), "ys": [y.cpu() for y in ys], "fx": [f.cpu() for f in fx], "loss": loss.cpu()},
-                    "nan_results.pt")
+                    torch.save({"model": model.cpu(), "cx": cx.cpu(), "x": x.cpu(), "ys": [y.cpu() for y in ys], "fx": [f.cpu() for f in fx], "loss": loss.cpu(), "codes": codes}, f"nan_results_{batch_idx}.pt")
                     import sys
                     sys.exit(0)
 

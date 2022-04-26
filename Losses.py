@@ -100,9 +100,9 @@ class LPIPSLoss(nn.Module):
     def reset_projections(self): self.projections = {}
 
     def forward(self, fx, y):
-        with autocast():
-            fx = self.lpips(fx)
-            y = self.lpips(y)
+        # with autocast():
+        fx = self.lpips(fx)
+        y = self.lpips(y)
 
         if self.proj_dim is not None:
             fx, y = self.project_tensor(fx), self.project_tensor(y)
