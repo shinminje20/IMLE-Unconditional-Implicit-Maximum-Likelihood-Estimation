@@ -319,7 +319,7 @@ if __name__ == "__main__":
         args.data_path = curr_args.data_path
         args.gpus = curr_args.gpus
         args.chunk_epochs = curr_args.chunk_epochs
-        args.wandb
+        args.wandb = curr_args.wandb
         save_dir = generator_folder(args)
         set_seed(resume_data["seed"])        
 
