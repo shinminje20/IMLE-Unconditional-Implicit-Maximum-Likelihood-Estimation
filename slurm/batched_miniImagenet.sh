@@ -31,6 +31,8 @@ pwd
 hostname
 date
 
+module load httpproxy
+
 echo "Starting job number $SLURM_ARRAY_TASK_ID"
 
 source ~/.bashrc
