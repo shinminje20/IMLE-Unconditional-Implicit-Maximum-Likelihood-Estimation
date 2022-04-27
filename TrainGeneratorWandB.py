@@ -375,12 +375,6 @@ if __name__ == "__main__":
             first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
             last_epoch=max(-1, last_epoch * len(loader_tr)))
 
-        images_before, _ = validate(corruptor, model, z_gen, loader_eval,
-            loss_fn, spi=args.spi)
-        images_file = f"{save_dir}/val_images/before_training.png"
-        images_before = save_image_grid(images_before, images_file)
-        wandb.log({"before training": wandb.Image(images_file)})
-
     scaler = GradScaler()
 
     # Define the starting and ending epoch. These are so we can chunk training
