@@ -259,8 +259,6 @@ def save_image_grid(images, path):
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
     plt.savefig(path, dpi=512)
-    tqdm.write(f"Saved image grid to {path.replace(project_dir, '')}")
-
 
 def remove_duplicates(x):
     """Removes duplicates from order 1 list [x]."""

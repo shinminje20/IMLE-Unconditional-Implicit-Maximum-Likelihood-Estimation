@@ -446,14 +446,14 @@ if __name__ == "__main__":
                     "learning rate": scheduler.get_lr()[0],
                     "generated images": wandb.Image(images_file),
                 })
-                tqdm.write(f"\tEpoch {e:3} | Batch {batch_idx:5} | mean oss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5f} | loss_val {loss_val:.5f}")
+                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean loss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
             elif batch_idx % 10 == 0:
                 wandb.log({
                     "training loss": loss.item(),
                     "mean epoch training loss": loss_tr.item() / (batch_idx + 1),
                     "learning rate": scheduler.get_lr()[0]
                 })
-                tqdm.write(f"\tEpoch {e:3} | Batch {batch_idx:5} | mean loss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5f}")
+                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean loss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5e}")
             else:
                 wandb.log({
                     "training loss": loss.item(),
