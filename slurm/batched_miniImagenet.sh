@@ -47,13 +47,13 @@ export PYTHONUNBUFFERED=1
 # Do all the research.
 if [[ $((SLURM_ARRAY_TASK_ID % 3)) == 0 ]]
 then
-    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 4 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 0 --mask_frac .5 --mask_res 32 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 3))
+    python TrainGeneratorWandB.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 4 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 0 --mask_frac .5 --mask_res 32 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 3))
 elif [[ $((SLURM_ARRAY_TASK_ID % 3)) == 1 ]]
 then
-    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 4 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 0 --mask_frac .5 --mask_res 8 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 3))
+    python TrainGeneratorWandB.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 4 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 0 --mask_frac .5 --mask_res 8 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 3))
 elif [[ $((SLURM_ARRAY_TASK_ID % 3)) == 2 ]]
 then
-    python TrainDPGenerator.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 4 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 0 --mask_frac .5 --mask_res 16 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 3))
+    python TrainGeneratorWandB.py --epochs 20 --data_path ~/scratch/ISICLE/data --bs 4 --res 64 64 64 64 128 --ns 128 128 128 128 --sp 128 128 128 64 --data miniImagenet_deci --gpus 0 1 --grayscale 0 --mask_frac .5 --mask_res 16 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 3))
 else
     echo "No case here"
 fi
