@@ -450,7 +450,7 @@ class PreAugmentedImageFolder(Dataset):
         # Print dataset statistics
         if verbose:
             aug_stats = [len(idxs) for idxs in self.data_idx2aug_idxs]
-            s = f"Constructed PreAugmentedImageFolder over {source}. Length: {len(self.data_idx2aug_idxs)} | Min augmentations for an image: {min(aug_stats)} | Average: {np.mean(aug_stats):.5f}| Max: {max(aug_stats)}"
+            s = f"Constructed PreAugmentedImageFolder over {source}. Length: {len(self.data_idx2aug_idxs)} | Min augmentations: {min(aug_stats)} | Average: {np.mean(aug_stats):.5f}| Max: {max(aug_stats)}"
             tqdm.write(s)
 
 

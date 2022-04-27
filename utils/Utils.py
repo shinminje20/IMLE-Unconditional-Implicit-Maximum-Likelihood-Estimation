@@ -23,8 +23,7 @@ from torch.optim.lr_scheduler import _LRScheduler
 # Set up CUDA usage
 device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
 torch.backends.cudnn.benchmark = True
-
-num_workers = 6
+num_workers = 24
 
 # Turn off WandB console logging, since we don't need it and it breaks TQDM.
 os.environ["WANDB_CONSOLE"] = "off"

@@ -430,30 +430,43 @@ if __name__ == "__main__":
                 optimizer.zero_grad(set_to_none=True)
             
             loss_tr += loss.detach()
-            wandb.log({
-                "training loss": loss.item(),
-                "learning rate": scheduler.get_lr()[0]})
-                        
-            if batch_idx % 10 == 0:
-                tqdm.write(f"{batch_idx} | loss_tr {loss_tr.item() / (batch_idx + 1)} | lr {scheduler.get_lr()[0]}")
 
+            ####################################################################
+            # Log data
+            ####################################################################
+            if batch_idx % (len(loader_tr) // 10) == 0:
+                images_val, loss_val = validate(corruptor, model, z_gen,
+                    loader_eval, loss_fn, spi=args.spi)
+                images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
+                save_image_grid(images_val, images_file)
+                wandb.log({
+                    "validation loss": loss_val,
+                    "mean epoch training loss": loss_tr.item() / (batch_idx + 1),
+                    "training loss": loss.item(),
+                    "learning rate": scheduler.get_lr()[0],
+                    "generated images": wandb.Image(images_file),
+                })
+                tqdm.write(f"\tEpoch {e:3} | Batch {batch_idx:5} | mean oss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5f} | loss_val {loss_val:.5f}")
+            elif batch_idx % 10 == 0:
+                wandb.log({
+                    "training loss": loss.item(),
+                    "mean epoch training loss": loss_tr.item() / (batch_idx + 1),
+                    "learning rate": scheduler.get_lr()[0]
+                })
+                tqdm.write(f"\tEpoch {e:3} | Batch {batch_idx:5} | mean loss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5f}")
+            else:
+                wandb.log({
+                    "training loss": loss.item(),
+                    "mean epoch training loss": loss_tr.item() / (batch_idx + 1),
+                    "learning rate": scheduler.get_lr()[0]
+                })
+
+            
             # This can sometimes throw a warning claiming that optimizer was
             # never stepped. This is because [scaler] chose a too-high
             # value, got a NaN, and didn't step the optimizer. This can be
             # ignored.
             scheduler.step()
-
-        ####################################################################
-        # Log some generations at the end of each epoch.
-        ####################################################################
-        images_val, loss_val = validate(corruptor, model, z_gen, loader_eval,
-            loss_fn, spi=args.spi)
-        tqdm.write(f"End of epoch {e} | loss_tr {loss_tr.item() / len(loader_tr)} | loss_val {loss_val}")
-
-        images_file = f"{save_dir}/val_images/epoch{e}.png"
-        save_image_grid(images_val, images_file)
-        wandb.log({"epochs": e, "validation loss": loss_val,
-            "generated images": wandb.Image(images_file)})
     
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
