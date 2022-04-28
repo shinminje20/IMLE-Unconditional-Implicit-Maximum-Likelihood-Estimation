@@ -163,6 +163,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
             codes = z_gen(bs * spi, level="all", input="show_components")
             with autocast():
                 outputs = model(cx_expanded, codes, loi=-1)
+                
             losses = loss_fn(outputs, y[-1])
             outputs = outputs.view(bs, spi, 3, args.res[-1], args.res[-1])
 
@@ -295,7 +296,6 @@ if __name__ == "__main__":
 
     if resume_file is None:
         save_dir = generator_folder(args)
-        tqdm.write("Starting new experiment.")
         set_seed(args.seed)
         
         # Setup the experiment. Importantly, we copy the experiment's ID to
@@ -428,30 +428,30 @@ if __name__ == "__main__":
             ####################################################################
             # Log data
             ####################################################################
-            if batch_idx % (len(loader_tr) // 10) == 0:
+            if batch_idx % 100 == 0:
                 images_val, loss_val = validate(corruptor, model, z_gen,
                     loader_eval, loss_fn, spi=args.spi)
                 images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
                 save_image_grid(images_val, images_file)
                 wandb.log({
                     "validation loss": loss_val,
-                    "mean epoch training loss": loss_tr.item() / (batch_idx + 1),
-                    "training loss": loss.item(),
+                    "mean training loss": loss_tr.item() / (batch_idx + 1),
+                    "step training loss": loss.item(),
                     "learning rate": scheduler.get_lr()[0],
                     "generated images": wandb.Image(images_file),
                 })
-                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean loss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
+                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean training loss {loss_tr.item() / (batch_idx + 1):.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
             elif batch_idx % 10 == 0:
                 wandb.log({
-                    "training loss": loss.item(),
-                    "mean epoch training loss": loss_tr.item() / (batch_idx + 1),
+                    "step training loss": loss.item(),
+                    "mean training loss": loss_tr.item() / (batch_idx + 1),
                     "learning rate": scheduler.get_lr()[0]
                 })
-                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean loss_tr {loss_tr.item() / (batch_idx + 1):.5f} | lr {scheduler.get_lr()[0]:.5e}")
+                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean training loss {loss_tr.item() / (batch_idx + 1):.5e} | lr {scheduler.get_lr()[0]:.5e}")
             else:
                 wandb.log({
-                    "training loss": loss.item(),
-                    "mean epoch training loss": loss_tr.item() / (batch_idx + 1),
+                    "step training loss": loss.item(),
+                    "mean training loss": loss_tr.item() / (batch_idx + 1),
                     "learning rate": scheduler.get_lr()[0]
                 })
 
