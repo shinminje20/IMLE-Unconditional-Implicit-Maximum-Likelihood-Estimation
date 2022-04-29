@@ -441,6 +441,10 @@ if __name__ == "__main__":
                     "generated images": wandb.Image(images_file),
                 })
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean training loss {loss_tr.item() / (batch_idx + 1):.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
+                save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
+                    "last_epoch": e, "args": args, "scheduler": scheduler,
+                    "optimizer": optimizer}, f"{save_dir}/latest.pt")
+                corruptor, model = corruptor.to(device), model.to(device)
             elif batch_idx % 10 == 0:
                 wandb.log({
                     "step training loss": loss.item(),

@@ -14,8 +14,6 @@ from tqdm import tqdm
 import torch
 import torch.nn as nn
 from torchvision.transforms import functional as functional_TF
-from torch.optim import Optimizer
-from torch.optim.lr_scheduler import _LRScheduler
 
 ################################################################################
 # Set up seeds, CUDA, and number of workers
