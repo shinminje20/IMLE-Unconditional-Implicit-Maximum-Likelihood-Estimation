@@ -354,7 +354,7 @@ if __name__ == "__main__":
     
     loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
         batch_size=max(len(args.gpus), args.bs))
-    loader_eval = DataLoader(data_eval, pin_memory=True, shuffle=True,
+    loader_eval = DataLoader(data_eval, shuffle=False,
         batch_size=max(len(args.gpus), args.bs // args.spi), drop_last=True)    
 
     # Get a function that returns random codes given a level. We will use
