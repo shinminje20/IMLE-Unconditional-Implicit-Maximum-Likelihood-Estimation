@@ -9,7 +9,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from Data import *
-from utils.NestedNamespace import NestedNamespace
 from utils.Utils import *
 
 
@@ -41,7 +40,7 @@ class RandomPixelMask(nn.Module):
         self.fill = fill
 
     def forward(self, x):
-        mask = torch.rand(size=(x.shape[0], self.size * self.size), device=device)
+        mask = torch.rand(size=(x.shape[0], self.size * self.size), device=x.device)
         _, indices = torch.sort(mask)
         indices = indices.view(x.shape[0], self.size, self.size).unsqueeze(1)
         cutoff = self.mask_frac  * self.size * self.size
@@ -51,7 +50,7 @@ class RandomPixelMask(nn.Module):
         mask = F.interpolate(mask, size=x.shape[-2:], mode="nearest")
 
         if self.fill == "color":
-            colors = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size), device=device)
+            colors = torch.rand(size=(x.shape[0], x.shape[1], self.size, self.size), device=x.device)
             colors = F.interpolate(colors, size=x.shape[-2:], mode="nearest")
             x[mask.bool()] = colors[mask.bool()]
         elif self.fill == "zero":

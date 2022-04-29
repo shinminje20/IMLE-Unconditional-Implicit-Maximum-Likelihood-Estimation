@@ -15,7 +15,6 @@ import Block as B
 from utils.Utils import *
 from utils.UtilsColorSpace import rgb2lab_with_dims, lab2rgb_with_dims
 from utils.UtilsNN import *
-from utils.NestedNamespace import NestedNamespace
 
 class LossFnWrappingGenerator(nn.Module):
     """A module wrapping a generator and an (unreduced) loss function.

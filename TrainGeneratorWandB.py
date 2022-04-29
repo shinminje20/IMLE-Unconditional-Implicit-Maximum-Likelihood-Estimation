@@ -51,7 +51,7 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_compo
         if mm is None:
             mm = [torch.rand(1, num_components, *dim) for dim in z_dims]
             mm = [nn.functional.normalize(m, dim=2) for m in mm]
-        
+
         if input is None:
             idxs = torch.tensor(random.choices(range(num_components), k=bs))
         elif input == "show_components":
@@ -84,7 +84,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
     """
     num_samples = make_list(num_samples, len(y))
     sample_parallelism = make_list(sample_parallelism, len(y))
-    
+
     bs = len(cx)
     level_codes = z_gen(bs, level="all")
     with torch.no_grad():
@@ -163,7 +163,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
             codes = z_gen(bs * spi, level="all", input="show_components")
             with autocast():
                 outputs = model(cx_expanded, codes, loi=-1)
-                
+
             losses = loss_fn(outputs, y[-1])
             outputs = outputs.view(bs, spi, 3, args.res[-1], args.res[-1])
 
@@ -171,7 +171,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
             outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
             images = [[s for s in samples] for samples in outputs]
             images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
-            
+
             loss += losses.mean().item()
             results += images
 
@@ -200,7 +200,7 @@ if __name__ == "__main__":
         help="Samples per image to log.")
     P.add_argument("--chunk_epochs", type=int, default=float("inf"),
         help="Number of epochs to run before exiting. The number of total epochs is set with the --epoch flag; this is to allow for better cluster usage.")
-        
+
 
     P.add_argument("--proj_dim", default=1000, type=int,
         help="projection dimensionality")
@@ -297,7 +297,7 @@ if __name__ == "__main__":
     if resume_file is None:
         save_dir = generator_folder(args)
         set_seed(args.seed)
-        
+
         # Setup the experiment. Importantly, we copy the experiment's ID to
         # [args] so that we can resume it later.
         args.run_id = wandb.util.generate_id()
@@ -308,10 +308,10 @@ if __name__ == "__main__":
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
         last_epoch = -1
-    else:   
+    else:
         tqdm.write(f"Resuming from {resume_file}")
         resume_data = torch.load(resume_file)
-        
+
         # Copy non-hyperparameter information from the current arguments to the
         # ones we're resuming
         curr_args = args
@@ -321,7 +321,7 @@ if __name__ == "__main__":
         args.chunk_epochs = curr_args.chunk_epochs
         args.wandb = curr_args.wandb
         save_dir = generator_folder(args)
-        set_seed(resume_data["seed"])        
+        set_seed(resume_data["seed"])
 
         wandb.init(id=args.run_id, resume="must", mode=args.wandb,
             project="isicle-generator", )
@@ -331,7 +331,7 @@ if __name__ == "__main__":
         corruptor = resume_data["corruptor"].to(device)
         last_epoch = resume_data["last_epoch"]
         scheduler = resume_data["scheduler"]
-    
+
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
@@ -351,11 +351,11 @@ if __name__ == "__main__":
     eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
     data_eval = Subset(data_eval,
         indices=range(0, len(data_eval), eval_len))
-    
+
     loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
         batch_size=max(len(args.gpus), args.bs))
     loader_eval = DataLoader(data_eval, shuffle=False,
-        batch_size=max(len(args.gpus), args.bs // args.spi), drop_last=True)    
+        batch_size=max(len(args.gpus), args.bs // args.spi), drop_last=True)
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
@@ -371,7 +371,7 @@ if __name__ == "__main__":
     ########################################################################
     if resume_file is None:
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
-            max_lr=args.lr,  min_lr=1e-6,
+            max_lr=args.lr,  min_lr=1e-6, warmup_steps=len(loader),
             first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
             last_epoch=max(-1, last_epoch * len(loader_tr)))
 
@@ -381,7 +381,16 @@ if __name__ == "__main__":
     # and better use our ComputeCanada allocation.
     start_epoch = last_epoch + 1
     end_epoch = min(args.epochs, last_epoch + 1 + args.chunk_epochs)
-    
+
+    images_val, loss_val = validate(corruptor, model, z_gen,
+        loader_eval, loss_fn, spi=args.spi)
+    images_file = f"{save_dir}/val_images/foo.png"
+    save_image_grid(images_val, images_file)
+
+    tqdm.write(f"IMAGES VAL {[i.mean() for ims in images_val for i in ims]}, {[i.max() for ims in images_val for i in ims]} {[i.min() for ims in images_val for i in ims]}")
+    show_image_grid(images_val)
+    assert 0
+
     for e in tqdm(range(start_epoch, end_epoch), desc="Epochs", dynamic_ncols=True):
 
         ####################################################################
@@ -404,7 +413,7 @@ if __name__ == "__main__":
                     print("      FX NAN")
                 if torch.isnan(torch.sum(loss)):
                      print("      LOSS NAN")
-                
+
                 if any([torch.isnan(torch.sum(f)) for f in fx]) or torch.isnan(torch.sum(loss)):
                     torch.save({"model": model.cpu(), "cx": cx.cpu(), "x": x.cpu(), "ys": [y.cpu() for y in ys], "fx": [f.cpu() for f in fx], "loss": loss.cpu(), "codes": codes},
                     f"nan_results_{batch_idx}.pt")
@@ -422,17 +431,22 @@ if __name__ == "__main__":
                 # no_grad() context above, so there should be no other
                 # gradients lurking around.
                 optimizer.zero_grad(set_to_none=True)
-            
+
             loss_tr += loss.detach()
 
             ####################################################################
             # Log data
             ####################################################################
-            if batch_idx % 100 == 0:
+            if batch_idx % 10 == 0:
                 images_val, loss_val = validate(corruptor, model, z_gen,
                     loader_eval, loss_fn, spi=args.spi)
                 images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
                 save_image_grid(images_val, images_file)
+
+                tqmd.write(f"IMAGES VAL {images_val.mean()}, {torch.max(images_val)} {torch.min(images_val)}")
+
+
+
                 wandb.log({
                     "validation loss": loss_val,
                     "mean training loss": loss_tr.item() / (batch_idx + 1),
@@ -445,6 +459,7 @@ if __name__ == "__main__":
                     "last_epoch": e, "args": args, "scheduler": scheduler,
                     "optimizer": optimizer}, f"{save_dir}/latest.pt")
                 corruptor, model = corruptor.to(device), model.to(device)
+                show_image_grid(images_val)
             elif batch_idx % 10 == 0:
                 wandb.log({
                     "step training loss": loss.item(),
@@ -459,13 +474,13 @@ if __name__ == "__main__":
                     "learning rate": scheduler.get_lr()[0]
                 })
 
-            
+
             # This can sometimes throw a warning claiming that optimizer was
             # never stepped. This is because [scaler] chose a too-high
             # value, got a NaN, and didn't step the optimizer. This can be
             # ignored.
             scheduler.step()
-    
+
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
             "optimizer": optimizer}, f"{save_dir}/{e}.pt")
