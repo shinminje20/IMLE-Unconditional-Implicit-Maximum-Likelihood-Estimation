@@ -250,11 +250,11 @@ if __name__ == "__main__":
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
 
-    P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
+    P.add_argument("--grayscale", default=0, type=float, choices=[0, .5, 1],
         help="grayscale corruption")
     P.add_argument("--mask_res", default=8, type=int,
         help="sidelength of image at which to do masking")
-    P.add_argument("--mask_frac", default=.1, type=float,
+    P.add_argument("--mask_frac", default=0, type=float,
         help="fraction of pixels to mask")
     P.add_argument("--fill", default="zero", choices=["color", "zero"],
         help="how to fill masked out areas")
@@ -349,8 +349,7 @@ if __name__ == "__main__":
     data_eval = GeneratorDataset(data_eval, get_gen_augs())
     eval_len = len(data_eval) // (args.spi + 2)
     eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-    data_eval = Subset(data_eval,
-        indices=range(0, len(data_eval), eval_len))
+    data_eval = Subset(data_eval, indices=range(0, len(data_eval), eval_len))
 
     loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
         batch_size=max(len(args.gpus), args.bs))
@@ -365,13 +364,12 @@ if __name__ == "__main__":
         sample_method=args.sample_method)
 
     ########################################################################
-    # Construct the scheduler and save some initial images. Strictly speaking,
-    # constructing the scheduler makes no sense here, but we need to do it only
-    # if we're starting a new run.
+    # Construct the scheduler—strictly speaking, constructing it makes no sense
+    # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
-            max_lr=args.lr,  min_lr=1e-6, warmup_steps=len(loader),
+            max_lr=args.lr, min_lr=1e-6, warmup_steps=len(loader_tr) // 5,
             first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
             last_epoch=max(-1, last_epoch * len(loader_tr)))
 
@@ -381,15 +379,6 @@ if __name__ == "__main__":
     # and better use our ComputeCanada allocation.
     start_epoch = last_epoch + 1
     end_epoch = min(args.epochs, last_epoch + 1 + args.chunk_epochs)
-
-    images_val, loss_val = validate(corruptor, model, z_gen,
-        loader_eval, loss_fn, spi=args.spi)
-    images_file = f"{save_dir}/val_images/foo.png"
-    save_image_grid(images_val, images_file)
-
-    tqdm.write(f"IMAGES VAL {[i.mean() for ims in images_val for i in ims]}, {[i.max() for ims in images_val for i in ims]} {[i.min() for ims in images_val for i in ims]}")
-    show_image_grid(images_val)
-    assert 0
 
     for e in tqdm(range(start_epoch, end_epoch), desc="Epochs", dynamic_ncols=True):
 
@@ -405,21 +394,10 @@ if __name__ == "__main__":
                 num_samples=args.ns, sample_parallelism=args.sp)
 
             for _ in range(args.ipcpe):
-                fx = model(cx, codes, loi=None)
+                with autocast():
+                    fx = model(cx, codes, loi=None)
 
                 loss = compute_loss_over_list(fx, ys, loss_fn)
-
-                if any([torch.isnan(torch.sum(f)) for f in fx]):
-                    print("      FX NAN")
-                if torch.isnan(torch.sum(loss)):
-                     print("      LOSS NAN")
-
-                if any([torch.isnan(torch.sum(f)) for f in fx]) or torch.isnan(torch.sum(loss)):
-                    torch.save({"model": model.cpu(), "cx": cx.cpu(), "x": x.cpu(), "ys": [y.cpu() for y in ys], "fx": [f.cpu() for f in fx], "loss": loss.cpu(), "codes": codes},
-                    f"nan_results_{batch_idx}.pt")
-                    import sys
-                    sys.exit(0)
-
                 scaler.scale(loss).backward()
                 scaler.unscale_(optimizer)
                 clip_grad_norm_(model.parameters(), max_norm=2.0)
@@ -437,16 +415,11 @@ if __name__ == "__main__":
             ####################################################################
             # Log data
             ####################################################################
-            if batch_idx % 10 == 0:
+            if batch_idx % 100 == 0 or batch_idx == len(loader_tr) - 1:
                 images_val, loss_val = validate(corruptor, model, z_gen,
                     loader_eval, loss_fn, spi=args.spi)
                 images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
                 save_image_grid(images_val, images_file)
-
-                tqmd.write(f"IMAGES VAL {images_val.mean()}, {torch.max(images_val)} {torch.min(images_val)}")
-
-
-
                 wandb.log({
                     "validation loss": loss_val,
                     "mean training loss": loss_tr.item() / (batch_idx + 1),
@@ -457,9 +430,8 @@ if __name__ == "__main__":
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean training loss {loss_tr.item() / (batch_idx + 1):.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
                 save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
                     "last_epoch": e, "args": args, "scheduler": scheduler,
-                    "optimizer": optimizer}, f"{save_dir}/latest.pt")
+                    "optimizer": optimizer}, f"{save_dir}/step{e * len(loader_tr) + batch_idx}.pt")
                 corruptor, model = corruptor.to(device), model.to(device)
-                show_image_grid(images_val)
             elif batch_idx % 10 == 0:
                 wandb.log({
                     "step training loss": loss.item(),

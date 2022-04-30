@@ -23,25 +23,14 @@ from Corruptions import *
 from utils.Utils import *
 
 ################################################################################
-# Dataset medatata. In general, unless it's properly logged here, you can use a
-# new dataset. If it is logged here, using it should be easy!
-#
-# To make running on a dataset possible, ensure images in it can be accessed via
-# `data/dataset_name/split/class/image.png` where `dataset_name` doesn't include
-# resolution information, ie. an actual path would be
-#
-#   `data/cifar10_16x16/train/airplane/image.png`
-#
-# but only `cifar10` would be recorded here.
+# Dataset medatata.
 ################################################################################
-datasets = ["cifar10", "camnet3", "camnet3_deci", "miniImagenet", "miniImagenet_deci", "miniImagenet_centi", "camnet3_centi"]
+datasets = ["cifar10", "camnet3", "miniImagenet", "miniImagenet10"]
+data_suffixes = ["", "_deci", "_centi", "_milli"]
+datasets = flatten([f"{d}{s}" for d in datasets for s in data_suffixes])
+
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
-data2split2n_class = {
-    "camnet3": {"train": 3, "val": 3},
-    "cifar10": {"train": 10, "val": 10, "test": 10},
-    "miniImagenet": {"train": 64, "val": 16, "test": 20} # Not sure if these numbers are correct
-}
 
 def seed_kwargs(seed=0):
     """Returns kwargs to be passed into a DataLoader to give it seed [seed]."""
@@ -204,22 +193,6 @@ def get_gen_augs():
 ################################################################################
 # Datasets
 ################################################################################
-
-class XDataset(Dataset):
-    """A wrapper over an iterable."""
-    def __init__(self, data, transform=None):
-        super(XDataset, self).__init__()
-        self.data = data
-        self.transform = transform
-
-    def __len__(self): return len(self.data)
-
-    def __getitem__(self, idx):
-        if self.transform is None:
-            return self.data[idx]
-        else:
-            return self.transform(self.data[idx])
-
 class XYDataset(Dataset):
     """A simple dataset returning examples of the form (transform(x), y)."""
 
@@ -321,50 +294,6 @@ def collate_fn(data):
     """Collate function for batching data."""
     return torch.stack([d[0] for d in data], axis=0), [d[1] for d in data]
 
-class CorruptedDataset(Dataset):
-    """Dataset for returning corrupted images and their targets. The main
-    difference from loading images from a GeneratorDataset and corrupting images
-    on the fly is that this keeps the corruptions static, which is useful due to
-    how we find the best codes for each image. Corrupted images don't change in
-    between different iterations of code sampling.
-
-    Args:
-    source      -- source dataset, should be a GeneratorDataset
-    corruptor   -- corruptor to corrupt a batch of images
-    bs          -- batch size for getting corrupted versions of images
-    """
-    def __init__(self, source, corruptor):
-        super(CorruptedDataset, self).__init__()
-        loader = DataLoader(source, num_workers=num_workers, batch_size=8,
-            collate_fn=collate_fn, pin_memory=True)
-        self.corrupted_xs = []
-        self.ys = []
-
-        for x,y in loader:
-            x = corruptor(x.to(device, non_blocking=True))
-            self.corrupted_xs.append(x)
-            self.ys += y
-
-        self.ys = make_cpu(self.ys)
-        self.corrupted_xs = torch.cat(self.corrupted_xs, axis=0).cpu()
-
-    def __len__(self): return len(self.corrupted_xs)
-    def __getitem__(self, idx): return self.corrupted_xs[idx], self.ys[idx]
-
-class ExpandedDataset(Dataset):
-    """Provides a view of [source_data] expanded by a factor of [expand_factor].
-    More formally, the indices i * expand_factor ... (i+1) * expand_factor - 1
-    map from the ith example of [source_data].
-    """
-    def __init__(self, source_data, expand_factor=1):
-        self.source = source_data
-        self.expand_factor = expand_factor
-
-    def __len__(self): return self.expand_factor * len(self.source)
-
-    def __getitem__(self, idx): return self.source[idx // self.expand_factor]
-
-
 class ManyTransformsDataset(Dataset):
     """A dataset that wraps a single source dataset, but returns a tuple of
     transformed items from it, with the ith item coming from the ith transform
@@ -384,23 +313,6 @@ class ManyTransformsDataset(Dataset):
     def __getitem__(self, idx):
         x = self.source_dataset[idx][0]
         return tuple([t(x) for t in self.transforms])
-
-class ZippedDataset(Dataset):
-    """A Dataset that zips together iterables. Its transform should be
-
-    Args:
-    *datasets   -- the wrapped iterables. All must be of the same length
-    """
-    def __init__(self, *datasets):
-        super(ZippedDataset, self).__init__()
-        self.datasets = datasets
-
-        if not all([len(d) == len(datasets[0]) for d in datasets]):
-            raise ValueError(f"All constituent datasets must have same length, but got lengths {[len(d) for d in datasets]}")
-
-    def __len__(self): return len(self.datasets[0])
-
-    def __getitem__(self, idx): return [d[idx] for d in self.datasets]
 
 class PreAugmentedImageFolder(Dataset):
     """A drop-in replacement for an ImageFolder for use where some
@@ -450,9 +362,9 @@ class PreAugmentedImageFolder(Dataset):
         # Print dataset statistics
         if verbose:
             aug_stats = [len(idxs) for idxs in self.data_idx2aug_idxs]
-            s = f"Constructed PreAugmentedImageFolder over {source}. Length: {len(self.data_idx2aug_idxs)} | Min augmentations: {min(aug_stats)} | Average: {np.mean(aug_stats):.5f}| Max: {max(aug_stats)}"
+            data_name = f"{os.path.basename(os.path.dirname(source))}/{os.path.basename(source)}"
+            s = f"Constructed PreAugmentedImageFolder over {data_name}. Length: {len(self.data_idx2aug_idxs)} | Min augmentations: {min(aug_stats)} | Average: {np.mean(aug_stats):.5f}| Max: {max(aug_stats)}"
             tqdm.write(s)
-
 
     def __len__(self): return len(self.data_idx2aug_idxs)
 

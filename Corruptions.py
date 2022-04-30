@@ -59,14 +59,35 @@ class RandomPixelMask(nn.Module):
             raise ValueError(f"Unknown fill type '{self.fill}'")
         return x
 
+class HalfGrayscale(nn.Module):
+    """Augmentation that replaces one image of a channel with random noise."""
+
+    def __init__(self):
+        super(HalfGrayscale, self).__init__()
+
+    def forward(self, x):
+        bs, c, h, w = x.shape
+        idxs = torch.arange(3, device=x.device).unsqueeze(0).expand(bs, -1)
+        rand_idxs = torch.randint(low=0, high=3, size=(bs, 1), device=x.device)
+        mask = (idxs == rand_idxs)
+        result = torch.mean(x[~mask].view(bs, -1, h, w), axis=1).view(-1, 1, h, w)
+        result = result.expand(-1, 3, -1, -1).clone()
+        result[mask] = x[mask]
+        return result
+
 class Corruption(nn.Module):
 
     def __init__(self, mask_frac=0, mask_res=1, fill="zero", grayscale=1, **kwargs):
         super(Corruption, self).__init__()
-        corruptions = []
 
-        if grayscale:
+        corruptions = []
+        if grayscale == 1:
             corruptions.append(K.augmentation.RandomGrayscale(p=1))
+        elif grayscale == .5:
+            corruptions.append(HalfGrayscale())
+        else:
+            pass
+
         if mask_frac > 0:
             corruptions.append(RandomPixelMask(mask_frac=mask_frac,
                 mask_res=mask_res, fill=fill))

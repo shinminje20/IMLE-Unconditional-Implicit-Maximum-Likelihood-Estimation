@@ -194,7 +194,7 @@ def save_checkpoint(dictionary, path):
         "random_seed": random.getstate()}
     }
     torch.save(dictionary | seed_states, path)
-    tqdm.write(f"Saved files to {path}")
+    tqdm.write(f"Saved files to {path.replace(project_dir, '')}")
 
 def dict_to_nice_str(dict, max_line_length=80):
     """Returns a pretty string representation of [dict]."""
