@@ -197,6 +197,8 @@ if __name__ == "__main__":
         help="Samples per image to log.")
     P.add_argument("--chunk_epochs", type=int, default=float("inf"),
         help="Number of epochs to run before exiting. The number of total epochs is set with the --epoch flag; this is to allow for better cluster usage.")
+    P.add_argument("--val_iter", type=int, default=100,
+        help="validate every this number of iterations")
 
 
     P.add_argument("--proj_dim", default=1000, type=int,
@@ -323,6 +325,7 @@ if __name__ == "__main__":
         args.gpus = curr_args.gpus
         args.chunk_epochs = curr_args.chunk_epochs
         args.wandb = curr_args.wandb
+        args.val_iter = curr_args.val_iter
         save_dir = generator_folder(args)
         set_seed(resume_data["seed"])
 
@@ -377,6 +380,10 @@ if __name__ == "__main__":
             warmup_steps=warmup,first_cycle_steps=first_cycle_steps,
             gamma=.7, last_epoch=max(-1, last_epoch * len(loader_tr)))
 
+        if args.val_iter >= len(loader_tr):
+            tqdm.write(f"Setting --val_iter from {args.val_iter} to {len(loader_tr) - 1}")
+            args.val_iter = len(loader_tr) - 1
+
     scaler = GradScaler()
 
     # Define the starting and ending epoch. These are so we can chunk training
@@ -421,7 +428,7 @@ if __name__ == "__main__":
             ####################################################################
             # Log data
             ####################################################################
-            if batch_idx % 100 == 5 or batch_idx == len(loader_tr) - 1:
+            if batch_idx % args.val_iter == 0:
                 images_val, loss_val = validate(corruptor, model, z_gen,
                     loader_eval, loss_fn, args)
                 images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
@@ -434,13 +441,7 @@ if __name__ == "__main__":
                     "generated images": wandb.Image(images_file),
                 })
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean training loss {loss_tr.item() / (batch_idx + 1):.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
-                save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
-                    "last_epoch": e, "args": args, "scheduler": scheduler,
-                    "optimizer": optimizer,
-                    "step": e * len(loader_tr) + batch_idx},
-                    f"{save_dir}/latest.pt")
-                corruptor, model = corruptor.to(device), model.to(device)
-            elif batch_idx % 10 == 0:
+            elif batch_idx % min(max(1, args.val_iter // 2), 10) == 0:
                 wandb.log({
                     "step training loss": loss.item(),
                     "mean training loss": loss_tr.item() / (batch_idx + 1),
@@ -453,7 +454,6 @@ if __name__ == "__main__":
                     "mean training loss": loss_tr.item() / (batch_idx + 1),
                     "learning rate": scheduler.get_lr()[0]
                 })
-
 
             # This can sometimes throw a warning claiming that optimizer was
             # never stepped. This is because [scaler] chose a too-high
