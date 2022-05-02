@@ -47,6 +47,12 @@ data2stats = {
     }
 }
 
+def data_name_without_suffix(data_name):
+    data_name =  data_name.replace("_deci", "")
+    data_name =  data_name.replace("_centi", "")
+    data_name =  data_name.replace("_milli", "")
+    return data_name
+
 def unnormalize(images, data_name):
     """Returns tensor or list [images] after unnormalization according to
     [data_name]. The shape/order/type of [images] is unchanged.
@@ -55,8 +61,8 @@ def unnormalize(images, data_name):
         no_bs = len(images.shape) == 3
         images = images.unsqueeze(0) if no_bs else images
         bs, c, h, w = images.shape
-        mean = torch.tensor(data2stats[data_name]["mean"], device=images.device)
-        std = torch.tensor(data2stats[data_name]["std"], device=images.device)
+        mean = torch.tensor(data2stats[data_name_without_suffix(data_name)]["mean"], device=images.device)
+        std = torch.tensor(data2stats[data_name_without_suffix(data_name)]["std"], device=images.device)
         mean = mean.view(1, 3, 1, 1).expand(images.shape)
         std = std.view(1, 3, 1, 1).expand(images.shape)
         images = torch.multiply(images, std) + mean
@@ -230,7 +236,7 @@ def get_gen_augs(args):
         def __repr__(self): return self.__class__.__name__
 
     class Normalizations(nn.Module):
-        def __init__(self, normalization):
+        def __init__(self, normalize):
             super(Normalizations, self).__init__()
             self.normalize = normalize
         
@@ -243,8 +249,8 @@ def get_gen_augs(args):
             RandomHorizontalFlips(),
             ToTensors(),
             Normalizations(transforms.Normalize(
-                mean=data2stats[args.data]["mean"],
-                std=data2stats[args.data]["std"]))
+                mean=data2stats[data_name_without_suffix(args.data)]["mean"],
+                std=data2stats[data_name_without_suffix(args.data)]["std"]))
         ])
     else:
         return transforms.Compose([
