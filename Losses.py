@@ -28,7 +28,7 @@ class ResolutionLoss(nn.Module):
         self.alpha = alpha
     
     def forward(self, fx, y):
-        high_res = (fx.shape[-1] > 64)
+        high_res = (fx.shape[-1] >= 64)
         fx_lpips = self.lpips(fx)
         y_lpips = self.lpips(y)
 
@@ -42,10 +42,7 @@ class ResolutionLoss(nn.Module):
         else:
             mse = batch_mse(fx, y)
             result = lpips_loss + self.alpha * mse
-        result = result.squeeze()
-            
-
-        return result
+        return result.squeeze()
 
 class ProjectedLPIPSFeats(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
@@ -53,28 +50,24 @@ class ProjectedLPIPSFeats(nn.Module):
         super(ProjectedLPIPSFeats, self).__init__()
         self.lpips = LPIPSFeats()
         self.proj_dim = proj_dim
-        self.projections = {}
-
-        # Note sure why we need this, but without it DDP fails
-        for param in self.parameters():
-            param.requires_grad = True
+        self.projections = nn.ModuleDict()
 
     def project_tensor(self, t):
         """Returns a projection matrix for a tensor with last size [dim]."""
         if not t.shape[-1] in self.projections:
-            projection = torch.randn(t.shape[-1], self.proj_dim, device=torch.device("cuda"))
-            projection = F.normalize(projection, p=2, dim=1)
+            projection = torch.randn(t.shape[-1], self.proj_dim, requires_grad=True)
+            projection = nn.Parameter(F.normalize(projection, p=2, dim=1))
             self.projections[t.shape[-1]] = projection
 
         return torch.matmul(t, self.projections[t.shape[-1]])
 
-    def reset_projections(self): self.projections = {}
+    def reset_projections(self): self.projections = nn.ModuleDict()
 
     def forward(self, x):
-        with autocast():
-            x = self.lpips(x)
-            if self.proj_dim is not None:
-                x = self.project_tensor(x)
+        # with autocast():
+        x = self.lpips(x)
+        if self.proj_dim is not None:
+            x = self.project_tensor(x)
         return x
 
 def batch_mse(x, y):

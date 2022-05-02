@@ -10,12 +10,9 @@
 #SBATCH --cpus-per-task=10      # Number of cores per task.
 #SBATCH --gres=gpu:a100:2       # 40G A100
 
-# Uncomment to control the output files. By default stdout and stderr go to
-# the same place, but if you use both commands below they'll be split up.
-# %N is the hostname (if used, will create output(s) per node).
-# %j is jobid.
-
-#SBATCH --output=job_results/miniImagenet_generation_%A_%a.txt
+# Set the job name, and a 
+#SBATCH --job-name=miniImageent_generation_2x
+#SBATCH --output=job_results/%x_%A_%a.txt
 
 # Below sets the email notification, swap to your email to receive notifications
 #SBATCH --mail-user=tristanengst@gmail.com
@@ -26,15 +23,17 @@
 #SBATCH --mail-type=ALL
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
-# Print some info for context.
+
+# Start building the job's output file. First, make sure the directory to put it
+# in exists, and then print some context info to the output file.
+mkdir job_results
 pwd
 hostname
 date
-
-module load httpproxy
-
 echo "Starting job number $SLURM_ARRAY_TASK_ID"
 
+# Start up the right environment to run the code. This entails starting the
+# useful bash environment and activating a conda environment.
 source ~/.bashrc
 conda activate py39ISICLE
 
@@ -45,6 +44,10 @@ conda activate py39ISICLE
 export PYTHONUNBUFFERED=1
 
 # Do all the research.
+
+# Keep jobs from starting at the same time. This wouldn't be needed if we could just have normal WandB. asdfghjk.
+sleep $((SLURM_ARRAY_TASK_ID % 3 * 60 + 1))
+
 if [[ $((SLURM_ARRAY_TASK_ID % 3)) == 0 ]]
 then
     python TrainGeneratorWandB.py --lr 1e-3 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 8 --res 32 64 128 256 --ns 128 128 128 --sp 128 64 16 --data miniImagenet_deci --gpus 0 1 --grayscale .5 --suffix large_model --resid_nc 256 128 128 128 --dense_nc 512 384 256 128 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 3)) --seed $SLURM_ARRAY_TASK_ID

@@ -7,6 +7,7 @@ training and evaluation ImageFolders, and the various Dataset subclasses that
 can be used to construct various useful datasets.
 """
 from collections import OrderedDict, defaultdict
+from copy import deepcopy
 import numpy as np
 import random
 import sys
@@ -28,9 +29,47 @@ from utils.Utils import *
 datasets = ["cifar10", "camnet3", "miniImagenet", "miniImagenet10"]
 data_suffixes = ["", "_deci", "_centi", "_milli"]
 datasets = flatten([f"{d}{s}" for d in datasets for s in data_suffixes])
-
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
+
+data2stats = {
+    "camnet3": {
+        "mean": [0.5019261837005615, 0.4388015568256378, 0.3307309150695801],
+        "std": [0.2703641355037689, 0.26192981004714966, 0.27249595522880554],
+    },
+    "miniImagenet10": {
+        "mean": [0.3351227045059204, 0.319497287273407, 0.2869424521923065],
+        "std": [0.318856805562973, 0.3068281412124634, 0.3035818338394165],
+    },
+    "miniImagenet": {
+        "mean": [0.3351227045059204, 0.319497287273407, 0.2869424521923065],
+        "std": [0.318856805562973, 0.3068281412124634, 0.3035818338394165],
+    }
+}
+
+def unnormalize(images, data_name):
+    """Returns tensor or list [images] after unnormalization according to
+    [data_name]. The shape/order/type of [images] is unchanged.
+    """
+    if isinstance(images, torch.Tensor):
+        no_bs = len(images.shape) == 3
+        images = images.unsqueeze(0) if no_bs else images
+        bs, c, h, w = images.shape
+        mean = torch.tensor(data2stats[data_name]["mean"], device=images.device)
+        std = torch.tensor(data2stats[data_name]["std"], device=images.device)
+        mean = mean.view(1, 3, 1, 1).expand(images.shape)
+        std = std.view(1, 3, 1, 1).expand(images.shape)
+        images = torch.multiply(images, std) + mean
+
+        return images.squeeze(0) if no_bs else images
+    elif isinstance(images, list):
+        return [unnormalize(x, data_name) for x in images]
+    else:
+        raise NotImplementedError()
+
+
+
+
 
 def seed_kwargs(seed=0):
     """Returns kwargs to be passed into a DataLoader to give it seed [seed]."""
@@ -47,7 +86,7 @@ def seed_kwargs(seed=0):
 # Functionality for loading datasets
 ################################################################################
 
-def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data"):
+def get_data_splits(args):
     """Returns data for training and evaluation. All Datasets returned are
     ImageFolders, meaning that another kind of dataset likely needs to be built
     on top of them.
@@ -79,6 +118,11 @@ def get_data_splits(data_str, eval_str, res=None, data_path=f"{project_dir}/data
     ############################################################################
     # CIFAR-10 has its own weird logic
     ############################################################################
+    data_str = args.data
+    data_path = args.data_path
+    eval_str = args.eval if "eval" in vars(args) else "val"
+    res = args.res
+    
     if data_str == "cifar10":
         return (CIFAR10(root=data_path, train=True, download=True),
                 CIFAR10(root=data_path, train=eval_str in ["val", "cv"],
@@ -152,7 +196,7 @@ def get_contrastive_augs(crop_size=32, gaussian_blur=False, color_s=0):
 
     return augs_tr, augs_tr, augs_te
 
-def get_gen_augs():
+def get_gen_augs(args):
     """Returns a list of base transforms for image generation. Each should be
     able to accept multiple input images and be deterministic between any two
     images input at the same time, and return a list of the transformed images.
@@ -185,10 +229,28 @@ def get_gen_augs():
 
         def __repr__(self): return self.__class__.__name__
 
-    return transforms.Compose([
-        RandomHorizontalFlips(),
-        ToTensors()
-    ])
+    class Normalizations(nn.Module):
+        def __init__(self, normalization):
+            super(Normalizations, self).__init__()
+            self.normalize = normalize
+        
+        def forward(self, images): return [self.normalize(x) for x in images]
+        
+        def __repr__(self): return self.__class__.__name__
+
+    if args.normalize:
+        return transforms.Compose([
+            RandomHorizontalFlips(),
+            ToTensors(),
+            Normalizations(transforms.Normalize(
+                mean=data2stats[args.data]["mean"],
+                std=data2stats[args.data]["std"]))
+        ])
+    else:
+        return transforms.Compose([
+            RandomHorizontalFlips(),
+            ToTensors()
+        ])
 
 ################################################################################
 # Datasets
@@ -355,7 +417,8 @@ class PreAugmentedImageFolder(Dataset):
 
         super(PreAugmentedImageFolder, self).__init__()
         self.data_idx2aug_idxs = [v for v in image2idxs.values() if len(v) > 0]
-        self.data = ImageFolder(source, transform=transform,
+        self.data = ImageFolder(source,
+            transform=transform,
             target_transform=target_transform)
         self.num_classes = len(os.listdir(source))
 

@@ -24,7 +24,8 @@ def find_data_res(data_name, return_int=False):
     first instance of a substring 'A1...AnxB1...Bm' where 'A1...An' and
     'B1...Bm'can be interpreted as digits to an integer.
     """
-    matches = re.findall('\d*x\d', data_name)
+    matches = re.findall('\d*x\d*', data_name)
+    print(matches)
     if len(matches) == 0:
         raise ValueError()
     elif return_int:

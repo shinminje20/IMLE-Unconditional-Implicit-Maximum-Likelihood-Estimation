@@ -21,7 +21,6 @@ from utils.Utils import *
 from utils.UtilsColorSpace import *
 from utils.UtilsNN import *
 
-from torch.cuda.amp import autocast, GradScaler
 from functools import partial
 
 def get_z_dims(args):
@@ -120,8 +119,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
 
                 # Compute loss for the new codes. Note that because we have to
                 # use cdist here, we can't use half precision to compute loss.
-                with autocast():
-                    outputs = model(cx, test_codes, loi=level_idx)
+                outputs = model(cx, test_codes, loi=level_idx)
                 losses = loss_fn(outputs, y[level_idx])
 
                 # [losses] may have multiple values for each input example
@@ -142,7 +140,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
 
     return level_codes
 
-def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
+def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 
@@ -159,15 +157,13 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
         for x,y in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
             bs = len(x)
             cx = corruptor(x)
-            cx_expanded = cx.repeat_interleave(spi, dim=0)
-            codes = z_gen(bs * spi, level="all", input="show_components")
-            with autocast():
-                outputs = model(cx_expanded, codes, loi=-1)
-
+            cx_expanded = cx.repeat_interleave(args.spi, dim=0)
+            codes = z_gen(bs * args.spi, level="all", input="show_components")
+            outputs = model(cx_expanded, codes, loi=-1)
             losses = loss_fn(outputs, y[-1])
-            outputs = outputs.view(bs, spi, 3, args.res[-1], args.res[-1])
+            outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
-            idxs = torch.argsort(losses.view(bs, spi), dim=-1)
+            idxs = torch.argsort(losses.view(bs, args.spi), dim=-1)
             outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
             images = [[s for s in samples] for samples in outputs]
             images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
@@ -175,6 +171,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
             loss += losses.mean().item()
             results += images
 
+    results = unnormalize(results, args.data) if args.normalize else results
     return results, loss / len(loader_eval)
 
 if __name__ == "__main__":
@@ -182,7 +179,7 @@ if __name__ == "__main__":
     P.add_argument("--wandb", choices=["disabled", "online", "offline"],
         default="online",
         help="disabled: no W&B logging, online: normal W&B logging")
-    P.add_argument("--data", default="cifar10", choices=datasets,
+    P.add_argument("--data", required=True, choices=datasets,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
         help="resolutions to see data at")
@@ -214,11 +211,15 @@ if __name__ == "__main__":
         help="iters_per_code_per_ex")
     P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
+    P.add_argument("--warmup", type=int, default=256,
+        help="number of warmup steps")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="rgb",
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=128, nargs="+",
         help="parallelism across samples during code training")
     P.add_argument("--gpus", type=int, default=[0], nargs="+",
+        help="GPU ids")
+    P.add_argument("--normalize", type=int, default=0, choices=[0, 1],
         help="GPU ids")
 
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
@@ -259,6 +260,8 @@ if __name__ == "__main__":
     P.add_argument("--fill", default="zero", choices=["color", "zero"],
         help="how to fill masked out areas")
     args = P.parse_args()
+
+    torch.autograd.set_detect_anomaly(True)
 
     ############################################################################
     # Check and improve arguments
@@ -332,21 +335,16 @@ if __name__ == "__main__":
         last_epoch = resume_data["last_epoch"]
         scheduler = resume_data["scheduler"]
 
-    tqdm.write(f"----- Final Arguments -----")
-    tqdm.write(dict_to_nice_str(vars(args)))
-    tqdm.write(f"----- Beginning Training -----")
-
     # Set up the loss function
     loss_fn = nn.DataParallel(ResolutionLoss(), device_ids=args.gpus).to(device)
 
     # Set up the training and evaluation DataLoaders
-    data_tr, data_eval = get_data_splits(args.data, "val", args.res,
-        data_path=args.data_path)
-    data_tr = GeneratorDataset(data_tr, get_gen_augs())
+    data_tr, data_eval = get_data_splits(args)
+    data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
 
     # Get the evaluation data. We need to do this carefully so as to use
     # DataParallel and not have the data get dropped in the DataLoader.
-    data_eval = GeneratorDataset(data_eval, get_gen_augs())
+    data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
     eval_len = len(data_eval) // (args.spi + 2)
     eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
     data_eval = Subset(data_eval, indices=range(0, len(data_eval), eval_len))
@@ -368,10 +366,16 @@ if __name__ == "__main__":
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
+        first_cycle_steps = args.epochs * len(loader_tr) // 5
+        warmup = min(args.warmup, first_cycle_steps - 1)
+        if first_cycle_steps <= args.warmup:
+            tqdm.write(f"--warmup of {args.warmup} too big, resizing to maximum value of {warmup}")
+            args.warmup = warmup
+
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
-            max_lr=args.lr, min_lr=1e-6, warmup_steps=len(loader_tr) // 5,
-            first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
-            last_epoch=max(-1, last_epoch * len(loader_tr)))
+            max_lr=args.lr, min_lr=1e-6,
+            warmup_steps=warmup,first_cycle_steps=first_cycle_steps,
+            gamma=.7, last_epoch=max(-1, last_epoch * len(loader_tr)))
 
     scaler = GradScaler()
 
@@ -380,6 +384,9 @@ if __name__ == "__main__":
     start_epoch = last_epoch + 1
     end_epoch = min(args.epochs, last_epoch + 1 + args.chunk_epochs)
 
+    tqdm.write(f"----- Final Arguments -----")
+    tqdm.write(dict_to_nice_str(vars(args)))
+    tqdm.write(f"----- Beginning Training -----")
     for e in tqdm(range(start_epoch, end_epoch), desc="Epochs", dynamic_ncols=True):
 
         ####################################################################
@@ -394,8 +401,7 @@ if __name__ == "__main__":
                 num_samples=args.ns, sample_parallelism=args.sp)
 
             for _ in range(args.ipcpe):
-                with autocast():
-                    fx = model(cx, codes, loi=None)
+                fx = model(cx, codes, loi=None)
 
                 loss = compute_loss_over_list(fx, ys, loss_fn)
                 scaler.scale(loss).backward()
@@ -415,9 +421,9 @@ if __name__ == "__main__":
             ####################################################################
             # Log data
             ####################################################################
-            if batch_idx % 100 == 0 or batch_idx == len(loader_tr) - 1:
+            if batch_idx % 100 == 5 or batch_idx == len(loader_tr) - 1:
                 images_val, loss_val = validate(corruptor, model, z_gen,
-                    loader_eval, loss_fn, spi=args.spi)
+                    loader_eval, loss_fn, args)
                 images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
                 save_image_grid(images_val, images_file)
                 wandb.log({
@@ -430,7 +436,9 @@ if __name__ == "__main__":
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | mean training loss {loss_tr.item() / (batch_idx + 1):.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
                 save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
                     "last_epoch": e, "args": args, "scheduler": scheduler,
-                    "optimizer": optimizer}, f"{save_dir}/step{e * len(loader_tr) + batch_idx}.pt")
+                    "optimizer": optimizer,
+                    "step": e * len(loader_tr) + batch_idx},
+                    f"{save_dir}/latest.pt")
                 corruptor, model = corruptor.to(device), model.to(device)
             elif batch_idx % 10 == 0:
                 wandb.log({
