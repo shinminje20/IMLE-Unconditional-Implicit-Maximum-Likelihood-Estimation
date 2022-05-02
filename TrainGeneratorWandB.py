@@ -159,7 +159,8 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
             cx = corruptor(x)
             cx_expanded = cx.repeat_interleave(args.spi, dim=0)
             codes = z_gen(bs * args.spi, level="all", input="show_components")
-            outputs = model(cx_expanded, codes, loi=-1)
+            with autocast():
+                outputs = model(cx_expanded, codes, loi=-1)
             losses = loss_fn(outputs, y[-1])
             outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
@@ -216,7 +217,7 @@ if __name__ == "__main__":
         help="iters_per_code_per_ex")
     P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
-    P.add_argument("--warmup", type=int, default=256,
+    P.add_argument("--warmup", type=int, default=1024,
         help="number of warmup steps")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="rgb",
         help="Color space to use during training")
@@ -410,7 +411,8 @@ if __name__ == "__main__":
                 num_samples=args.ns, sample_parallelism=args.sp)
 
             for _ in range(args.ipcpe):
-                fx = model(cx, codes, loi=None)
+                with autocast():
+                    fx = model(cx, codes, loi=None)
 
                 loss = compute_loss_over_list(fx, ys, loss_fn)
                 scaler.scale(loss).backward()

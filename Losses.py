@@ -64,10 +64,10 @@ class ProjectedLPIPSFeats(nn.Module):
     def reset_projections(self): self.projections = nn.ModuleDict()
 
     def forward(self, x):
-        # with autocast():
-        x = self.lpips(x)
-        if self.proj_dim is not None:
-            x = self.project_tensor(x)
+        with autocast():
+            x = self.lpips(x)
+            if self.proj_dim is not None:
+                x = self.project_tensor(x)
         return x
 
 def batch_mse(x, y):
