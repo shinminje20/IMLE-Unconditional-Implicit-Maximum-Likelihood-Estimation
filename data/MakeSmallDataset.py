@@ -2,6 +2,7 @@
 
 import argparse
 from collections import defaultdict
+import os
 import numpy as np
 from DataUtils import *
 
@@ -100,10 +101,14 @@ def get_smaller_dataset(source, splits=["train", "val", "test"],
 
     return new_source
 
+def has_suffix(s):
+    """Returns if string [s] has a data suffix."""
+    return "_deci" in s or "_centi" in s or "_milli" in s
+
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="Dataset subsampling for faster CaMNetting")
     P.add_argument("--datasets", required=True, type=str, nargs="+",
-        help="path to dataset to subsample")
+        help="path to dataset to subsample. Note that there's some custom logic if you use a * character")
     P.add_argument("--splits", type=str, nargs="+",
         help="splits of --dataset to subsample")
     P.add_argument("--n_cls", type=str, nargs="+",
@@ -118,6 +123,15 @@ if __name__ == "__main__":
         help="also make a class-first dataset split")
     args = P.parse_args()
 
+    if not has_res(args.datasets[0]):
+        data_name = args.datasets[0].replace("*", "")
+        datasets = [c for c in os.listdir(data_dir) if data_name in c]
+        datasets = [c for c in datasets if not has_suffix(c)]
+        datasets = [c for c in datasets if has_res(c)]
+        args.datasets = datasets
+        tqdm.write(f"Using {datasets} as datasets")
+
+    args.datasets = [d.rstrip("/") for d in args.datasets]
     args.npc = ["all" if n == "all" else int(n) for n in args.npc]
     args.n_cls = ["all" if n == "all" else int(n) for n in args.n_cls]
 

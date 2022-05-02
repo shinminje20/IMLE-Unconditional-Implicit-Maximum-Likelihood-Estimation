@@ -4,67 +4,34 @@ from PIL import Image
 import random
 import shutil
 from tqdm import tqdm
+import re
 
 data_dir = os.path.dirname(os.path.abspath(__file__))
 
 def fix_data_path(path):
     """Corrects errors in a path that can happen due to data renaming."""
     return path.replace("__", "_").replace("_-", "-").replace("--", "-")
+    
+def has_res(data_name):
+    try:
+        find_data_res(data_name)
+        return True
+    except ValueError:
+        return False
 
 def find_data_res(data_name, return_int=False):
     """Returns the size of images in [data_name]. Concretely, this is the
     first instance of a substring 'A1...AnxB1...Bm' where 'A1...An' and
     'B1...Bm'can be interpreted as digits to an integer.
     """
-    def is_integer(x):
-        """Returns if input [x] can be interpreted as an integer."""
-        try:
-            if float(x) == int(x):
-                return True
-            else:
-                return False
-        except:
-            return False
-
-    def get_leading_integer(s, tail=False):
-        """Returns the string of integer at the start or end of string [s].
-
-        Args:
-        s       -- the string containing the integer
-        tail    -- whether to look for the integer at the tail fo [s] or not
-        """
-        s = reversed(s) if tail else s
-        digits = []
-        for c in s:
-            if is_integer(c):
-                digits.append(c)
-            else:
-                break
-
-        if digits == []:
-            raise ValueError(f"Found no leading digits in {s}")
-        else:
-            return "".join(list(reversed(digits)) if tail else digits)
-
-    if len(data_name) < 3:
-        raise ValueError(f"'{data_name}' is too short to contain a size")
-
-    for i,c2 in enumerate(data_name[1:-1]):
-        index = i+1
-        c1, c3 = data_name[index - 1], data_name[index + 1]
-        if is_integer(c1) and c2 == "x" and is_integer(c3):
-            first_int = get_leading_integer(data_name[:index], tail=True)
-            second_int = get_leading_integer(data_name[index + 1:])
-
-            if return_int and first_int == second_int:
-                return int(first_int)
-            elif return_int and not first_int == second_int:
-                raise ValueError("Can not return two ints")
-            else:
-                return f"{first_int}x{second_int}"
-
-    raise ValueError(f"Could not find size in '{data_name}'")
-
+    matches = re.findall('\d*x\d', data_name)
+    if len(matches) == 0:
+        raise ValueError()
+    elif return_int:
+        height, width = matches[0].split("x")
+        return int(height), int(width)
+    else:
+        return matches[0]
 
 def get_all_files(path, extensions=[], acc=set()):
     """Returns a list of all files under [path] with an extension in
