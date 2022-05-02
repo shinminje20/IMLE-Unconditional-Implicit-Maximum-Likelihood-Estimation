@@ -45,107 +45,45 @@ def set_seed(seed):
     return seed
 
 ################################################################################
-# Miscellaneous utilities
-################################################################################
-
-def make_cpu(input):
-    if isinstance(input, list):
-        return [make_cpu(x) for x in input]
-    else:
-        return input.cpu()
-
-def make_device(input):
-    if isinstance(input, list):
-        return [make_device(x) for x in input]
-    else:
-        return input.to(device)
-
-def make_3dim(input):
-    if isinstance(input, list):
-        return [make_3dim(x) for x in input]
-    elif isinstance(input, torch.Tensor) and len(input.shape) == 4 and input.shape[0] == 1:
-        return input.squeeze(0)
-    elif isinstance(input, torch.Tensor) and len(input.shape) == 3:
-        return input
-    else:
-        raise ValueError()
-
-def evenly_divides(x, y):
-    """Returns if [x] evenly divides [y]."""
-    return int(y / x) == y / x
-
-def flatten(xs):
-    """Returns collection [xs] after recursively flattening into a list."""
-    if isinstance(xs, list) or isinstance(xs, set) or isinstance(xs, tuple):
-        result = []
-        for x in xs:
-            result += flatten(x)
-        return result
-    else:
-        return [xs]
-
-def get_all_files(f):
-    """Returns absolute paths to all files under [f]."""
-    if os.path.isdir(f):
-        return flatten([get_all_files(f"{f}/{x}") for x in os.listdir(f)])
-    else:
-        return f
-
-def round_so_evenly_divides(x, y):
-    """Returns [x] adjusted up or down by up to so [y] divides it evenly."""
-    return x + (y - (x % y)) if ((x % y) > y / 2) else x - (x % y)
-
-def make_list(x, length=1):
-    """Returns a list of length [length] where each elment is [x], or, if [x]
-    is a list of length [length], returns [x].
-    """
-    if isinstance(x, list) and len(x) == length:
-        return x
-    elif isinstance(x, list) and len(x) == 1:
-        return x * length
-    elif isinstance(x, list) and not len(x) == length and len(x) > 1:
-        raise ValueError(f"Can not convert list {x} to length {length}")
-    else:
-        return [x] * length
-
-################################################################################
 # File I/O Utils
 ################################################################################
-def check_paths_exist(paths):
-    """Raises a ValueError if every path in [paths] exists, otherwise does
-    nothing.
-    """
-    for path in flatten(paths):
-        if not os.path.exists(path):
-            raise FileNotFoundError(f"{path}' but this path couldn't be found")
-
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+data_dir = f"{project_dir}/data"
 
-def strip_slash(s):
-    """Returns string [s] without a trailing slash.
+def experiment_folder(args, candidate_folder):
+    """Returns and creates [candidate_folder] it does not exist, or if it exists
+    and was created from the same hyperparameters as those in [args], or raises
+    a ValueError.
 
-    This project uses rather basic path-handling, which makes for slightly
-    clunky but easy-to-debug code. Generally, paths CAN NOT end in slashes or
-    f-strings using them will break!
+    Args:
+    args                -- Argparse namespace
+    candidate_folder    -- folder we are attempting to save to
     """
-    return s if not s[-1] == "/" else s[:-1]
+     # Get the hyperparameter to save folder mapping
+    experiment_dir = os.path.dirname(candidate_folder)
+    if not os.path.exists(experiment_dir):
+        os.makedirs(experiment_dir)
+    if not os.path.exists(f"{experiment_dir}/hparams2folder.json"):
+        with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
+            json.dump({}, f)
+    with open(f"{experiment_dir}/hparams2folder.json", "r") as f:
+        hparam2folder = json.load(f)
 
-def json_to_dict(f):
-    """Returns the dictionary given by JSON file [f]."""
-    if isinstance(f, str) and json_file.endswith(".json") and os.path.exists(f):
-        with open(f, "r") as json_file:
-            return json.load(json_file)
+    # If we already have a mapping from the hyperparameters, just return it. If
+    # [candidate_folder] already exists under another set of hyperparameters,
+    # raise an error. If it doesn't exist, add the mapping and return.
+    hparam_str = args_to_hparam_str(args)
+    if hparam_str in hparam2folder:
+        return hparam2folder[hparam_str]
+    elif candidate_folder in hparam2folder.values():
+        raise ValueError(f"{candidate_folder.replace(experiment_dir, '')} already exists.")
     else:
-        return ValueError(f"Can not read dictionary from {f}")
-
-def dict_to_json(dictionary, f):
-    """Saves dict [dictionary] to file [f]."""
-    with open(f, "w+") as f:
-        json.dump(dictionary, f)
-
-def opts_str(args):
-    """Returns the options string for [args]."""
-    return f"-{'-'.join(args.options)}" if len(args.options) > 0 else ""
+        hparam2folder[hparam_str] = candidate_folder
+        with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
+            json.dump(hparam2folder, f)
+        if not os.path.exists(candidate_folder):
+            os.makedirs(candidate_folder)
+        return candidate_folder
 
 def suffix_str(args):
     """Returns the suffix string for [args]."""
@@ -153,31 +91,24 @@ def suffix_str(args):
 
 def simclr_folder(args):
     """Returns the folder to which to save a resnet trained with [args]."""
-    folder = f"{project_dir}/models_simclr/{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}"
-    if not os.path.exists(folder): os.makedirs(folder)
-    return folder
+    folder = f"{project_dir}/models_simclr/{args.data}-{args.backbone}{suffix_str(args)}"
+    return experiment_folder(args, folder)
 
 def generator_folder(args):
-    """Returns the folder to which to save a Generator saved with [args].
-    """
-    folder = f"{project_dir}/generators/{args.data}_bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
-    if not os.path.exists(folder): os.makedirs(folder)
-    return folder
+    """Returns the folder to which to save a Generator saved with [args]."""
+    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-grayscale{args.grayscale}-ipcpe{args.ipcpe}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}" + suffix_str(args)
+    return experiment_folder(args, folder)
 
 def isicle_folder(args):
-    """
-    """
-    return f"{project_dir}/models_isicle/{args.data}_{args.backbone}_{args.run_id}{suffix_str(args)}"
-    if not os.path.exists(folder): os.makedirs(folder)
-    return folder
-
+    raise NotImplementedError()
 
 ################################################################################
 # File I/O
 ################################################################################
 def args_to_hparams(args):
     """Returns a dictionary of hyperparameters from Namespace [args]."""
-    excluded_args =  ["resume", "chunk_epochs", "gpus", "comet", "data_path"]
+    excluded_args =  ["resume", "chunk_epochs", "gpus", "comet", "data_path",
+        "wandb", "val_iter", "verbose", "suffix", "spi", "run_id"]
     return {k: v for k,v in vars(args).items() if not k in excluded_args}
 
 def args_to_hparam_str(args):
@@ -195,6 +126,10 @@ def save_checkpoint(dictionary, path):
     }
     torch.save(dictionary | seed_states, path)
     tqdm.write(f"Saved files to {path.replace(project_dir, '')}")
+
+################################################################################
+# Printing I/O Utilities
+################################################################################
 
 def dict_to_nice_str(dict, max_line_length=80):
     """Returns a pretty string representation of [dict]."""
@@ -257,6 +192,12 @@ def save_image_grid(images, path):
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))
     plt.savefig(path, dpi=512)
+    plt.close("all")
+
+
+################################################################################
+# Miscellaneous utilities
+################################################################################
 
 def remove_duplicates(x):
     """Removes duplicates from order 1 list [x]."""
@@ -270,3 +211,76 @@ def remove_duplicates(x):
             seen_elements.add(e)
 
     return result
+
+def make_cpu(input):
+    if isinstance(input, list):
+        return [make_cpu(x) for x in input]
+    else:
+        return input.cpu()
+
+def make_device(input):
+    if isinstance(input, list):
+        return [make_device(x) for x in input]
+    else:
+        return input.to(device)
+
+def make_3dim(input):
+    if isinstance(input, list):
+        return [make_3dim(x) for x in input]
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 4 and input.shape[0] == 1:
+        return input.squeeze(0)
+    elif isinstance(input, torch.Tensor) and len(input.shape) == 3:
+        return input
+    else:
+        raise ValueError()
+
+def evenly_divides(x, y):
+    """Returns if [x] evenly divides [y]."""
+    return int(y / x) == y / x
+
+def round_so_evenly_divides(x, y):
+    """Returns [x] adjusted up or down by up to so [y] divides it evenly."""
+    return x + (y - (x % y)) if ((x % y) > y / 2) else x - (x % y)
+
+def flatten(xs):
+    """Returns collection [xs] after recursively flattening into a list."""
+    if isinstance(xs, list) or isinstance(xs, set) or isinstance(xs, tuple):
+        result = []
+        for x in xs:
+            result += flatten(x)
+        return result
+    else:
+        return [xs]
+
+def get_all_files(f):
+    """Returns absolute paths to all files under [f]."""
+    if os.path.isdir(f):
+        return flatten([get_all_files(f"{f}/{x}") for x in os.listdir(f)])
+    else:
+        return f
+
+def make_list(x, length=1):
+    """Returns a list of length [length] where each elment is [x], or, if [x]
+    is a list of length [length], returns [x].
+    """
+    if isinstance(x, list) and len(x) == length:
+        return x
+    elif isinstance(x, list) and len(x) == 1:
+        return x * length
+    elif isinstance(x, list) and not len(x) == length and len(x) > 1:
+        raise ValueError(f"Can not convert list {x} to length {length}")
+    else:
+        return [x] * length
+
+def json_to_dict(f):
+    """Returns the dictionary given by JSON file [f]."""
+    if isinstance(f, str) and json_file.endswith(".json") and os.path.exists(f):
+        with open(f, "r") as json_file:
+            return json.load(json_file)
+    else:
+        return ValueError(f"Can not read dictionary from {f}")
+
+def dict_to_json(dictionary, f):
+    """Saves dict [dictionary] to file [f]."""
+    with open(f, "w+") as f:
+        json.dump(dictionary, f)

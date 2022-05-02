@@ -82,7 +82,7 @@ if __name__ == "__main__":
     P = argparse.ArgumentParser(description="SimCLR training")
     P.add_argument("--wandb", default=1, choices=[0, 1], type=int,
         help="Whether to use W&B logging or not")
-    P.add_argument("--data_folder_path", default=f"{project_dir}/data", type=str,
+    P.add_argument("--data_folder_path", default=data_dir, type=str,
         help="path to data if not in normal place")
     P.add_argument("--data", choices=["cifar10", "fruit", "miniImagenet"],
         default="cifar10",

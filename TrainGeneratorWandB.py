@@ -176,21 +176,14 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="CAMNet training")
+    # Non-hyperparameter arguments. These aren't logged!
     P.add_argument("--wandb", choices=["disabled", "online", "offline"],
         default="online",
         help="disabled: no W&B logging, online: normal W&B logging")
-    P.add_argument("--data", required=True, choices=datasets,
-        help="data to train on")
-    P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
-        help="resolutions to see data at")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
-    P.add_argument("--verbose", choices=[0, 1, 2], default=1, type=int,
-        help="verbosity level")
-    P.add_argument("--data_path", default=f"{project_dir}/data", type=str,
+    P.add_argument("--data_path", default=data_dir, type=str,
         help="path to data if not in normal place")
-    P.add_argument("--seed", type=int, default=0,
-        help="random seed")
     P.add_argument("--resume", type=str, default=None,
         help="a path or epoch number to resume from or nothing for no resuming")
     P.add_argument("--spi", type=int, default=6,
@@ -199,8 +192,18 @@ if __name__ == "__main__":
         help="Number of epochs to run before exiting. The number of total epochs is set with the --epoch flag; this is to allow for better cluster usage.")
     P.add_argument("--val_iter", type=int, default=100,
         help="validate every this number of iterations")
+    P.add_argument("--gpus", type=int, default=[0], nargs="+",
+        help="GPU ids")
+    P.add_argument("--debug", type=int, default=0,
+        help="debugging or not")
 
-
+    # Training hyperparameter arguments. These are logged!
+    P.add_argument("--data", required=True, choices=datasets,
+        help="data to train on")
+    P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
+        help="resolutions to see data at")
+    P.add_argument("--seed", type=int, default=0,
+        help="random seed")
     P.add_argument("--proj_dim", default=1000, type=int,
         help="projection dimensionality")
     P.add_argument("--epochs", default=20, type=int,
@@ -219,18 +222,26 @@ if __name__ == "__main__":
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=128, nargs="+",
         help="parallelism across samples during code training")
-    P.add_argument("--gpus", type=int, default=[0], nargs="+",
-        help="GPU ids")
     P.add_argument("--normalize", type=int, default=0, choices=[0, 1],
-        help="GPU ids")
-
+        help="Whether to normalize data or not")
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
-        help="GPU ids")
+        help="The method with which to sample latent codes")
 
+    # Corruption hyperparameter arguments
+    P.add_argument("--grayscale", default=0, type=float, choices=[0, .5, 1],
+        help="grayscale corruption")
+    P.add_argument("--mask_res", default=8, type=int,
+        help="sidelength of image at which to do masking")
+    P.add_argument("--mask_frac", default=0, type=float,
+        help="fraction of pixels to mask")
+    P.add_argument("--fill", default="zero", choices=["color", "zero"],
+        help="how to fill masked out areas")
+
+    # Model hyperparameter arguments
     P.add_argument("--code_nc", default=5, type=int,
         help="number of code channels")
     P.add_argument("--in_nc", default=3, type=int,
-        help="number of input channels. SHOULD ALWAYS BE THREE")
+        help="number of input channels. SHOULD ALWAYS BE THREE.")
     P.add_argument("--out_nc", default=3, type=int,
         help=" number of output channels")
     P.add_argument("--map_nc", default=128, type=int,
@@ -252,18 +263,7 @@ if __name__ == "__main__":
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
-
-    P.add_argument("--grayscale", default=0, type=float, choices=[0, .5, 1],
-        help="grayscale corruption")
-    P.add_argument("--mask_res", default=8, type=int,
-        help="sidelength of image at which to do masking")
-    P.add_argument("--mask_frac", default=0, type=float,
-        help="fraction of pixels to mask")
-    P.add_argument("--fill", default="zero", choices=["color", "zero"],
-        help="how to fill masked out areas")
     args = P.parse_args()
-
-    torch.autograd.set_detect_anomaly(True)
 
     ############################################################################
     # Check and improve arguments
@@ -278,6 +278,8 @@ if __name__ == "__main__":
         if not (ns * sp) % len(args.gpus) == 0:
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
+
+    if args.debug: torch.autograd.set_detect_anomaly(True)
 
     ############################################################################
     # Handle resuming. When [args.resume] is set to 'prevent' or nothing is in

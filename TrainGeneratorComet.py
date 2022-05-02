@@ -189,7 +189,7 @@ if __name__ == "__main__":
         help="optional training suffix")
     P.add_argument("--verbose", choices=[0, 1, 2], default=1, type=int,
         help="verbosity level")
-    P.add_argument("--data_path", default=f"{project_dir}/data", type=str,
+    P.add_argument("--data_path", default=data_dir, type=str,
         help="path to data if not in normal place")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
