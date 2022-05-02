@@ -50,13 +50,13 @@ then
     python TrainGeneratorWandB.py --lr 5e-4 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --normalize 1 --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024
 elif [[ $((SLURM_ARRAY_TASK_ID % 3)) == 1 ]]
 then
-    python TrainGeneratorWandB.py --lr 1e-3 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --normalize 1  --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024
+    python TrainGeneratorWandB.py --lr 5e-4 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --normalize 1  --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024 --grayscale .5
 elif [[ $((SLURM_ARRAY_TASK_ID % 3)) == 2 ]]
 then
-    python TrainGeneratorWandB.py --lr 1e-3 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024
+    python TrainGeneratorWandB.py --lr 5e-4 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024
 elif [[ $((SLURM_ARRAY_TASK_ID % 3)) == 3 ]]
 then
-    python TrainGeneratorWandB.py --lr 5e-4 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024
+    python TrainGeneratorWandB.py --lr 5e-4 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024 --grayscale .5
 elif [[ $((SLURM_ARRAY_TASK_ID % 3)) == 4 ]]
 then
     python TrainGeneratorWandB.py --lr 1e-4 --epochs 20 --data_path ~/scratch/ISICLE/data --bs 16 --res 16 32 64 128 256 --ns 128 128 128 128 --sp 128 128 64 16 --data camnet3 --gpus 0 1 --wandb offline --chunk_epochs 1 --resume $((SLURM_ARRAY_TASK_ID / 7)) --seed $SLURM_ARRAY_TASK_ID --warmup 1024
