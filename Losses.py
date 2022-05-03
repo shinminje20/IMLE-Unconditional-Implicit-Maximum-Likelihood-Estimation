@@ -7,19 +7,17 @@ from utils.Utils import *
 from torch.cuda.amp import autocast
 import torch.nn.functional as F
 
-def compute_loss_over_list(fx, y, loss_fn):
-    """Returns the mean of [loss_fn] evaluated pairwise on lists [fx] and [y].
+def compute_loss_over_list(fxs, ys, loss_fn):
+    """Returns the mean of [loss_fn] evaluated pairwise on lists [fxs] and [y].
     It must be that [loss_fn] can be run on each sequential pair from the lists.
 
     Args:
-    fx  -- list of predictions
-    y   -- list of targets
+    fxs -- list of predictions
+    ys  -- list of targets
     """
-    loss = 0
-    for fx_,y_ in zip(fx, y):
-        loss += loss_fn(fx_, y_).mean()
-    loss = loss / len(y)
-    return loss
+    assert len(fxs) == len(ys)
+    losses = torch.cat([loss_fn(fx, y).mean().view(1) for fx,y in zip(fxs, ys)])
+    return torch.sum(losses)
 
 class ResolutionLoss(nn.Module):
     def __init__(self, proj_dim=None, reduction="batch", alpha=.1):
@@ -40,8 +38,7 @@ class ResolutionLoss(nn.Module):
         if high_res:
             result = lpips_loss
         else:
-            mse = batch_mse(fx, y)
-            result = lpips_loss + self.alpha * mse
+            result = lpips_loss + self.alpha * batch_mse(fx, y)
         return result.squeeze()
 
 class ProjectedLPIPSFeats(nn.Module):
@@ -64,10 +61,9 @@ class ProjectedLPIPSFeats(nn.Module):
     def reset_projections(self): self.projections = nn.ModuleDict()
 
     def forward(self, x):
-        with autocast():
-            x = self.lpips(x)
-            if self.proj_dim is not None:
-                x = self.project_tensor(x)
+        x = self.lpips(x)
+        if self.proj_dim is not None:
+            x = self.project_tensor(x)
         return x
 
 def batch_mse(x, y):
@@ -87,7 +83,7 @@ def batch_mse(x, y):
     bs, d = x.shape
     y = y.unsqueeze(1).expand(-1, x.shape[0] // y.shape[0], -1)
     x = x.view(y.shape)
-    return torch.sum(torch.square((x - y).float()).view(bs, -1), axis=1) / d
+    return torch.sum(torch.square((x - y).view(bs, -1)), axis=1) / d
 
 if __name__ == "__main__":
     r = nn.DataParallel(ResolutionLoss(proj_dim=None), device_ids=[0, 1]).cuda()

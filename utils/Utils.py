@@ -71,12 +71,24 @@ def experiment_folder(args, candidate_folder):
 
     # If we already have a mapping from the hyperparameters, just return it. If
     # [candidate_folder] already exists under another set of hyperparameters,
-    # raise an error. If it doesn't exist, add the mapping and return.
+    # raise an error if the file does in fact still exist. If it doesn't exist
+    # add the mapping and return.
     hparam_str = args_to_hparam_str(args)
     if hparam_str in hparam2folder:
         return hparam2folder[hparam_str]
     elif candidate_folder in hparam2folder.values():
-        raise ValueError(f"{candidate_folder.replace(experiment_dir, '')} already exists.")
+        all_folders = os.listdir(experiment_dir)
+        all_folders = [f"{experiment_dir}/{f}" for f in all_folders]
+        if candidate_folder in all_folders:
+            raise ValueError(f"{candidate_folder.replace(project_dir, '').strip('/')}    already exists. Delete it or add a new --suffix to create a unique experiment (or improve the naming scheme!)")
+        else:
+            folder2hparam = {v: k for k,v in hparam2folder.items()}
+            del hparam2folder[folder2hparam[candidate_folder]]
+            with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
+                json.dump(hparam2folder, f)
+            if not os.path.exists(candidate_folder):
+                os.makedirs(candidate_folder)
+            return candidate_folder
     else:
         hparam2folder[hparam_str] = candidate_folder
         with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
@@ -108,7 +120,7 @@ def isicle_folder(args):
 def args_to_hparams(args):
     """Returns a dictionary of hyperparameters from Namespace [args]."""
     excluded_args =  ["resume", "chunk_epochs", "gpus", "comet", "data_path",
-        "wandb", "val_iter", "verbose", "suffix", "spi", "run_id"]
+        "wandb", "val_iter", "suffix", "spi", "run_id", "sp"]
     return {k: v for k,v in vars(args).items() if not k in excluded_args}
 
 def args_to_hparam_str(args):

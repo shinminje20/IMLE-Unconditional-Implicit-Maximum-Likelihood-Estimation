@@ -4,6 +4,13 @@ import torch
 import torch.nn as nn
 from torch.optim.lr_scheduler import _LRScheduler
 
+def compute_grad_norm(net):
+    """Returns the norm of the gradient of the parameters in [net]."""
+    acc = 0
+    for p in [p for p in model.parameters() if p.grad is not None]:
+        acc += torch.square(p.grad)
+    return torch.sqrt(acc)
+
 def init_weights(net, init_type="kaiming", scale=1, std=0.02):
 
     def weights_init_normal(m, std=0.02):

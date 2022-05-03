@@ -308,6 +308,49 @@ class FeatureDataset(Dataset):
 
     def __getitem__(self, idx): return self.data[idx]
 
+class ZippedDataset(Dataset):
+    """A Dataset that zips together iterables. Its transform should be
+    Args:
+    *datasets   -- the wrapped iterables. All must be of the same length
+    """
+    def __init__(self, *datasets):
+        super(ZippedDataset, self).__init__()
+        self.datasets = datasets
+
+        if not all([len(d) == len(datasets[0]) for d in datasets]):
+            raise ValueError(f"All constituent datasets must have same length, but got lengths {[len(d) for d in datasets]}")
+
+    def __len__(self): return len(self.datasets[0])
+
+    def __getitem__(self, idx): return [d[idx] for d in self.datasets]
+
+class CorruptedCodeYDataset(Dataset):
+    """
+    Args:
+    cx      -- BSxCxHxW tensor of corrupted images
+    codes   -- list of codes of shape BSxCODE_DIM. Elements in the list should
+                be codes for sequentially greater resolutions
+    ys      -- list of BSxCxHxW target images. Elements in the list should be
+                for sequentially greater resolutions
+    """
+    def __init__(self, cx, codes, ys, ipcpe=1):
+        super(CorruptedCodeYDataset, self).__init__()
+        assert len(codes) == len(ys)
+        assert all([len(c) == len(y) == cx.shape[0] for c,y in zip(codes, ys)])
+        self.cx = cx
+        self.codes = codes
+        self.ys = ys
+        self.ipcpe = ipcpe
+    
+    def __len__(self): return len(self.cx) * self.ipcpe
+
+    def __getitem__(self, idx):
+        idx = idx % self.ipcpe
+        cx = self.cx[idx]
+        codes = [c[idx] for c in self.codes]
+        ys = [y[idx] for y in self.ys]
+        return cx, codes, ys
+
 
 class GeneratorDataset(Dataset):
     """A dataset for returning data for generative modeling. Returns data in as
