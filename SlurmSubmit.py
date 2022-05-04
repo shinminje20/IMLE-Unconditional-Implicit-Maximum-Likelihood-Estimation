@@ -14,32 +14,32 @@ command desired for SLURM to run.
 """
 import os
 import sys
-from Utils import *
+from utils.Utils import *
 
 if __name__ == "__main__":
-    sys_args = sys.argv()
+    sys_args = sys.argv
     with open("slurm/slurm_template.txt", "r") as f:
         slurm_template = f.read()
 
-    if sys_args[2] == "TrainGeneratorWandB.py":
+    if sys_args[1] == "TrainGeneratorWandB.py":
         from TrainGeneratorWandB import get_args
-        args = get_args()
+        args = get_args(sys_args[2:])
         CHUNKS = str(args.epochs - 1)
         NAME = generator_folder(args).replace(f"{project_dir}/generators/", "")
         NUM_GPUS = str(len(args.gpus))
-        slurm_template.replace("CHUNKS", CHUNKS)
-        slurm_template.replace("NAME", NAME)
-        slurm_template.replace("GPUS", NUM_GPUS)
+        slurm_template = slurm_template.replace("CHUNKS", CHUNKS)
+        slurm_template = slurm_template.replace("NAME", NAME)
+        slurm_template = slurm_template.replace("NUM_GPUS", NUM_GPUS)
     else:
         raise ValueError(f"Unknown script '{sys_args[2]}")
 
-    SCRIPT = f"python {' '.join(sys_args[2:])} --resume $SLURM_ARRAY_TASK_ID"
-    slurm_template.replace("SCRIPT", SCRIPT)
+    SCRIPT = f"python {' '.join(sys_args[1:])} --resume $SLURM_ARRAY_TASK_ID"
+    slurm_template = slurm_template.replace("SCRIPT", SCRIPT)
     
-    slurm_script = f"slurm/{NAME}.sh"
+    slurm_script = f"slurm/_{NAME}.sh"
     with open(slurm_script, "w+") as f:
         f.write(slurm_template)
-    
+
     os.system(f"sbatch {slurm_script}")
     
 

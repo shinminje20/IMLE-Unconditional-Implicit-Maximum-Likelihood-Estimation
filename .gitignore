@@ -40,3 +40,4 @@ wandb
 
 Data
 
+slurm/_*

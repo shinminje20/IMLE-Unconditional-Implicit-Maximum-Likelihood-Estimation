@@ -182,7 +182,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
     results = unnormalize(results, args.data) if args.normalize else results
     return results, loss / len(loader_eval)
 
-def get_args():
+def get_args(args=None):
     P = argparse.ArgumentParser(description="CAMNet training")
     # Non-hyperparameter arguments. These aren't logged!
     P.add_argument("--wandb", choices=["disabled", "online", "offline"],
@@ -271,7 +271,7 @@ def get_args():
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
-    return P.parse_args()
+    return P.parse_args() if args is None else P.parse_args(args)
 
 if __name__ == "__main__":
     args = get_args()
