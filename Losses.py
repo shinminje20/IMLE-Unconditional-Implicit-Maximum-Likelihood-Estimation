@@ -7,38 +7,44 @@ from utils.Utils import *
 from torch.cuda.amp import autocast
 import torch.nn.functional as F
 
-def compute_loss_over_list(fxs, ys, loss_fn):
-    """Returns the mean of [loss_fn] evaluated pairwise on lists [fxs] and [y].
-    It must be that [loss_fn] can be run on each sequential pair from the lists.
+def compute_loss_over_list(fxs, ys, loss_fn, list_reduction="sum"):
+    """Returns [loss_fn] evaluated pairwise on lists [fxs] and [y]. It must be
+    that [loss_fn] can be run on each sequential pair from the lists.
 
     Args:
-    fxs -- list of predictions
-    ys  -- list of targets
+    fxs             -- list of predictions
+    ys              -- list of targets
+    loss_fn         -- loss function
+    list_reduction  -- reduction over the list. One of
+                        'sum' to sum over the loss produced by each pair
+                        'mean' for the mean loss produced by each pair
+                        'batch' for the batch reduction
     """
     assert len(fxs) == len(ys)
-    losses = torch.cat([loss_fn(fx, y).mean().view(1) for fx,y in zip(fxs, ys)])
-    return torch.sum(losses)
+    if list_reduction == "sum":
+        losses = torch.cat([loss_fn(fx, y).mean().view(1) for fx,y in zip(fxs, ys)])
+        return torch.sum(losses)
+    elif list_reduction == "batch":
+        losses = torch.cat([loss_fn(fx, y) for fx,y in zip(fxs, ys)])
+        return torch.mean(losses.view(len(fxs), -1), axis=0)
+    else:
+        raise NotImplementedError()
 
 class ResolutionLoss(nn.Module):
     def __init__(self, proj_dim=None, reduction="batch", alpha=.1):
         super(ResolutionLoss, self).__init__()
         self.lpips = ProjectedLPIPSFeats(proj_dim=proj_dim)
         self.alpha = alpha
-    
-    def forward(self, fx, y):
-        high_res = (fx.shape[-1] >= 64)
-        fx_lpips = self.lpips(fx)
-        y_lpips = self.lpips(y)
 
-        fx = fx.view(fx.shape[0], -1)
-        y = y.view(y.shape[0], -1)
-        lpips_loss = batch_mse(fx_lpips, y_lpips)
-        lpips_loss = torch.mean(lpips_loss.view(lpips_loss.shape[0], -1), axis=1)
-        
-        if high_res:
+    def forward(self, fx, y):
+        lpips_loss = compute_loss_over_list(self.lpips(fx), self.lpips(y),
+            batch_mse, list_reduction="batch")
+
+        if fx.shape[-1] >= 64:
             result = lpips_loss
         else:
-            result = lpips_loss + self.alpha * batch_mse(fx, y)
+            mse = batch_mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1))
+            result = lpips_loss + self.alpha * mse
         return result.squeeze()
 
 class ProjectedLPIPSFeats(nn.Module):
@@ -51,27 +57,42 @@ class ProjectedLPIPSFeats(nn.Module):
 
     def project_tensor(self, t):
         """Returns a projection matrix for a tensor with last size [dim]."""
-        if not t.shape[-1] in self.projections:
-            projection = torch.randn(t.shape[-1], self.proj_dim, requires_grad=True)
-            projection = nn.Parameter(F.normalize(projection, p=2, dim=1))
-            self.projections[t.shape[-1]] = projection
+        t = t if isinstance(t, list) else [t]
 
-        return torch.matmul(t, self.projections[t.shape[-1]])
+        results = [None] * len(t)
+        for idx,t_ in enumerate(t):
+            if not t_.shape[-1] in self.projections:
+                t_shape = t_.shape[-1]
+                projection = torch.randn(t_shape, self.proj_dim, requires_grad=True)
+                projection = nn.Parameter(F.normalize(projection, p=2, dim=1))
+                self.projections[t_shape] = projection
+
+            results[idx] = torch.matmul(t_, self.projections[t_shape])
+
+        return results
 
     def reset_projections(self): self.projections = nn.ModuleDict()
 
     def forward(self, x):
-        x = self.lpips(x)
+        """Returns a list of LPIPS features, with one element for each level of
+        the VGG network making up the LPIPSFeats backbone. Each element is a
+        BSxF tensor, where F is element-dependent and increases with the
+        resolution of [x] and its position in the returned list.
+
+        Args:
+        x   -- BSxCxHxW tensor to get LPIPS features for
+        """
+        fx = self.lpips(x)
         if self.proj_dim is not None:
-            x = self.project_tensor(x)
-        return x
+            fx = self.project_tensor(fx)
+        return fx
 
 def batch_mse(x, y):
     """Custom MSE loss that works on inputs that are larger than their targets.
     It uses a 'batch' reduction, meaning that a loss value exists for each input
     in the batch dimension. We divide by the dimensionality of each input so
     that the loss due to higher dimensionality inputs isn't increased.
-    
+
     Args:
     x   -- a (B * K)xD tensor
     y   -- a BxD tensor

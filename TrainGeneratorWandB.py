@@ -88,7 +88,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
     level_codes = z_gen(bs, level="all")
     with torch.no_grad():
         for level_idx in tqdm(range(len(num_samples)), desc="Levels", leave=False, dynamic_ncols=True):
-            
+
             # Get inputs for sampling for the current level. We need to
             # store the least losses we have for each example, and to find
             # the level-specific number of samples [ns], sample parallelism
@@ -150,7 +150,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
     z_gen       -- noise generator for [model]
     loader_eval -- dataloader over evaluation data
     loss_fn     -- loss function for one CAMNet level
-    args        -- argparse arguments for the run 
+    args        -- argparse arguments for the run
 
     Returns:
     results     -- 2D grid of images to show
@@ -291,8 +291,8 @@ if __name__ == "__main__":
         if not (ns * sp) % len(args.gpus) == 0:
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
-    
-    # 
+
+    #
     if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
         raise ValueError(f"--ipc should be a multiple of --mini_bs")
 
@@ -407,7 +407,7 @@ if __name__ == "__main__":
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
-    
+
     end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
     for e in tqdm(range(last_epoch + 1, end_epoch), desc="Epochs", dynamic_ncols=True):
 
@@ -415,13 +415,10 @@ if __name__ == "__main__":
         # Train for one epoch epoch.
         ####################################################################
         for batch_idx,(x,ys) in tqdm(enumerate(loader_tr), desc="Batches", leave=False, dynamic_ncols=True, total=len(loader_tr)):
-            
-            x = x.to(device)
-            ys = [y.to(device) for y in ys]
-            cx = corruptor(x)
+            ys = [y.to(device, non_blocking=True) for y in ys]
+            cx = corruptor(x.to(device, non_blocking=True))
             codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
                 num_samples=args.ns, sample_parallelism=args.sp)
-
             batch_loader = DataLoader(CorruptedCodeYDataset(cx, codes, ys),
                 batch_size=args.mini_bs, shuffle=True)
 
@@ -431,9 +428,8 @@ if __name__ == "__main__":
                     fx = model(cx, codes, loi=None)
                     loss = compute_loss_over_list(fx, ys, loss_fn)
                     loss.backward()
-                    clip_grad_norm_(model.parameters(), max_norm=1)
+                    optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
-
                     loss_tr += loss.detach()
 
             loss_tr = loss_tr / args.ipc
