@@ -84,19 +84,17 @@ def experiment_folder(args, candidate_folder):
         else:
             folder2hparam = {v: k for k,v in hparam2folder.items()}
             del hparam2folder[folder2hparam[candidate_folder]]
-            with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
-                json.dump(hparam2folder, f)
-            if not os.path.exists(candidate_folder):
-                os.makedirs(candidate_folder)
-            return candidate_folder
     else:
         hparam2folder[hparam_str] = candidate_folder
-        with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
+    
+    with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
             json.dump(hparam2folder, f)
-        if not os.path.exists(candidate_folder):
-            os.makedirs(candidate_folder)
-        return candidate_folder
-
+    if not os.path.exists(candidate_folder):
+        os.makedirs(candidate_folder)
+    with open(f"{candidate_folder}/config.json", "w+") as f:
+        json.dump(vars(args), f)
+    return candidate_folder
+    
 def suffix_str(args):
     """Returns the suffix string for [args]."""
     return f"-{args.suffix}" if not args.suffix == "" else ""

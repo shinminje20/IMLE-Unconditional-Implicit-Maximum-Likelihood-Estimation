@@ -291,6 +291,8 @@ if __name__ == "__main__":
         if not (ns * sp) % len(args.gpus) == 0:
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
+    
+    # 
     if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
         raise ValueError(f"--ipc should be a multiple of --mini_bs")
 
