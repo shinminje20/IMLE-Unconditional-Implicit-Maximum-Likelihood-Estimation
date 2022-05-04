@@ -50,7 +50,7 @@ def set_seed(seed):
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 data_dir = f"{project_dir}/data"
 
-def experiment_folder(args, candidate_folder):
+def experiment_folder(args, candidate_folder, ignore_conflict=True):
     """Returns and creates [candidate_folder] it does not exist, or if it exists
     and was created from the same hyperparameters as those in [args], or raises
     a ValueError.
@@ -61,6 +61,8 @@ def experiment_folder(args, candidate_folder):
     """
      # Get the hyperparameter to save folder mapping
     experiment_dir = os.path.dirname(candidate_folder)
+    experiment_dir = experiment_dir.replace(f"{project_dir}/", "")
+
     if not os.path.exists(experiment_dir):
         os.makedirs(experiment_dir)
     if not os.path.exists(f"{experiment_dir}/hparams2folder.json"):
@@ -79,10 +81,8 @@ def experiment_folder(args, candidate_folder):
     elif candidate_folder in hparam2folder.values():
         all_folders = os.listdir(experiment_dir)
         all_folders = [f"{experiment_dir}/{f}" for f in all_folders]
-        if candidate_folder in all_folders:
-            print("Experiment dir", experiment_dir)
-            print(hparam2folder)
-            raise ValueError(f"{candidate_folder.replace(project_dir, '').strip('/')}    already exists. Delete it or add a new --suffix to create a unique experiment (or improve the naming scheme!)")
+        if candidate_folder in all_folders and not ignore_conflict:
+            tqdm.write(f"{candidate_folder.replace(project_dir, '').strip('/')}    already exists. Delete it or add a new --suffix to create a unique experiment (or improve the naming scheme!)")
         else:
             folder2hparam = {v: k for k,v in hparam2folder.items()}
             del hparam2folder[folder2hparam[candidate_folder]]
@@ -106,10 +106,10 @@ def simclr_folder(args):
     folder = f"{project_dir}/models_simclr/{args.data}-{args.backbone}{suffix_str(args)}"
     return experiment_folder(args, folder)
 
-def generator_folder(args):
+def generator_folder(args, ignore_conflict=True):
     """Returns the folder to which to save a Generator saved with [args]."""
-    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-norm{args.normalize}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}-seed{args.seed}" + suffix_str(args)
-    return experiment_folder(args, folder)
+    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-norm{args.normalize}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}-seed{args.seed}" + suffix_str(args)   
+    return experiment_folder(args, folder, ignore_conflict=ignore_conflict)
 
 def isicle_folder(args):
     raise NotImplementedError()

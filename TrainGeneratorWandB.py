@@ -317,7 +317,7 @@ if __name__ == "__main__":
         resume_file = None
 
     if resume_file is None:
-        save_dir = generator_folder(args)
+        save_dir = generator_folder(args, ignore_conflict=False)
         set_seed(args.seed)
 
         # Setup the experiment. Importantly, we copy the experiment's ID to
