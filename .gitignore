@@ -41,3 +41,4 @@ wandb
 Data
 
 slurm/_*
+!slurm/slurm_template.txt
