@@ -80,6 +80,8 @@ def experiment_folder(args, candidate_folder):
         all_folders = os.listdir(experiment_dir)
         all_folders = [f"{experiment_dir}/{f}" for f in all_folders]
         if candidate_folder in all_folders:
+            print("Experiment dir", experiment_dir)
+            print(hparam2folder)
             raise ValueError(f"{candidate_folder.replace(project_dir, '').strip('/')}    already exists. Delete it or add a new --suffix to create a unique experiment (or improve the naming scheme!)")
         else:
             folder2hparam = {v: k for k,v in hparam2folder.items()}
