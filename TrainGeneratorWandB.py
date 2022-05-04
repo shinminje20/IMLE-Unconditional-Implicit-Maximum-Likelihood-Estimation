@@ -220,8 +220,8 @@ def get_args():
         help="batch size")
     P.add_argument("--ns", type=int, nargs="+", default=128,
         help="number of samples for IMLE")
-    P.add_argument("--ipcpe", type=int, default=4,
-        help="Number of times we train on a code-example pair")
+    P.add_argument("--ipc", type=int, default=32,
+        help="Iterations per set of codes. Chunked via --mini_bs")
     P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
     P.add_argument("--warmup", type=int, default=0,
@@ -291,6 +291,8 @@ if __name__ == "__main__":
         if not (ns * sp) % len(args.gpus) == 0:
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
+    if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
+        raise ValueError(f"--ipc should be a multiple of --mini_bs")
 
     ############################################################################
     # Handle resuming. When [args.resume] is set to 'prevent' or nothing is in
@@ -418,27 +420,21 @@ if __name__ == "__main__":
             codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
                 num_samples=args.ns, sample_parallelism=args.sp)
 
-            batch_loader = DataLoader(
-                CorruptedCodeYDataset(cx, codes, ys, args.ipcpe),
+            batch_loader = DataLoader(CorruptedCodeYDataset(cx, codes, ys),
                 batch_size=args.mini_bs, shuffle=True)
 
             loss_tr = 0
-            for _ in tqdm(range(args.ipcpe), desc="Iterations over batch", leave=False, dynamic_ncols=True):
+            for _ in tqdm(range(args.ipc // len(batch_loader)), desc="Iterations over batch", leave=False, dynamic_ncols=True):
                 for cx,codes,ys in tqdm(batch_loader, desc="Minibatches", leave=False, dynamic_ncols=True):
-                    # with autocast():
                     fx = model(cx, codes, loi=None)
                     loss = compute_loss_over_list(fx, ys, loss_fn)
                     loss.backward()
-                    # scaler.scale(loss).backward()
-                    # scaler.unscale_(optimizer)
                     clip_grad_norm_(model.parameters(), max_norm=1)
-                    # scaler.step(optimizer)
-                    # scaler.update()
                     optimizer.zero_grad(set_to_none=True)
 
                     loss_tr += loss.detach()
 
-            loss_tr = loss_tr / (args.ipcpe * len(batch_loader))
+            loss_tr = loss_tr / args.ipc
             del x, codes, ys, loss
 
             ####################################################################
@@ -463,10 +459,6 @@ if __name__ == "__main__":
                 })
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e}")
 
-            # This can sometimes throw a warning claiming that optimizer was
-            # never stepped. This is because [scaler] chose a too-high
-            # value, got a NaN, and didn't step the optimizer. This can be
-            # ignored.
             scheduler.step()
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
