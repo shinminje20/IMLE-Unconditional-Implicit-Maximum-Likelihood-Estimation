@@ -90,7 +90,7 @@ def experiment_folder(args, candidate_folder):
         hparam2folder[hparam_str] = candidate_folder
     
     with open(f"{experiment_dir}/hparams2folder.json", "w+") as f:
-            json.dump(hparam2folder, f)
+        json.dump(hparam2folder, f)
     if not os.path.exists(candidate_folder):
         os.makedirs(candidate_folder)
     with open(f"{candidate_folder}/config.json", "w+") as f:
