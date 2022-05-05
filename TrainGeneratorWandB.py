@@ -166,8 +166,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
             cx = corruptor(x)
             cx_expanded = cx.repeat_interleave(args.spi, dim=0)
             codes = z_gen(bs * args.spi, level="all", input="show_components")
-            with autocast():
-                outputs = model(cx_expanded, codes, loi=-1)
+            outputs = model(cx_expanded, codes, loi=-1)
             losses = loss_fn(outputs, y[-1])
             outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
@@ -423,7 +422,7 @@ if __name__ == "__main__":
                 batch_size=args.mini_bs, shuffle=True)
 
             loss_tr = 0
-            for _ in tqdm(range(args.ipc // len(batch_loader)), desc="Iterations over batch", leave=False, dynamic_ncols=True):
+            for idx in tqdm(range(args.ipc // len(batch_loader)), desc="Iterations over batch", leave=False, dynamic_ncols=True):
                 for cx,codes,ys in tqdm(batch_loader, desc="Minibatches", leave=False, dynamic_ncols=True):
                     fx = model(cx, codes, loi=None)
                     loss = compute_loss_over_list(fx, ys, loss_fn)
@@ -431,6 +430,8 @@ if __name__ == "__main__":
                     optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
                     loss_tr += loss.detach()
+
+                    tqdm.write(f"\tLast loss: {loss.item()}")
 
             loss_tr = loss_tr / args.ipc
             del x, codes, ys, loss
@@ -449,7 +450,7 @@ if __name__ == "__main__":
                     "learning rate": scheduler.get_lr()[0],
                     "generated images": wandb.Image(images_file),
                 })
-                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5f}")
+                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
             else:
                 wandb.log({
                     "batch training loss": loss_tr.item(),
