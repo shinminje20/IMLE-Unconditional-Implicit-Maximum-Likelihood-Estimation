@@ -423,15 +423,17 @@ if __name__ == "__main__":
 
             loss_tr = 0
             for idx in tqdm(range(args.ipc // len(batch_loader)), desc="Iterations over batch", leave=False, dynamic_ncols=True):
+                mini_batch_loss = 0
                 for cx,codes,ys in tqdm(batch_loader, desc="Minibatches", leave=False, dynamic_ncols=True):
                     fx = model(cx, codes, loi=None)
                     loss = compute_loss_over_list(fx, ys, loss_fn)
                     loss.backward()
                     optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
-                    loss_tr += loss.detach()
+                    mini_batch_loss += loss.detach()
 
-                    tqdm.write(f"\tLast loss: {loss.item()}")
+                tqdm.write(f"\tMinibatch loss: {mini_batch_loss.item() / len(batch_loader)}")
+                loss_tr += mini_batch_loss
 
             loss_tr = loss_tr / args.ipc
             del x, codes, ys, loss
