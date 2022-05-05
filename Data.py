@@ -26,7 +26,7 @@ from utils.Utils import *
 ################################################################################
 # Dataset medatata.
 ################################################################################
-datasets = ["cifar10", "camnet3", "miniImagenet", "miniImagenet10"]
+datasets = ["cifar10", "camnet3", "miniImagenet", "miniImagenet10", "strawberry"]
 data_suffixes = ["", "_deci", "_centi", "_milli"]
 datasets = flatten([f"{d}{s}" for d in datasets for s in data_suffixes])
 no_val_split_datasets = ["cifar10"]
@@ -44,6 +44,10 @@ data2stats = {
     "miniImagenet": {
         "mean": [0.3351227045059204, 0.319497287273407, 0.2869424521923065],
         "std": [0.318856805562973, 0.3068281412124634, 0.3035818338394165],
+    },
+    "strawberry": {
+        "mean": [0.6118778586387634, 0.4050508141517639, 0.3395719528198242],
+        "std": [0.2832472026348114, 0.31155455112457275, 0.3117664158344269],
     }
 }
 
