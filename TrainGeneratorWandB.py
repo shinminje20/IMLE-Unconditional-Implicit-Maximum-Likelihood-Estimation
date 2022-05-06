@@ -425,10 +425,17 @@ if __name__ == "__main__":
             for idx in tqdm(range(args.ipc // len(batch_loader)), desc="Iterations over batch", leave=False, dynamic_ncols=True):
                 mini_batch_loss = 0
                 for cx,codes,ys in tqdm(batch_loader, desc="Minibatches", leave=False, dynamic_ncols=True):
-                    fx = model(cx, codes, loi=None)
+                    with autocast():
+                        fx = model(cx, codes, loi=None)
+                    
                     loss = compute_loss_over_list(fx, ys, loss_fn)
-                    loss.backward()
-                    optimizer.step()
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    scaler.step(optimizer)
+                    scaler.update()
+                    
+                    # loss.backward()
+                    # optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
                     mini_batch_loss += loss.detach()
 
