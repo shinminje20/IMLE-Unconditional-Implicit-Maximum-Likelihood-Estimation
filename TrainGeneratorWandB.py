@@ -385,7 +385,7 @@ if __name__ == "__main__":
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
-        first_cycle_steps = args.epochs * len(loader_tr) // 5
+        first_cycle_steps = len(loader_tr)
         warmup = min(args.warmup, first_cycle_steps - 1)
         if first_cycle_steps <= args.warmup:
             tqdm.write(f"--warmup of {args.warmup} too big, resizing to maximum value of {warmup}")
