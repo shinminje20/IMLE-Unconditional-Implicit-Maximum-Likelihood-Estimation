@@ -398,10 +398,7 @@ if __name__ == "__main__":
         if args.val_iter >= len(loader_tr):
             tqdm.write(f"Setting --val_iter from {args.val_iter} to {len(loader_tr) - 1}")
             args.val_iter = len(loader_tr) - 1
-
-    scaler = GradScaler()
-    # wandb.watch(model, criterion=None, log="all", log_freq=args.val_iter, log_graph=True)
-
+            
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
@@ -424,17 +421,10 @@ if __name__ == "__main__":
             for idx in tqdm(range(args.ipc // len(batch_loader)), desc="Iterations over batch", leave=False, dynamic_ncols=True):
                 mini_batch_loss = 0
                 for cx,codes,ys in tqdm(batch_loader, desc="Minibatches", leave=False, dynamic_ncols=True):
-                    with autocast():
-                        fx = model(cx, codes, loi=None)
-                    
-                    loss = compute_loss_over_list(fx, ys, loss_fn)
-                    scaler.scale(loss).backward()
-                    scaler.unscale_(optimizer)
-                    scaler.step(optimizer)
-                    scaler.update()
-                    
-                    # loss.backward()
-                    # optimizer.step()
+                    fx = model(cx, codes, loi=None)                    
+                    loss = compute_loss_over_list(fx, ys, loss_fn)    
+                    loss.backward()
+                    optimizer.step()
                     optimizer.zero_grad(set_to_none=True)
                     mini_batch_loss += loss.detach()
 
