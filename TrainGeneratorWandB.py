@@ -385,8 +385,7 @@ if __name__ == "__main__":
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
-        first_cycle_steps = len(loader_tr)
-        warmup = min(args.warmup, first_cycle_steps - 1)
+        first_cycle_steps = args.ipc // (args.bs // args.mini_bs))
         if first_cycle_steps <= args.warmup:
             tqdm.write(f"--warmup of {args.warmup} too big, resizing to maximum value of {warmup}")
             args.warmup = warmup
@@ -394,7 +393,7 @@ if __name__ == "__main__":
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
             max_lr=args.lr, min_lr=1e-6,
             warmup_steps=warmup, first_cycle_steps=first_cycle_steps,
-            gamma=.7, last_epoch=max(-1, last_epoch * len(loader_tr)))
+            gamma=.99, last_epoch=max(-1, last_epoch * len(loader_tr)))
 
         if args.val_iter >= len(loader_tr):
             tqdm.write(f"Setting --val_iter from {args.val_iter} to {len(loader_tr) - 1}")
@@ -439,6 +438,7 @@ if __name__ == "__main__":
                     optimizer.zero_grad(set_to_none=True)
                     mini_batch_loss += loss.detach()
 
+                scheduler.step()
                 tqdm.write(f"\tMinibatch loss: {mini_batch_loss.item() / len(batch_loader)}")
                 loss_tr += mini_batch_loss
 
@@ -466,8 +466,6 @@ if __name__ == "__main__":
                     "learning rate": scheduler.get_lr()[0]
                 }, tep=e * len(loader_tr) + batch_idx)
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e}")
-
-            scheduler.step()
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
