@@ -451,13 +451,13 @@ if __name__ == "__main__":
                     "batch training loss": loss_tr.item(),
                     "learning rate": scheduler.get_lr()[0],
                     "generated images": wandb.Image(images_file),
-                })
+                }, step=e * len(loader_tr) + batch_idx)
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
             else:
                 wandb.log({
                     "batch training loss": loss_tr.item(),
                     "learning rate": scheduler.get_lr()[0]
-                })
+                }, tep=e * len(loader_tr) + batch_idx)
                 tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e}")
 
             scheduler.step()
