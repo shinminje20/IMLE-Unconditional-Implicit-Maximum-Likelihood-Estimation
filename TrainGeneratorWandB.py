@@ -392,7 +392,7 @@ if __name__ == "__main__":
 
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
             max_lr=args.lr, min_lr=1e-6,
-            warmup_steps=warmup, first_cycle_steps=first_cycle_steps,
+            warmup_steps=args.warmup, first_cycle_steps=first_cycle_steps,
             gamma=.99, last_epoch=max(-1, last_epoch * len(loader_tr)))
 
         if args.val_iter >= len(loader_tr):
