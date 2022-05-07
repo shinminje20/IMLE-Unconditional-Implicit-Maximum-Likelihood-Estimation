@@ -26,7 +26,7 @@ from utils.Utils import *
 ################################################################################
 # Dataset medatata.
 ################################################################################
-datasets = ["cifar10", "camnet3", "miniImagenet", "miniImagenet10", "strawberry"]
+datasets = ["cifar10", "camnet3", "miniImagenet", "miniImagenet10", "strawberry", "birds", "butterfly"]
 data_suffixes = ["", "_deci", "_centi", "_milli"]
 datasets = flatten([f"{d}{s}" for d in datasets for s in data_suffixes])
 no_val_split_datasets = ["cifar10"]

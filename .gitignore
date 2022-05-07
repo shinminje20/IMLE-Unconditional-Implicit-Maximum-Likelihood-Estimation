@@ -33,12 +33,13 @@ data/miniImagenet*
 data/gen_*
 models/camnet/*
 models/simclr/*
+data/butterfly*
+data/birds*
+data/strawberry*
 generators/*
 generators
 wandb
 *.zip
-
-Data
 
 slurm/_*
 !slurm/slurm_template.txt
