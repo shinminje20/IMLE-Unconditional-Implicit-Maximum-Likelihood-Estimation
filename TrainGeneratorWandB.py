@@ -271,7 +271,7 @@ def get_args(args=None):
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
     P.add_argument("--jobid", default=None, type=str,
-        desc="SLURM job ID")
+        help="SLURM job ID")
     return P.parse_args() if args is None else P.parse_args(args)
 
 if __name__ == "__main__":
