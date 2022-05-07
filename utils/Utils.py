@@ -120,7 +120,7 @@ def isicle_folder(args):
 def args_to_hparams(args):
     """Returns a dictionary of hyperparameters from Namespace [args]."""
     excluded_args =  ["resume", "chunk_epochs", "gpus", "comet", "data_path",
-        "wandb", "val_iter", "suffix", "spi", "run_id", "sp"]
+        "wandb", "val_iter", "suffix", "spi", "run_id", "sp", "jobid"]
     return {k: v for k,v in vars(args).items() if not k in excluded_args}
 
 def args_to_hparam_str(args):

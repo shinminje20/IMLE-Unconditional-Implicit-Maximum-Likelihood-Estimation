@@ -33,7 +33,7 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Unknown script '{sys_args[2]}")
 
-    SCRIPT = f"python {' '.join(sys_args[1:])} --resume $SLURM_ARRAY_TASK_ID"
+    SCRIPT = f"python {' '.join(sys_args[1:])} --resume $SLURM_ARRAY_TASK_ID --jobid $SLURM_ARRAY_JOB_ID"
     slurm_template = slurm_template.replace("SCRIPT", SCRIPT)
     
     slurm_script = f"slurm/_{NAME}.sh"

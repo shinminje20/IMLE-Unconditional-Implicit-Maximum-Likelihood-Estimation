@@ -270,6 +270,8 @@ def get_args(args=None):
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
+    P.add_argument("--jobid", default=None, type=str,
+        desc="SLURM job ID")
     return P.parse_args() if args is None else P.parse_args(args)
 
 if __name__ == "__main__":
@@ -398,7 +400,7 @@ if __name__ == "__main__":
         if args.val_iter >= len(loader_tr):
             tqdm.write(f"Setting --val_iter from {args.val_iter} to {len(loader_tr) - 1}")
             args.val_iter = len(loader_tr) - 1
-            
+
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
