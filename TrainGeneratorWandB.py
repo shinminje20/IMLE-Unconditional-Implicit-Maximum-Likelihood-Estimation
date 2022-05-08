@@ -228,6 +228,7 @@ def get_args(args=None):
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=128, nargs="+",
         help="parallelism across samples during code training")
+
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
         help="The method with which to sample latent codes")
 
@@ -274,8 +275,6 @@ def get_args(args=None):
 if __name__ == "__main__":
     args = get_args()
 
-    torch.autograd.set_detect_anomaly(True)
-
     ############################################################################
     # Check and improve arguments
     ############################################################################
@@ -290,15 +289,11 @@ if __name__ == "__main__":
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
 
-    #
     if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
         raise ValueError(f"--ipc should be a multiple of --mini_bs")
 
     ############################################################################
-    # Handle resuming. When [args.resume] is set to 'prevent' or nothing is in
-    # the folder storing experiment data, create a new experiment from scratch.
-    # If it's set to 'allow', we find the resume file from the folder storing
-    # experiment data. If it's the folder storing the data, resume there.
+    # Handle resuming.
     ############################################################################
     save_dir = generator_folder(args)
     if str(args.resume).isdigit():
@@ -405,10 +400,12 @@ if __name__ == "__main__":
     end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
     for e in tqdm(range(last_epoch + 1, end_epoch), desc="Epochs", dynamic_ncols=True):
 
-        ####################################################################
-        # Train for one epoch epoch.
-        ####################################################################
-        for batch_idx,(x,ys) in tqdm(enumerate(loader_tr), desc="Batches", leave=False, dynamic_ncols=True, total=len(loader_tr)):
+        for batch_idx,(x,ys) in tqdm(enumerate(loader_tr),
+            desc="Batches",
+            leave=False,
+            dynamic_ncols=True,
+            total=len(loader_tr)):
+            
             ys = [y.to(device, non_blocking=True) for y in ys]
             cx = corruptor(x.to(device, non_blocking=True))
             codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
@@ -416,8 +413,12 @@ if __name__ == "__main__":
             batch_loader = DataLoader(CorruptedCodeYDataset(cx, codes, ys),
                 batch_size=args.mini_bs, shuffle=True)
 
-            loss_tr = 0
-            for idx in tqdm(range(args.ipc // len(batch_loader)), desc="Iterations over batch", leave=False, dynamic_ncols=True):
+            batch_loss = 0
+            for sub_epoch in tqdm(range(args.ipc // len(batch_loader)),
+                desc="Loop over sets of minibatches",
+                leave=False,
+                dynamic_ncols=True):
+                
                 mini_batch_loss = 0
                 for cx,codes,ys in tqdm(batch_loader, desc="Minibatches", leave=False, dynamic_ncols=True):
                     fx = model(cx, codes, loi=None)                    
@@ -428,14 +429,15 @@ if __name__ == "__main__":
                     mini_batch_loss += loss.detach()
 
                 scheduler.step()
-                tqdm.write(f"\tMinibatch loss: {mini_batch_loss.item() / len(batch_loader)}")
-                loss_tr += mini_batch_loss
+                batch_loss += mini_batch_loss
+                if sub_epoch % ((args.ipc // len(batch_loader)) // 16) == 0:
+                    tqdm.write(f"\tMinibatch loss: {mini_batch_loss.item() / len(batch_loader)}")
 
-            loss_tr = loss_tr / args.ipc
+            batch_loss = batch_loss / args.ipc
             del x, codes, ys, loss
 
             ####################################################################
-            # Log data
+            # Log data after each batch
             ####################################################################
             if batch_idx % args.val_iter == 0:
                 images_val, loss_val = validate(corruptor, model, z_gen,
@@ -444,17 +446,17 @@ if __name__ == "__main__":
                 save_image_grid(images_val, images_file)
                 wandb.log({
                     "validation loss": loss_val,
-                    "batch training loss": loss_tr.item(),
+                    "batch training loss": batch_loss.item(),
                     "learning rate": scheduler.get_lr()[0],
                     "generated images": wandb.Image(images_file),
                 }, step=e * len(loader_tr) + batch_idx)
-                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
+                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
             else:
                 wandb.log({
-                    "batch training loss": loss_tr.item(),
+                    "batch training loss": batch_loss.item(),
                     "learning rate": scheduler.get_lr()[0]
-                }, tep=e * len(loader_tr) + batch_idx)
-                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {loss_tr.item():.5e} | lr {scheduler.get_lr()[0]:.5e}")
+                }, step=e * len(loader_tr) + batch_idx)
+                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e}")
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
