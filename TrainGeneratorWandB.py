@@ -178,7 +178,6 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
             loss += losses.mean().item()
             results += images
 
-    results = unnormalize(results, args.data) if args.normalize else results
     return results, loss / len(loader_eval)
 
 def get_args(args=None):
@@ -229,8 +228,6 @@ def get_args(args=None):
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=128, nargs="+",
         help="parallelism across samples during code training")
-    P.add_argument("--normalize", type=int, default=1, choices=[0, 1],
-        help="Whether to normalize data or not.")
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
         help="The method with which to sample latent codes")
 

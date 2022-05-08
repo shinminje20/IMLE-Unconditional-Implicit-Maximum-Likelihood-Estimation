@@ -32,58 +32,11 @@ datasets = flatten([f"{d}{s}" for d in datasets for s in data_suffixes])
 no_val_split_datasets = ["cifar10"]
 small_image_datasets = ["cifar10"]
 
-data2stats = {
-    "butterfly": {
-        "mean": [0.4537068009376526, 0.44877320528030396, 0.31253132224082947],
-        "std": [0.2589098811149597, 0.23871463537216187, 0.2571958005428314],
-    },
-    "camnet3": {
-        "mean": [0.5019261837005615, 0.4388015568256378, 0.3307309150695801],
-        "std": [0.2703641355037689, 0.26192981004714966, 0.27249595522880554],
-    },
-    "miniImagenet10": {
-        "mean": [0.3351227045059204, 0.319497287273407, 0.2869424521923065],
-        "std": [0.318856805562973, 0.3068281412124634, 0.3035818338394165],
-    },
-    "miniImagenet": {
-        "mean": [0.3351227045059204, 0.319497287273407, 0.2869424521923065],
-        "std": [0.318856805562973, 0.3068281412124634, 0.3035818338394165],
-    },
-    "strawberry": {
-        "mean": [0.6118778586387634, 0.4050508141517639, 0.3395719528198242],
-        "std": [0.2832472026348114, 0.31155455112457275, 0.3117664158344269],
-    }
-}
-
 def data_name_without_suffix(data_name):
     data_name =  data_name.replace("_deci", "")
     data_name =  data_name.replace("_centi", "")
     data_name =  data_name.replace("_milli", "")
     return data_name
-
-def unnormalize(images, data_name):
-    """Returns tensor or list [images] after unnormalization according to
-    [data_name]. The shape/order/type of [images] is unchanged.
-    """
-    if isinstance(images, torch.Tensor):
-        no_bs = len(images.shape) == 3
-        images = images.unsqueeze(0) if no_bs else images
-        bs, c, h, w = images.shape
-        mean = torch.tensor(data2stats[data_name_without_suffix(data_name)]["mean"], device=images.device)
-        std = torch.tensor(data2stats[data_name_without_suffix(data_name)]["std"], device=images.device)
-        mean = mean.view(1, 3, 1, 1).expand(images.shape)
-        std = std.view(1, 3, 1, 1).expand(images.shape)
-        images = torch.multiply(images, std) + mean
-
-        return images.squeeze(0) if no_bs else images
-    elif isinstance(images, list):
-        return [unnormalize(x, data_name) for x in images]
-    else:
-        raise NotImplementedError()
-
-
-
-
 
 def seed_kwargs(seed=0):
     """Returns kwargs to be passed into a DataLoader to give it seed [seed]."""
@@ -243,28 +196,11 @@ def get_gen_augs(args):
 
         def __repr__(self): return self.__class__.__name__
 
-    class Normalizations(nn.Module):
-        def __init__(self, normalize):
-            super(Normalizations, self).__init__()
-            self.normalize = normalize
-        
-        def forward(self, images): return [self.normalize(x) for x in images]
-        
-        def __repr__(self): return self.__class__.__name__
-
-    if args.normalize:
-        return transforms.Compose([
-            RandomHorizontalFlips(),
-            ToTensors(),
-            Normalizations(transforms.Normalize(
-                mean=data2stats[data_name_without_suffix(args.data)]["mean"],
-                std=data2stats[data_name_without_suffix(args.data)]["std"]))
-        ])
-    else:
-        return transforms.Compose([
+    return transforms.Compose([
             RandomHorizontalFlips(),
             ToTensors()
         ])
+        
 
 ################################################################################
 # Datasets
