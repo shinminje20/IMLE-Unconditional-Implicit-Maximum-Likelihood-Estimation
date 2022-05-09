@@ -118,9 +118,8 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 test_codes = old_codes + [new_codes]
 
                 # Compute loss for the new codes.
-                with autocast():
-                    outputs = model(cx, test_codes, loi=level_idx)
-                    losses = loss_fn(outputs, y[level_idx])
+                outputs = model(cx, test_codes, loi=level_idx)
+                losses = loss_fn(outputs, y[level_idx])
 
                 # [losses] may have multiple values for each input example
                 # due to using sample parallelism. Therefore, we find the
@@ -274,6 +273,8 @@ def get_args(args=None):
 
 if __name__ == "__main__":
     args = get_args()
+
+    torch.autograd.set_detect_anomaly(True)
 
     ############################################################################
     # Check and improve arguments
