@@ -389,6 +389,7 @@ if __name__ == "__main__":
     tqdm.write(f"----- Beginning Training -----")
 
     end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
+    cur_step = (last_epoch+1)*len(loader_tr)*(args.ipc // args.mini_bs)
     for e in tqdm(range(last_epoch + 1, end_epoch),
         desc="Epochs",
         dynamic_ncols=True):
@@ -429,10 +430,11 @@ if __name__ == "__main__":
                 
                 scheduler.step()
                 batch_loss += loss.detach()
+                cur_step += 1
                 wandb.log({
                     "minibatch loss": loss.detach(),
                     "learning rate": scheduler.get_last_lr()[0]
-                }, step=e*len(loader_tr) + batch_idx*len(batch_loader) + idx)
+                }, step=cur_step)
                 
             batch_loss = batch_loss / args.ipc
             del x, codes, ys, loss, cx
@@ -447,7 +449,7 @@ if __name__ == "__main__":
             wandb.log({
                 "validation loss": loss_val,
                 "generated images": wandb.Image(images_file),
-            }, step=e*len(loader_tr) + batch_idx*len(batch_loader) + idx)
+            }, step=cur_step)
             
             tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_last_lr()[0]:.5e} | loss_val {loss_val:.5e}")
 
