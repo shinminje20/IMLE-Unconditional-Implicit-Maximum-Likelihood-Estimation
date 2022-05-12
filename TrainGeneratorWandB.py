@@ -187,19 +187,20 @@ def get_args(args=None):
         help="disabled: no W&B logging, online: normal W&B logging")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
-    P.add_argument("--data_path", default=data_dir, type=str,
-        help="path to data if not in normal place")
+    P.add_argument("--jobid", default=None, type=str,
+        help="Variable for storing SLURM job ID")
     P.add_argument("--resume", type=str, default=None,
         help="a path or epoch number to resume from or nothing for no resuming")
+
+    P.add_argument("--data_path", default=data_dir, type=str,
+        help="path to where datasets are stored")
     P.add_argument("--spi", type=int, default=6,
-        help="Samples per image to log.")
+        help="samples per image in logging, showing the model's diversity.")
     P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
         help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
-    P.add_argument("--val_iter", type=int, default=1,
-        help="validate every this number of iterations")
     P.add_argument("--gpus", type=int, default=[0], nargs="+",
         help="GPU ids")
-
+    
     # Training hyperparameter arguments. These are logged!
     P.add_argument("--data", required=True, choices=datasets,
         help="data to train on")
@@ -217,12 +218,10 @@ def get_args(args=None):
         help="batch size")
     P.add_argument("--ns", type=int, nargs="+", default=128,
         help="number of samples for IMLE")
-    P.add_argument("--ipc", type=int, default=32,
-        help="Iterations per set of codes. Chunked via --mini_bs")
+    P.add_argument("--ipc", type=int, default=1024,
+        help="Effective gradient steps per set of codes. --ipc // --mini_bs is equivalent to num_days in the original CAMNet formulation")
     P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
-    P.add_argument("--warmup", type=int, default=0,
-        help="number of warmup steps")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="rgb",
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=128, nargs="+",
@@ -267,8 +266,7 @@ def get_args(args=None):
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
-    P.add_argument("--jobid", default=None, type=str,
-        help="SLURM job ID")
+    
     return P.parse_args() if args is None else P.parse_args(args)
 
 if __name__ == "__main__":
@@ -336,7 +334,6 @@ if __name__ == "__main__":
         args.gpus = curr_args.gpus
         args.chunk_epochs = curr_args.chunk_epochs
         args.wandb = curr_args.wandb
-        args.val_iter = curr_args.val_iter
         save_dir = generator_folder(args)
         set_seed(resume_data["seed"])
 
@@ -364,9 +361,10 @@ if __name__ == "__main__":
     data_eval = Subset(data_eval, indices=range(0, len(data_eval), eval_len))
 
     loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
-        batch_size=max(len(args.gpus), args.bs))
+        batch_size=max(len(args.gpus), args.bs), num_workers=8, drop_last=True)
     loader_eval = DataLoader(data_eval, shuffle=False,
-        batch_size=max(len(args.gpus), args.mini_bs // args.spi), drop_last=True)
+        batch_size=max(len(args.gpus), args.mini_bs // args.spi), num_workers=8,
+        drop_last=True)
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
@@ -380,27 +378,21 @@ if __name__ == "__main__":
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
-        first_cycle_steps = args.ipc // (args.bs // args.mini_bs)
-        if first_cycle_steps <= args.warmup:
-            tqdm.write(f"--warmup of {args.warmup} too big, resizing to maximum value of {warmup}")
-            args.warmup = warmup
-
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
-            max_lr=args.lr, min_lr=1e-6,
-            warmup_steps=args.warmup, first_cycle_steps=first_cycle_steps,
-            gamma=.99, last_epoch=max(-1, last_epoch * len(loader_tr)))
-
-        if args.val_iter >= len(loader_tr):
-            tqdm.write(f"Setting --val_iter from {args.val_iter} to {len(loader_tr) - 1}")
-            args.val_iter = len(loader_tr) - 1
+            max_lr=args.lr,
+            min_lr=1e-6,
+            first_cycle_steps=args.epochs * len(loader_tr) * (args.ipc // args.mini_bs),
+            last_epoch=max(-1, last_epoch * len(loader_tr) * (args.ipc // args.mini_bs)))
 
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
 
     end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
+    curr_step = (last_epoch + 1) * len(loader_tr) * args.ipc
     for e in tqdm(range(last_epoch + 1, end_epoch), desc="Epochs", dynamic_ncols=True):
 
+        batch_loss = 0
         for batch_idx,(x,ys) in tqdm(enumerate(loader_tr),
             desc="Batches",
             leave=False,
@@ -408,56 +400,56 @@ if __name__ == "__main__":
             total=len(loader_tr)):
             
             ys = [y.to(device, non_blocking=True) for y in ys]
-            cx = corruptor(x.to(device, non_blocking=True))
+            cx = corruptor(x.to(device, non_blocking=True))         
             codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
                 num_samples=args.ns, sample_parallelism=args.sp)
-            batch_loader = DataLoader(CorruptedCodeYDataset(cx, codes, ys),
-                batch_size=args.mini_bs, shuffle=True)
+            batch_dataset = CorruptedCodeYDataset(cx, codes, ys,
+                expand_factor=args.ipc // args.bs)
+            batch_loader = DataLoader(batch_dataset,
+                batch_size=args.mini_bs,
+                shuffle=True,
+                num_workers=8)
 
-            batch_loss = 0
-            for sub_epoch in tqdm(range(args.ipc // len(batch_loader)),
-                desc="Loop over sets of minibatches",
+            for idx,(cx, codes, ys) in tqdm(enumerate(batch_loader),
+                desc="Minibatches",
                 leave=False,
-                dynamic_ncols=True):
+                dynamic_ncols=True,
+                total=len(batch_loader)):
+
+                cx = cx.to(device)
+                codes = [c.to(device) for c in codes]
+                ys = [y.to(device) for y in ys]
+
+                fx = model(cx, codes, loi=None)                    
+                loss = compute_loss_over_list(fx, ys, loss_fn)    
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
                 
-                mini_batch_loss = 0
-                for cx,codes,ys in tqdm(batch_loader, desc="Minibatches", leave=False, dynamic_ncols=True):
-                    fx = model(cx, codes, loi=None)                    
-                    loss = compute_loss_over_list(fx, ys, loss_fn)    
-                    loss.backward()
-                    optimizer.step()
-                    optimizer.zero_grad(set_to_none=True)
-                    mini_batch_loss += loss.detach()
-
                 scheduler.step()
-                batch_loss += mini_batch_loss
-                if sub_epoch % ((args.ipc // len(batch_loader)) // 16) == 0:
-                    tqdm.write(f"\tMinibatch loss: {mini_batch_loss.item() / len(batch_loader)}")
-
+                batch_loss += loss.detach()
+                wandb.log({
+                    "minibatch loss": loss.detach(),
+                    "learning rate": scheduler.get_lr()[0]
+                }, step=e*len(loader_tr) + batch_idx*len(batch_loader) + idx)
+                
             batch_loss = batch_loss / args.ipc
-            del x, codes, ys, loss
+            del x, codes, ys, loss, cx
 
             ####################################################################
             # Log data after each batch
             ####################################################################
-            if batch_idx % args.val_iter == 0:
-                images_val, loss_val = validate(corruptor, model, z_gen,
-                    loader_eval, loss_fn, args)
-                images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
-                save_image_grid(images_val, images_file)
-                wandb.log({
-                    "validation loss": loss_val,
-                    "batch training loss": batch_loss.item(),
-                    "learning rate": scheduler.get_lr()[0],
-                    "generated images": wandb.Image(images_file),
-                }, step=e * len(loader_tr) + batch_idx)
-                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
-            else:
-                wandb.log({
-                    "batch training loss": batch_loss.item(),
-                    "learning rate": scheduler.get_lr()[0]
-                }, step=e * len(loader_tr) + batch_idx)
-                tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e}")
+            images_val, loss_val = validate(corruptor, model, z_gen,
+                loader_eval, loss_fn, args)
+            images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
+            save_image_grid(images_val, images_file)
+            wandb.log({
+                "validation loss": loss_val,
+                "generated images": wandb.Image(images_file),
+                "batch index": e * len(loader_tr) + batch_idx,
+            }, step=e * len(loader_tr) + (batch_idx + 1) * len(batch_loader))
+            
+            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,

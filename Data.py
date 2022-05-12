@@ -277,17 +277,19 @@ class CorruptedCodeYDataset(Dataset):
     ys      -- list of BSxCxHxW target images. Elements in the list should be
                 for sequentially greater resolutions
     """
-    def __init__(self, cx, codes, ys):
+    def __init__(self, cx, codes, ys, expand_factor=1):
         super(CorruptedCodeYDataset, self).__init__()
         assert len(codes) == len(ys)
         assert all([len(c) == len(y) == cx.shape[0] for c,y in zip(codes, ys)])
-        self.cx = cx
-        self.codes = codes
-        self.ys = ys
+        self.cx = cx.cpu()
+        self.codes = [c.cpu() for c in codes]
+        self.ys = [y.cpu() for y in ys]
+        self.expand_factor = expand_factor
     
-    def __len__(self): return len(self.cx)
+    def __len__(self): return len(self.cx) * self.expand_factor
 
     def __getitem__(self, idx):
+        idx = idx // self.expand_factor
         cx = self.cx[idx]
         codes = [c[idx] for c in self.codes]
         ys = [y[idx] for y in self.ys]
