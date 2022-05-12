@@ -7,7 +7,8 @@ from comet_ml import Experiment, ExistingExperiment
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
-from torch.optim import Adam, AdamW
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 from torch.utils.data import DataLoader, Subset
 from torch.cuda.amp import autocast, GradScaler
@@ -21,7 +22,6 @@ from utils.Utils import *
 from utils.UtilsColorSpace import *
 from utils.UtilsNN import *
 
-from torch.cuda.amp import autocast, GradScaler
 from functools import partial
 
 def get_z_dims(args):
@@ -51,7 +51,7 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_compo
         if mm is None:
             mm = [torch.rand(1, num_components, *dim) for dim in z_dims]
             mm = [nn.functional.normalize(m, dim=2) for m in mm]
-        
+
         if input is None:
             idxs = torch.tensor(random.choices(range(num_components), k=bs))
         elif input == "show_components":
@@ -84,7 +84,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
     """
     num_samples = make_list(num_samples, len(y))
     sample_parallelism = make_list(sample_parallelism, len(y))
-    
+
     bs = len(cx)
     level_codes = z_gen(bs, level="all")
     with torch.no_grad():
@@ -94,6 +94,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
             # store the least losses we have for each example, and to find
             # the level-specific number of samples [ns], sample parallelism
             # [sp], and shape to sample noise in [shape].
+            old_codes = level_codes[:level_idx]
             least_losses = torch.ones(bs, device=device) * float("inf")
             ns = num_samples[level_idx]
             sp = min(ns, sample_parallelism[level_idx])
@@ -114,15 +115,11 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 # codes to sample for the CAMNet level currently being
                 # sampled with while using the prior best old codes.
                 sp = sps[idx]
-                old_codes = level_codes[:level_idx]
                 new_codes = z_gen(bs * sp, level=level_idx)
                 test_codes = old_codes + [new_codes]
 
-                # Compute loss for the new codes. Note that because we have to
-                # use cdist here, we can't use half precision to compute loss.
-                with autocast():
-                    outputs = model(cx, test_codes, loi=level_idx)
-
+                # Compute loss for the new codes.
+                outputs = model(cx, test_codes, loi=level_idx)
                 losses = loss_fn(outputs, y[level_idx])
 
                 # [losses] may have multiple values for each input example
@@ -143,16 +140,23 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
 
     return level_codes
 
-def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
+def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
     """Returns a list of lists, where each sublist contains first a ground-truth
     image and then [samples_per_image] images conditioned on that one.
 
     Args:
-    corruptor       -- a corruptor to remove information from images
-    model           -- a model to fix corrupted images
-    images          -- BSxCxHxW tensor of images to condition on
-    spi             -- number of samples to generate per image
-    sample_method   -- how to sample codes
+    corruptor   -- a corruptor to remove information from images
+    model       -- a model to fix corrupted images
+    z_gen       -- noise generator for [model]
+    loader_eval -- dataloader over evaluation data
+    loss_fn     -- loss function for one CAMNet level
+    args        -- argparse arguments for the run
+
+    Returns:
+    results     -- 2D grid of images to show
+    loss        -- loss for the returned images. Because it's computed over
+                    only the last level, it will be much less than recorded
+                    training loss.
     """
     results = []
     loss = 0
@@ -160,73 +164,87 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, spi=6):
         for x,y in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
             bs = len(x)
             cx = corruptor(x)
-            cx_expanded = cx.repeat_interleave(spi, dim=0)
-            codes = z_gen(bs * spi, level="all", input="show_components")
-            with autocast():
-                outputs = model(cx_expanded, codes, loi=-1)
+            cx_expanded = cx.repeat_interleave(args.spi, dim=0)
+            codes = z_gen(bs * args.spi, level="all", input="show_components")
+            outputs = model(cx_expanded, codes, loi=-1)
             losses = loss_fn(outputs, y[-1])
-            outputs = outputs.view(bs, spi, 3, args.res[-1], args.res[-1])
+            outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
-            idxs = torch.argsort(losses.view(bs, spi), dim=-1)
+            idxs = torch.argsort(losses.view(bs, args.spi), dim=-1)
             outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
             images = [[s for s in samples] for samples in outputs]
             images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
-            
+
             loss += losses.mean().item()
             results += images
 
     return results, loss / len(loader_eval)
 
-if __name__ == "__main__":
+def get_args(args=None):
     P = argparse.ArgumentParser(description="CAMNet training")
+    # Non-hyperparameter arguments. These aren't logged!
     P.add_argument("--comet", choices=[0, 1], default=1, type=int,
         help="disabled: no W&B logging, online: normal W&B logging")
-    P.add_argument("--data", default="cifar10", choices=datasets,
+    P.add_argument("--suffix", default="",
+        help="optional training suffix")
+    P.add_argument("--jobid", default=None, type=str,
+        help="Variable for storing SLURM job ID")
+    P.add_argument("--resume", type=str, default=None,
+        help="a path or epoch number to resume from or nothing for no resuming")
+
+    P.add_argument("--data_path", default=data_dir, type=str,
+        help="path to where datasets are stored")
+    P.add_argument("--spi", type=int, default=6,
+        help="samples per image in logging, showing the model's diversity.")
+    P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
+        help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
+    P.add_argument("--gpus", type=int, default=[0], nargs="+",
+        help="GPU ids")
+    
+    # Training hyperparameter arguments. These are logged!
+    P.add_argument("--data", required=True, choices=datasets,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
         help="resolutions to see data at")
-    P.add_argument("--suffix", default="",
-        help="optional training suffix")
-    P.add_argument("--verbose", choices=[0, 1, 2], default=1, type=int,
-        help="verbosity level")
-    P.add_argument("--data_path", default=data_dir, type=str,
-        help="path to data if not in normal place")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
-    P.add_argument("--resume", type=str, default=None,
-        help="a path or epoch number to resume from or nothing for no resuming")
-    P.add_argument("--spi", type=int, default=6,
-        help="Samples per image to log.")
-    P.add_argument("--chunk_epochs", type=int, default=float("inf"),
-        help="Number of epochs to run before exiting. The number of total epochs is set with the --epoch flag; this is to allow for better cluster usage.")
-        
-
     P.add_argument("--proj_dim", default=1000, type=int,
         help="projection dimensionality")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
-    P.add_argument("--bs", type=int, default=8,
+    P.add_argument("--bs", type=int, default=64,
+        help="batch size")
+    P.add_argument("--mini_bs", type=int, default=8,
         help="batch size")
     P.add_argument("--ns", type=int, nargs="+", default=128,
         help="number of samples for IMLE")
-    P.add_argument("--ipcpe", type=int, default=16,
-        help="iters_per_code_per_ex")
+    P.add_argument("--ipc", type=int, default=1024,
+        help="Effective gradient steps per set of codes. --ipc // --mini_bs is equivalent to num_days in the original CAMNet formulation")
     P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="rgb",
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=128, nargs="+",
         help="parallelism across samples during code training")
-    P.add_argument("--gpus", type=int, default=[0], nargs="+",
-        help="GPU ids")
 
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
-        help="GPU ids")
+        help="The method with which to sample latent codes")
 
+    # Corruption hyperparameter arguments
+    P.add_argument("--grayscale", default=0, type=float, choices=[0, .5, 1],
+        help="grayscale corruption")
+    P.add_argument("--mask_res", default=8, type=int,
+        help="sidelength of image at which to do masking")
+    P.add_argument("--mask_frac", default=0, type=float,
+        help="fraction of pixels to mask")
+    P.add_argument("--fill", default="zero", choices=["color", "zero"],
+        help="how to fill masked out areas")
+
+    # Model hyperparameter arguments
     P.add_argument("--code_nc", default=5, type=int,
         help="number of code channels")
     P.add_argument("--in_nc", default=3, type=int,
-        help="number of input channels. SHOULD ALWAYS BE THREE")
+        help="number of input channels. SHOULD ALWAYS BE THREE.")
     P.add_argument("--out_nc", default=3, type=int,
         help=" number of output channels")
     P.add_argument("--map_nc", default=128, type=int,
@@ -248,16 +266,13 @@ if __name__ == "__main__":
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
+    
+    return P.parse_args() if args is None else P.parse_args(args)
 
-    P.add_argument("--grayscale", default=1, type=int, choices=[0, 1],
-        help="grayscale corruption")
-    P.add_argument("--mask_res", default=8, type=int,
-        help="sidelength of image at which to do masking")
-    P.add_argument("--mask_frac", default=.1, type=float,
-        help="fraction of pixels to mask")
-    P.add_argument("--fill", default="zero", choices=["color", "zero"],
-        help="how to fill masked out areas")
-    args = P.parse_args()
+if __name__ == "__main__":
+    args = get_args()
+
+    torch.autograd.set_detect_anomaly(True)
 
     ############################################################################
     # Check and improve arguments
@@ -273,46 +288,48 @@ if __name__ == "__main__":
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
 
+    if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
+        raise ValueError(f"--ipc should be a multiple of --mini_bs")
+
     ############################################################################
-    # Handle resuming. When [args.resume] is set to 'prevent' or nothing is in
-    # the folder storing experiment data, create a new experiment from scratch.
-    # If it's set to 'allow', we find the resume file from the folder storing
-    # experiment data. If it's the folder storing the data, resume there.
+    # Handle resuming.
     ############################################################################
+    save_dir = generator_folder(args)
     if str(args.resume).isdigit():
         args.resume = int(args.resume) - 1
-        save_dir = generator_folder(args)
-        if args.resume == -1:
+        if int(args.resume) == -1:
             resume_file = None
         elif os.path.exists(f"{save_dir}/{args.resume}.pt"):
             resume_file = f"{save_dir}/{args.resume}.pt"
         else:
             raise ValueError(f"File {save_dir}/{args.resume}.pt doesn't exist")
-    elif isinstance(args.resume, str) and os.path.exists(args.resume):
+    elif isinstance(args.resume, str):
         resume_file = args.resume
     else:
         resume_file = None
 
     if resume_file is None:
-        save_dir = generator_folder(args)
-        tqdm.write("Starting new experiment.")
+        save_dir = generator_folder(args, ignore_conflict=False)
         set_seed(args.seed)
-        
+
         # Setup the experiment. Importantly, we copy the experiment's ID to
         # [args] so that we can resume it later.
-        experiment = Experiment( project_name="isicle-generator",
-            api_key="iUYYQgU5SMNOOfZegluYPSUgv", disabled=not args.comet)
-        args.experiment_key = experiment.get_key()
+        experiment = Experiment(
+            project_name="isicle-generator",
+            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
+            disabled=not args.comet)
+        experiment.set_name(save_dir.replace(f"/{project_dir}/generators", ""))
+        args.run_id = experiment.get_key()
         experiment.log_parameters(args_to_hparams(args))
-
+        
         corruptor = Corruption(**vars(args))
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
-        optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
+        optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
         last_epoch = -1
-    else:   
+    else:
         tqdm.write(f"Resuming from {resume_file}")
         resume_data = torch.load(resume_file)
-        
+
         # Copy non-hyperparameter information from the current arguments to the
         # ones we're resuming
         curr_args = args
@@ -320,142 +337,126 @@ if __name__ == "__main__":
         args.data_path = curr_args.data_path
         args.gpus = curr_args.gpus
         args.chunk_epochs = curr_args.chunk_epochs
+        args.comet = curr_args.comet
         save_dir = generator_folder(args)
-        set_seed(resume_data["seed"])        
+        set_seed(resume_data["seed"])
 
-        experiment = ExistingExperiment(project_name="isicle-generator",
-            api_key="iUYYQgU5SMNOOfZegluYPSUgv", disabled=not args.comet,
-            experiment_key=args.experiment_key)
+        experiment = ExistingExperiment(
+            project_name="isicle-generator",
+            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
+            disabled=not args.comet,
+            experiment_key=args.run_id)
 
         model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
         corruptor = resume_data["corruptor"].to(device)
         last_epoch = resume_data["last_epoch"]
         scheduler = resume_data["scheduler"]
-    
-    tqdm.write(f"----- Final Arguments -----")
-    tqdm.write(dict_to_nice_str(vars(args)))
-    tqdm.write(f"----- Beginning Training -----")
 
     # Set up the loss function
     loss_fn = nn.DataParallel(ResolutionLoss(), device_ids=args.gpus).to(device)
 
     # Set up the training and evaluation DataLoaders
-    data_tr, data_eval = get_data_splits(args.data, "val", args.res,
-        data_path=args.data_path)
-    data_tr = GeneratorDataset(data_tr, get_gen_augs())
+    data_tr, data_eval = get_data_splits(args)
+    data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
 
     # Get the evaluation data. We need to do this carefully so as to use
     # DataParallel and not have the data get dropped in the DataLoader.
-    data_eval = GeneratorDataset(data_eval, get_gen_augs())
+    data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
     eval_len = len(data_eval) // (args.spi + 2)
     eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-    data_eval = Subset(data_eval,
-        indices=range(0, len(data_eval), eval_len))
-    
+    data_eval = Subset(data_eval, indices=range(0, len(data_eval), eval_len))
+
     loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
-        batch_size=max(len(args.gpus), args.bs))
-    loader_eval = DataLoader(data_eval, pin_memory=True, shuffle=True,
-        batch_size=max(len(args.gpus), args.bs // args.spi), drop_last=True)    
+        batch_size=max(len(args.gpus), args.bs), num_workers=8, drop_last=True)
+    loader_eval = DataLoader(data_eval, shuffle=False,
+        batch_size=max(len(args.gpus), args.mini_bs // args.spi), num_workers=8,
+        drop_last=True)
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
     # [sample_method] input.
-    z_gen = partial(get_z_gen, get_z_dims(args),
+    z_gen = partial(get_z_gen,
+        get_z_dims(args),
         sample_method=args.sample_method)
 
     ########################################################################
-    # Construct the scheduler and save some initial images. We construct the
-    # scheduler here because we need to know the length of the training
-    # DataLoader and because we can only do it for new runs.
+    # Construct the scheduler—strictly speaking, constructing it makes no sense
+    # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
-        scheduler = CosineAnnealingWarmupRestarts(optimizer,
-            max_lr=args.lr,  min_lr=1e-6,
-            first_cycle_steps=args.epochs * len(loader_tr) // 5, gamma=.7,
-            last_epoch=max(-1, last_epoch * len(loader_tr)))
+        scheduler = CosineAnnealingLR(optimizer,
+            args.epochs * len(loader_tr) * (args.ipc // args.mini_bs),
+            eta_min=1e-8,
+            last_epoch=max(-1, last_epoch * len(loader_tr) * (args.ipc // args.mini_bs)))
 
-        images_before, _ = validate(corruptor, model, z_gen, loader_eval,
-            loss_fn, spi=args.spi)
-        images_file = f"{save_dir}/val_images/before_training.png"
-        images_before = save_image_grid(images_before, images_file)
-        experiment.log_image(images_file, name="before_training.png")
+    tqdm.write(f"----- Final Arguments -----")
+    tqdm.write(dict_to_nice_str(vars(args)))
+    tqdm.write(f"----- Beginning Training -----")
 
-    scaler = GradScaler()
-
-    # Define the starting and ending epoch. These are so we can chunk training
-    # and better use our ComputeCanada allocation.
-    start_epoch = last_epoch + 1
-    end_epoch = min(args.epochs, last_epoch + 1 + args.chunk_epochs)
-    
-    for e in tqdm(range(start_epoch, end_epoch), desc="Epochs", dynamic_ncols=True):
-
-        ####################################################################
-        # Train for one epoch epoch.
-        ####################################################################
-        loss_tr = 0
-        for batch_idx,(x,ys) in tqdm(enumerate(loader_tr), desc="Batches", leave=False, dynamic_ncols=True, total=len(loader_tr)):
-            x = x.to(device)
-            ys = [y.to(device) for y in ys]
-            cx = corruptor(x)
+    end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
+    cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
+    for e in tqdm(range(last_epoch + 1, end_epoch),
+        desc="Epochs",
+        dynamic_ncols=True):
+        
+        for batch_idx,(x,ys) in tqdm(enumerate(loader_tr),
+            desc="Batches",
+            leave=False,
+            dynamic_ncols=True,
+            total=len(loader_tr)):
+            batch_loss = 0
+            
+            ys = [y.to(device, non_blocking=True) for y in ys]
+            cx = corruptor(x.to(device, non_blocking=True))         
             codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
                 num_samples=args.ns, sample_parallelism=args.sp)
+            batch_dataset = CorruptedCodeYDataset(cx, codes, ys,
+                expand_factor=args.ipc // args.bs)
+            batch_loader = DataLoader(batch_dataset,
+                batch_size=args.mini_bs,
+                shuffle=True,
+                num_workers=8)
 
-            for _ in range(args.ipcpe):
-                fx = model(cx, codes, loi=None)
-                loss = compute_loss_over_list(fx, ys, loss_fn)
+            for idx,(cx, codes, ys) in tqdm(enumerate(batch_loader),
+                desc="Minibatches",
+                leave=False,
+                dynamic_ncols=True,
+                total=len(batch_loader)):
 
-                if any([torch.isnan(torch.sum(f)) for f in fx]):
-                    print("      FX NAN")
-                if torch.isnan(torch.sum(loss)):
-                     print("      LOSS NAN")
-                
-                if any([torch.isnan(torch.sum(f)) for f in fx]) or torch.isnan(torch.sum(loss)):
-                    torch.save({"model": model.cpu(), "cx": cx.cpu(), "x": x.cpu(), "ys": [y.cpu() for y in ys], "fx": [f.cpu() for f in fx], "loss": loss.cpu(), "codes": codes}, f"nan_results_{batch_idx}.pt")
-                    import sys
-                    sys.exit(0)
+                cx = cx.to(device)
+                codes = [c.to(device) for c in codes]
+                ys = [y.to(device) for y in ys]
 
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                clip_grad_norm_(model.parameters(), max_norm=2.0)
-                scaler.step(optimizer)
-                scaler.update()
-
-                # Deleting gradients here means they're not taking up space
-                # during sampling. We only run the forward pass without a
-                # no_grad() context above, so there should be no other
-                # gradients lurking around.
+                fx = model(cx, codes, loi=None)                    
+                loss = compute_loss_over_list(fx, ys, loss_fn)    
+                loss.backward()
+                optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
+                
+                scheduler.step()
+                batch_loss += loss.detach()
+                cur_step += 1
+
+                experiment.log_metric("minibatch loss", loss.detach(), step=cur_step)
+                experiment.log_metric("learning rate", scheduler.get_last_lr()[0], step=cur_step)
+                
+            batch_loss = batch_loss / args.ipc
+            del x, codes, ys, loss, cx
+
+            ####################################################################
+            # Log data after each batch
+            ####################################################################
+            images_val, loss_val = validate(corruptor, model, z_gen,
+                loader_eval, loss_fn, args)
+            images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
+            save_image_grid(images_val, images_file)
+            experiment.log_metric("validation loss", loss_val, step=cur_step)
+            experiment.log_image(images_file, name="generated images", step=cur_step)
             
-            loss_tr += loss.detach()
-            experiment.log_metric("training loss", loss_tr.item() / (batch_idx + 1), step=batch_idx)
-            experiment.log_metric("learning rate", scheduler.get_lr()[0], step=batch_idx)
-                        
-            if batch_idx % 10 == 0:
-                tqdm.write(f"\t{batch_idx} | loss_tr {loss_tr.item() / (batch_idx + 1)} | lr {scheduler.get_lr()[0]}")
+            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_last_lr()[0]:.5e} | loss_val {loss_val:.5e}")
 
-            # This can sometimes throw a warning claiming that optimizer was
-            # never stepped. This is because [scaler] chose a too-high
-            # value, got a NaN, and didn't step the optimizer. This can be
-            # ignored.
-            scheduler.step()
-
-        ####################################################################
-        # Log some generations at the end of each epoch.
-        ####################################################################
-        images_val, loss_val = validate(corruptor, model, z_gen, loader_eval,
-            loss_fn, spi=args.spi)
-        tqdm.write(f"End of epoch {e} | loss_tr {loss_tr.item() / len(loader_tr)} | loss_val {loss_val}")
-
-        images_file = f"{save_dir}/val_images/epoch{e}.png"
-        save_image_grid(images_val, images_file)
-        experiment.log_image(images_file, name=f"epoch_{e}.png")
-        experiment.log_metric("validation loss", loss_val, step=len(loader_tr) * (e+1))
-    
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
             "optimizer": optimizer}, f"{save_dir}/{e}.pt")
-        save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
-            "last_epoch": e, "args": args, "scheduler": scheduler,
-            "optimizer": optimizer}, f"{save_dir}/latest.pt")
         corruptor, model = corruptor.to(device), model.to(device)
