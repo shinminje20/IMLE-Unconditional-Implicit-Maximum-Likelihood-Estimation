@@ -389,7 +389,7 @@ if __name__ == "__main__":
     tqdm.write(f"----- Beginning Training -----")
 
     end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
-    cur_step = (last_epoch+1)*len(loader_tr)*(args.ipc // args.mini_bs)
+    cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
     for e in tqdm(range(last_epoch + 1, end_epoch),
         desc="Epochs",
         dynamic_ncols=True):
