@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 from torch.utils.data import DataLoader, Subset
 from torch.cuda.amp import autocast, GradScaler
@@ -378,10 +379,9 @@ if __name__ == "__main__":
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
-        scheduler = CosineAnnealingWarmupRestarts(optimizer,
-            max_lr=args.lr,
-            min_lr=1e-6,
-            first_cycle_steps=args.epochs * len(loader_tr) * (args.ipc // args.mini_bs),
+        scheduler = CosineAnnealingLR(optimizer,
+            args.epochs * len(loader_tr) * (args.ipc // args.mini_bs),
+            eta_min=1e-8,
             last_epoch=max(-1, last_epoch * len(loader_tr) * (args.ipc // args.mini_bs)))
 
     tqdm.write(f"----- Final Arguments -----")
@@ -389,15 +389,16 @@ if __name__ == "__main__":
     tqdm.write(f"----- Beginning Training -----")
 
     end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
-    curr_step = (last_epoch + 1) * len(loader_tr) * args.ipc
-    for e in tqdm(range(last_epoch + 1, end_epoch), desc="Epochs", dynamic_ncols=True):
-
-        batch_loss = 0
+    for e in tqdm(range(last_epoch + 1, end_epoch),
+        desc="Epochs",
+        dynamic_ncols=True):
+        
         for batch_idx,(x,ys) in tqdm(enumerate(loader_tr),
             desc="Batches",
             leave=False,
             dynamic_ncols=True,
             total=len(loader_tr)):
+            batch_loss = 0
             
             ys = [y.to(device, non_blocking=True) for y in ys]
             cx = corruptor(x.to(device, non_blocking=True))         
@@ -430,7 +431,7 @@ if __name__ == "__main__":
                 batch_loss += loss.detach()
                 wandb.log({
                     "minibatch loss": loss.detach(),
-                    "learning rate": scheduler.get_lr()[0]
+                    "learning rate": scheduler.get_last_lr()[0]
                 }, step=e*len(loader_tr) + batch_idx*len(batch_loader) + idx)
                 
             batch_loss = batch_loss / args.ipc
@@ -446,10 +447,9 @@ if __name__ == "__main__":
             wandb.log({
                 "validation loss": loss_val,
                 "generated images": wandb.Image(images_file),
-                "batch index": e * len(loader_tr) + batch_idx,
-            }, step=e * len(loader_tr) + (batch_idx + 1) * len(batch_loader))
+            }, step=e*len(loader_tr) + batch_idx*len(batch_loader) + idx)
             
-            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
+            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_last_lr()[0]:.5e} | loss_val {loss_val:.5e}")
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
