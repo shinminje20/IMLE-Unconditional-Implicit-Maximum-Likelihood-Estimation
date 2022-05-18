@@ -16,11 +16,11 @@ import argparse
 import os
 from utils.Utils import *
 
-def get_time(time):
-    """Returns [time] in SLURM string form.
+def get_time(hours):
+    """Returns [hours] in SLURM string form.
 
     Args:
-    time    (int) -- the number of hours to run one chunk for
+    hours   (int) -- the number of hours to run one chunk for
     """
     if hours == 3:
         return "0-2:59:59"
