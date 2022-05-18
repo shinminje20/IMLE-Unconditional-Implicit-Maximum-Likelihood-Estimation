@@ -220,7 +220,7 @@ def get_args(args=None):
         help="batch size")
     P.add_argument("--mini_bs", type=int, default=8,
         help="batch size")
-    P.add_argument("--ns", type=int, nargs="+", default=128,
+    P.add_argument("--ns", type=int, nargs="+", default=[128],
         help="number of samples for IMLE")
     P.add_argument("--ipc", type=int, default=1024,
         help="Effective gradient steps per set of codes. --ipc // --mini_bs is equivalent to num_days in the original CAMNet formulation")
@@ -228,7 +228,7 @@ def get_args(args=None):
         help="learning rate")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="rgb",
         help="Color space to use during training")
-    P.add_argument("--sp", type=int, default=128, nargs="+",
+    P.add_argument("--sp", type=int, default=[128], nargs="+",
         help="parallelism across samples during code training")
 
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
@@ -271,16 +271,7 @@ def get_args(args=None):
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
     
-    return P.parse_args() if args is None else P.parse_args(args)
-
-if __name__ == "__main__":
-    args = get_args()
-
-    torch.autograd.set_detect_anomaly(True)
-
-    ############################################################################
-    # Check and improve arguments
-    ############################################################################
+    args = P.parse_args() if args is None else P.parse_args(args)
     args.levels = len(args.res) - 1
     args.ns = make_list(args.ns, length=args.levels)
     args.sp = make_list(args.sp, length=args.levels)
@@ -294,6 +285,11 @@ if __name__ == "__main__":
 
     if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
         raise ValueError(f"--ipc should be a multiple of --mini_bs")
+
+    return args
+
+if __name__ == "__main__":
+    args = get_args()
 
     ############################################################################
     # Handle resuming.
