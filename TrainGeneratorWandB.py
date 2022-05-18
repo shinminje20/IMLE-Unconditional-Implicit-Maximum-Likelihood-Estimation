@@ -445,7 +445,7 @@ if __name__ == "__main__":
                 cur_step += 1
                 wandb.log({
                     "minibatch loss": loss.detach(),
-                    "learning rate": scheduler.get_lr()[0]
+                    "learning rate": get_lr(scheduler)[0]
                 }, step=cur_step)
                 
             batch_loss = batch_loss / args.ipc
@@ -463,7 +463,7 @@ if __name__ == "__main__":
                 "generated images": wandb.Image(images_file),
             }, step=cur_step)
             
-            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
+            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {get_lr(scheduler)[0]:.5e} | loss_val {loss_val:.5e}")
 
             del images_val, loss_val
 

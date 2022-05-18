@@ -11,6 +11,9 @@ import random
 import shutil
 from tqdm import tqdm
 
+from torch.optim.lr_scheduler import CosineAnnealingLR
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
+
 import torch
 import torch.nn as nn
 from torchvision.transforms import functional as functional_TF
@@ -295,3 +298,9 @@ def dict_to_json(dictionary, f):
     """Saves dict [dictionary] to file [f]."""
     with open(f, "w+") as f:
         json.dump(dictionary, f)
+
+def get_lr(scheduler):
+    if isinstance(scheduler, CosineAnnealingWarmupRestarts):
+        return scheduler.get_lr()
+    else:
+        return scheduler.get_last_lr()
