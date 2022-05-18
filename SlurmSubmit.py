@@ -12,28 +12,44 @@ python SlurmSubmit.py Script.py --arg1 ...
 It should be that deleting SlurmSubmit.py from the command yields exactly the
 command desired for SLURM to run.
 """
+import argparse
 import os
-import sys
 from utils.Utils import *
 
+def get_time():
+    if hours == 3:
+        return "0-2:59:59"
+    elif hours == 12:
+        return "0-11:59:59"
+    else:
+        raise NotImplementedError()
+
 if __name__ == "__main__":
-    sys_args = sys.argv
+    P = argparse.ArgumentParser()
+    P.add_argument("script",
+        help="script to run")
+    P.add_argument("--time", type=int, default=3,
+        help="number of hours per task")
+    submission_args, unparsed_script_args = P.parse_known_args()
+
     with open("slurm/slurm_template.txt", "r") as f:
         slurm_template = f.read()
 
-    if sys_args[1] == "TrainGeneratorWandB.py":
+    if submission_args.script == "TrainGeneratorWandB.py":
         from TrainGeneratorWandB import get_args
-        args = get_args(sys_args[2:])
+        args = get_args(unparsed_script_args)
         CHUNKS = str(args.epochs - 1)
         NAME = generator_folder(args).replace(f"{project_dir}/generators/", "")
         NUM_GPUS = str(len(args.gpus))
+        TIME = get_time(args.time)
         slurm_template = slurm_template.replace("CHUNKS", CHUNKS)
+        slurm_template = slurm_template.replace("TIME", TIME)
         slurm_template = slurm_template.replace("NAME", NAME)
         slurm_template = slurm_template.replace("NUM_GPUS", NUM_GPUS)
     else:
-        raise ValueError(f"Unknown script '{sys_args[2]}")
+        raise ValueError(f"Unknown script '{submission_args.script}")
 
-    SCRIPT = f"python {' '.join(sys_args[1:])} --resume $SLURM_ARRAY_TASK_ID --jobid $SLURM_ARRAY_JOB_ID --data_path ~/scratch/ISICLE/data"
+    SCRIPT = f"python {' '.join(unparsed_script_args)} --resume $SLURM_ARRAY_TASK_ID --jobid $SLURM_ARRAY_JOB_ID --data_path ~/scratch/ISICLE/data"
     slurm_template = slurm_template.replace("SCRIPT", SCRIPT)
     
     slurm_script = f"slurm/_{NAME}.sh"

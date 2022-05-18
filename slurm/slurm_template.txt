@@ -3,7 +3,7 @@
 # The SBATCH directives must appear before any executable line in this script.
 
 #SBATCH --array=0-CHUNKS%1
-#SBATCH --time=0-11:59:59               # Time: D-H:M:S
+#SBATCH --time=TIME               # Time: D-H:M:S
 #SBATCH --account=rrg-keli              # Account: def-keli/rrg-keli
 #SBATCH --mem=64G                       # Memory in total
 #SBATCH --nodes=1                       # Number of nodes requested.
