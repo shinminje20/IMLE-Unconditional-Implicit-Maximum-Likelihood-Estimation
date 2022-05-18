@@ -16,7 +16,12 @@ import argparse
 import os
 from utils.Utils import *
 
-def get_time():
+def get_time(time):
+    """Returns [time] in SLURM string form.
+
+    Args:
+    time    (int) -- the number of hours to run one chunk for
+    """
     if hours == 3:
         return "0-2:59:59"
     elif hours == 12:
@@ -41,7 +46,7 @@ if __name__ == "__main__":
         CHUNKS = str(args.epochs - 1)
         NAME = generator_folder(args).replace(f"{project_dir}/generators/", "")
         NUM_GPUS = str(len(args.gpus))
-        TIME = get_time(args.time)
+        TIME = get_time(submission_args.time)
         slurm_template = slurm_template.replace("CHUNKS", CHUNKS)
         slurm_template = slurm_template.replace("TIME", TIME)
         slurm_template = slurm_template.replace("NAME", NAME)
