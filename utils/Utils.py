@@ -108,7 +108,7 @@ def simclr_folder(args):
 
 def generator_folder(args, ignore_conflict=True):
     """Returns the folder to which to save a Generator saved with [args]."""
-    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}-seed{args.seed}" + suffix_str(args)   
+    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-decay_{args.lr_decay}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}-seed{args.seed}" + suffix_str(args)   
     return experiment_folder(args, folder, ignore_conflict=ignore_conflict)
 
 def isicle_folder(args):
@@ -205,7 +205,6 @@ def save_image_grid(images, path):
         os.makedirs(os.path.dirname(path))
     plt.savefig(path, dpi=512)
     plt.close("all")
-
 
 ################################################################################
 # Miscellaneous utilities

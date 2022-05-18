@@ -199,10 +199,13 @@ def get_args(args=None):
         help="samples per image in logging, showing the model's diversity.")
     P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
         help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
-    P.add_argument("--gpus", type=int, default=[0], nargs="+",
+    P.add_argument("--gpus", type=int, default=[0, 1], nargs="+",
         help="GPU ids")
     
     # Training hyperparameter arguments. These are logged!
+    P.add_argument("--lr_decay", default="cosine-restarts",
+        choices=["cosine", "cosine-restarts"],
+        help="learning rate decay strategy")
     P.add_argument("--data", required=True, choices=datasets,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
@@ -379,10 +382,22 @@ if __name__ == "__main__":
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
-        scheduler = CosineAnnealingLR(optimizer,
-            args.epochs * len(loader_tr) * (args.ipc // args.mini_bs),
-            eta_min=1e-8,
-            last_epoch=max(-1, last_epoch * len(loader_tr) * (args.ipc // args.mini_bs)))
+        cycle_size = args.ipc // args.mini_bs
+        if args.lr_decay == "cosine-restarts":
+            scheduler = CosineAnnealingWarmupRestarts(optimizer,
+                first_cycle_steps=cycle_size,
+                gamma=.05 ** (1 / (args.epochs * len(loader_tr))),
+                max_lr=args.lr,
+                min_lr=1e-6,
+                warmup_steps=int(cycle_size ** .5) // 2,
+                last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
+        elif args.lr_decay == "cosine":
+            scheduler = CosineAnnealingLR(optimizer,
+                args.epochs * len(loader_tr) * cycle_size,
+                eta_min=1e-8,
+                last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
+        else:
+            raise ValueError(f"Unknown scheduler {args.lr_decay}")
 
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
@@ -404,7 +419,8 @@ if __name__ == "__main__":
             ys = [y.to(device, non_blocking=True) for y in ys]
             cx = corruptor(x.to(device, non_blocking=True))         
             codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
-                num_samples=args.ns, sample_parallelism=args.sp)
+                num_samples=args.ns,
+                sample_parallelism=args.sp)
             batch_dataset = CorruptedCodeYDataset(cx, codes, ys,
                 expand_factor=args.ipc // args.bs)
             batch_loader = DataLoader(batch_dataset,
@@ -433,7 +449,7 @@ if __name__ == "__main__":
                 cur_step += 1
                 wandb.log({
                     "minibatch loss": loss.detach(),
-                    "learning rate": scheduler.get_last_lr()[0]
+                    "learning rate": scheduler.get_lr()[0]
                 }, step=cur_step)
                 
             batch_loss = batch_loss / args.ipc
@@ -451,7 +467,9 @@ if __name__ == "__main__":
                 "generated images": wandb.Image(images_file),
             }, step=cur_step)
             
-            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_last_lr()[0]:.5e} | loss_val {loss_val:.5e}")
+            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_lr()[0]:.5e} | loss_val {loss_val:.5e}")
+
+            del images_val, loss_val
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
