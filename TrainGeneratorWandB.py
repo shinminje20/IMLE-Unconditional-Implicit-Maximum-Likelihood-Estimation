@@ -88,7 +88,10 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
     bs = len(cx)
     level_codes = z_gen(bs, level="all")
     with torch.no_grad():
-        for level_idx in tqdm(range(len(num_samples)), desc="Levels", leave=False, dynamic_ncols=True):
+        for level_idx in tqdm(range(len(num_samples)),
+            desc="Sampling: levels",
+            leave=False,
+            dynamic_ncols=True):
 
             # Get inputs for sampling for the current level. We need to
             # store the least losses we have for each example, and to find
@@ -109,7 +112,10 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 iter_range = range(ns // sp + 1)
                 sps = make_list(sp, length=ns // sp) + [ns % sp]
 
-            for idx in tqdm(iter_range, desc="Sampling", leave=False, dynamic_ncols=True):
+            for idx in tqdm(iter_range,
+                desc="Sampling: iterations over level",
+                leave=False,
+                dynamic_ncols=True):
 
                 # Get the sample parallelism for this trial. Then, get new
                 # codes to sample for the CAMNet level currently being
@@ -138,6 +144,49 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 level_codes[level_idx][change_idxs] = new_codes[change_idxs]
                 least_losses[change_idxs] = losses[change_idxs]
 
+    return level_codes
+
+def get_codes_in_chunks(cx, y, model, z_gen, loss_fn, num_samples=16,
+    sample_parallelism=16, code_bs=128):
+    """Returns a list of new latent codes found via hierarchical sampling with
+    the batch dimension chunked to allow running larger batches.
+
+    Args:
+    cx          -- a BSxCxHxW tensor of corrupted images, on device
+    model       -- model backbone. Must support a 'loi' argument and a tensor of
+                    losses, one for each element in an input batch
+    z_gen       -- function mapping from batch sizes and levels to z_dims
+    sp          -- list of sample parallelisms, one for each level
+    num_samples -- list of numbers of samples, one for each level
+    code_bs     -- the size of each batch dimension chunk
+    """
+    def partition_into_batches(x, chunks):
+        """Returns [x] split into [chunks] sections along each constituent
+        tensor's zero dimension.
+        """
+        if isinstance(x, (list, tuple)):
+            return [partition_into_batches(x_, chunks) for x_ in x]
+        elif isinstance(x, torch.Tensor):
+            return torch.tensor_split(x, chunks)
+        else:
+            raise ValueError()
+
+    chunks = max(1, len(cx) // code_bs)
+    cx = partition_into_batches(cx, chunks)
+    y = partition_into_batches(y, chunks)
+
+    level_codes = level_codes = z_gen(0, level="all")
+    for cx_ys in tqdm(zip(cx, *y),
+        total=chunks,
+        desc="Sampling: chunks",
+        leave=False,
+        dynamic_ncols=True):
+
+        chunk_codes = get_new_codes(cx_ys[0], cx_ys[1:], model, z_gen, loss_fn,
+            num_samples=num_samples,
+            sample_parallelism=sample_parallelism)
+        level_codes = [torch.cat(c) for c in zip(level_codes, chunk_codes)]
+    
     return level_codes
 
 def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
@@ -200,6 +249,8 @@ def get_args(args=None):
     P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
         help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
     P.add_argument("--gpus", type=int, default=[0, 1], nargs="+",
+        help="GPU ids")
+    P.add_argument("--code_bs", type=int, default=128,
         help="GPU ids")
     
     # Training hyperparameter arguments. These are logged!
@@ -414,9 +465,10 @@ if __name__ == "__main__":
             
             ys = [y.to(device, non_blocking=True) for y in ys]
             cx = corruptor(x.to(device, non_blocking=True))         
-            codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
+            codes = get_codes_in_chunks(cx, ys, model, z_gen, loss_fn,
                 num_samples=args.ns,
-                sample_parallelism=args.sp)
+                sample_parallelism=args.sp,
+                code_bs=args.code_bs)
             batch_dataset = CorruptedCodeYDataset(cx, codes, ys,
                 expand_factor=args.ipc // args.bs)
             batch_loader = DataLoader(batch_dataset,
