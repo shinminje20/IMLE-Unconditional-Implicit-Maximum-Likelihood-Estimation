@@ -40,7 +40,7 @@ class ResolutionLoss(nn.Module):
         lpips_loss = compute_loss_over_list(self.lpips(fx), self.lpips(y),
             batch_mse, list_reduction="batch")
 
-        if fx.shape[-1] >= 64:
+        if fx.shape[-1] > 64:
             result = lpips_loss
         else:
             mse = batch_mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1))
