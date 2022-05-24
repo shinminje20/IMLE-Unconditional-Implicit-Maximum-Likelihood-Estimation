@@ -254,7 +254,7 @@ def get_args(args=None):
         help="GPU ids")
     
     # Training hyperparameter arguments. These are logged!
-    P.add_argument("--lr_decay", default="cosine-restarts",
+    P.add_argument("--lr_decay", default="cosine",
         choices=["cosine", "cosine-restarts"],
         help="learning rate decay strategy")
     P.add_argument("--data", required=True, choices=datasets,
