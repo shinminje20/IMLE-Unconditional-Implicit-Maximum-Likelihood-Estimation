@@ -22,12 +22,9 @@ def get_time(hours):
     Args:
     hours   (int) -- the number of hours to run one chunk for
     """
-    if hours == 3:
-        return "0-2:59:59"
-    elif hours == 12:
-        return "0-11:59:59"
-    else:
-        raise NotImplementedError()
+    days = hours // 24
+    hours = hours % 24
+    return f"{days}-{hours - 1}:59:59"
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser()
