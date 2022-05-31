@@ -15,22 +15,26 @@ from utils.UtilsContrastive import *
 from utils.Utils import *
 from torch.cuda.amp import GradScaler, autocast
 
-def get_label2idxs(data_tr, data_name=None, data_split=None):
+def get_label2idxs(data_tr, data_name=None, data_split=None, memoize=True):
     """Returns a label to indices mapping for [data_tr]."""
     data_split = "train" if data_split == "cv" else data_split
 
     if data_name is not None and data_split is not None:
         save_path = f"{project_dir}/Data/{data_name}/{data_split}_label2idx.json"
-        if os.path.exists(save_path):
+        if os.path.exists(save_path) and memoize:
             with open(save_path, "r") as f:
                 return json.load(f)
 
     label2idxs = defaultdict(lambda: [])
-    for idx,(_,y) in tqdm(enumerate(data_tr), desc="Building label2idxs", total=len(data_tr)):
+    for idx,(_,y) in tqdm(enumerate(data_tr),
+        desc="Building label2idxs",
+        total=len(data_tr),
+        leave=False):
+
         label2idxs[y].append(idx)
 
-    if data_name is not None and data_split is not None:
-        save_dir_path = f"{project_dir}/Data/{data_name}"
+    if data_name is not None and data_split is not None and memoize:
+        save_dir_path = f"{project_dir}/data/{data_name}"
         if not os.path.exists(save_dir_path):
             os.makedirs(save_dir_path)
 
@@ -66,12 +70,14 @@ def get_eval_data(data_tr, data_te, augs_fn, augs_te, F, precompute_feats=True, 
     precompute_feats    -- whether to precompute features.
     """
     if precompute_feats:
-        return (FeatureDataset(XYDataset(data_tr, augs_fn), F, bs=bs, num_workers=num_workers),
-                FeatureDataset(XYDataset(data_te, augs_te), F, bs=bs, num_workers=num_workers))
+        data_val = FeatureDataset(XYDataset(data_tr, augs_fn), F, bs=bs)
+        data_te = FeatureDataset(XYDataset(data_te, augs_fn), F, bs=bs)
+        return data_val, data_te
     else:
         return XYDataset(data_tr, augs_fn), XYDataset(data_te, augs_te)
 
-def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, epochs=100, bs=64, num_workers=24):
+def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0,
+    epochs=100, bs=64, num_workers=24):
     """Returns the accuracy of a linear model trained on features from [F] of
     [data_tr] on [data_te].
 
@@ -96,7 +102,7 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, 
     F.eval()
     loss_fn = nn.CrossEntropyLoss().to(device)
 
-    for e in tqdm(range(epochs), desc="Validation epochs", leave=False):
+    for e in tqdm(range(1), desc="Validation epochs", leave=False):
         model.train()
 
         scaler = GradScaler()
@@ -106,7 +112,7 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, 
                     x = x.to(device, non_blocking=True)
                     x = x if F is None else F(x)
 
-                model.zero_grad()
+                model.zero_grad(set_to_none=True)
                 loss = loss_fn(model(x), y.to(device, non_blocking=True))
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -116,8 +122,8 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0, 
 
     return accuracy(nn.Sequential(F, model), loader_te)
 
-def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
-    precompute_feats=True, ex_per_class="all", trials=3, epochs=100, bs=64,
+def classification_eval(feature_extractor, data_val, data_te, augs_fn, augs_te,
+    precompute_feats=True, ex_per_class="all", trials=3, epochs=100, bs=256,
     data_name=None, data_split=None, num_workers=24):
     """Returns evaluation accuracy of feature extractor [feature_extractor].
 
@@ -148,27 +154,30 @@ def classification_eval(feature_extractor, data_tr, data_te, augs_fn, augs_te,
         end = (1 + split_index) * (len(idxs) // trials)
         return idxs[start:end] if include else idxs[:start] + idxs[end:]
 
-    label2idxs = get_label2idxs(data_tr, data_name=data_name, data_split=data_split)
+    label2idxs = get_label2idxs(data_val, data_name=data_name, data_split=data_split, memoize=False)
     out_dim = feature_extractor.out_dim
-    num_classes = data_tr.num_classes
+    num_classes = len(label2idxs)
     accuracies = []
 
     for t in tqdm(range(trials), desc="Validation trials"):
 
-        if data_te == "cv":
+        if data_te == "cv" and trials > 1:
             label2idxs_te = {y: get_split_idxs(label2idxs[y], t, include=True)
                              for y in label2idxs}
             label2idxs_tr = {y: get_split_idxs(label2idxs[y], t, include=False)
                              for y in label2idxs}
 
-            if not ex_per_class == "all":
-                idxs_tr = [random.sample(label2idxs_tr[y], ex_per_class)
-                                    for y in label2idxs_tr]
-            else:
+            if ex_per_class == "all":
                 idxs_tr = [idx for y in label2idxs_tr for idx in label2idxs_tr[y]]
+            else:
+                idxs_tr = [random.sample(label2idxs_tr[y], ex_per_class)
+                                    for y in label2idxs_tr]                             
             idxs_te = [idx for y in label2idxs_te for idx in label2idxs_te[y]]
-            trial_data_tr = Subset(data_tr, indices=flatten(idxs_tr))
-            trial_data_te = Subset(data_tr, indices=flatten(idxs_te))
+            
+            trial_data_tr = Subset(data_val, indices=flatten(idxs_tr))
+            trial_data_te = Subset(data_val, indices=flatten(idxs_te))
+        elif data_te == "cv" and trials <= 1:
+            raise ValueError("{trials} trials requested, but at least two are required for cross validation.")
         else:
             if not ex_per_class == "all":
                 idxs_tr = [random.sample(label2idxs[y], ex_per_class)

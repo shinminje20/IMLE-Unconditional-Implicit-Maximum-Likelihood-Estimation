@@ -364,8 +364,7 @@ if __name__ == "__main__":
         # [args] so that we can resume it later.
         args.run_id = wandb.util.generate_id()
         wandb.init(anonymous="allow", id=args.run_id, config=args,
-            mode=args.wandb, project="isicle-generator",
-            name=save_dir.replace(f"{project_dir}/generators/", ""))
+            mode=args.wandb, project="isicle-generator")
         corruptor = Corruption(**vars(args))
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -398,7 +397,11 @@ if __name__ == "__main__":
     loss_fn = nn.DataParallel(ResolutionLoss(), device_ids=args.gpus).to(device)
 
     # Set up the training and evaluation DataLoaders
-    data_tr, data_eval = get_data_splits(args)
+    data_tr, data_eval = get_data_splits(args.data,
+        eval_str="val",
+        res=args.res,
+        data_path=args.data_path)
+
     data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
 
     # Get the evaluation data. We need to do this carefully so as to use

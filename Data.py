@@ -24,18 +24,32 @@ from Corruptions import *
 from utils.Utils import *
 
 ################################################################################
-# Dataset medatata.
+# Dataset medatata. For each dataset, we need to know what splits it has, and
+# what resolutions it exists at. We expect the dictionary below to map to files
+# of the form
+#
+#   data_path/dataset_resolutionxresolution/split
+#
+# and potentially
+# 
+#   data_path/dataset_resolutionxresolution_suffix/split
 ################################################################################
-datasets = ["cifar10", "camnet3", "miniImagenet", "miniImagenet10", "strawberry", "birds", "butterfly"]
+dataset2metdata = {
+    "bird": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
+    "butterfly": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
+    "camnet3": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
+    "strawberry": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
+    "cifar10": {"splits": ["train", "test"], "res": [32]},
+    "miniImagenet": {"splits": ["train", "val", "test"], "res": [32, 64, 128, 256]},
+}
+
 data_suffixes = ["", "_deci", "_centi", "_milli"]
-datasets = flatten([f"{d}{s}" for d in datasets for s in data_suffixes])
-no_val_split_datasets = ["cifar10"]
-small_image_datasets = ["cifar10"]
+datasets = flatten([f"{d}{s}" for d in dataset2metdata for s in data_suffixes])
 
 def data_name_without_suffix(data_name):
-    data_name =  data_name.replace("_deci", "")
-    data_name =  data_name.replace("_centi", "")
-    data_name =  data_name.replace("_milli", "")
+    data_name = data_name.replace("_deci", "")
+    data_name = data_name.replace("_centi", "")
+    data_name = data_name.replace("_milli", "")
     return data_name
 
 def seed_kwargs(seed=0):
@@ -53,7 +67,7 @@ def seed_kwargs(seed=0):
 # Functionality for loading datasets
 ################################################################################
 
-def get_data_splits(args):
+def get_data_splits(data_str, eval_str="cv", res=32, data_path=data_dir):
     """Returns data for training and evaluation. All Datasets returned are
     ImageFolders, meaning that another kind of dataset likely needs to be built
     on top of them.
@@ -85,15 +99,18 @@ def get_data_splits(args):
     ############################################################################
     # CIFAR-10 has its own weird logic
     ############################################################################
-    data_str = args.data
-    data_path = args.data_path
-    eval_str = args.eval if "eval" in vars(args) else "val"
-    res = args.res
+    eval_str = "train" if eval_str == "cv" else eval_str
     
-    if data_str == "cifar10":
-        return (CIFAR10(root=data_path, train=True, download=True),
-                CIFAR10(root=data_path, train=eval_str in ["val", "cv"],
-                    download=True))
+    if data_str not in dataset2metdata:
+        raise ValueError(f"dataset {data_str} not in dataset2metadata dictionary")
+    if not eval_str in dataset2metdata[data_str]["splits"]:
+        raise ValueError(f"dataset {data_str} has no split {eval_str}")
+
+    if data_str == "cifar10" and (res == 32 or all([r == 32 for r in res])):
+        data_tr = CIFAR10(root=data_path, train=True, download=True)
+        data_eval = CIFAR10(root=data_path, train=(eval_str == "train"),
+            download=True)
+        return data_tr, data_eval
 
     data_path = f"{data_path}/{data_str}"
     eval_str = "train" if eval_str == "cv" else eval_str

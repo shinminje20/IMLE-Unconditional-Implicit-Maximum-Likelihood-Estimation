@@ -38,6 +38,7 @@ data/birds*
 data/strawberry*
 generators/*
 generators
+models_simclr
 wandb
 *.zip
 
