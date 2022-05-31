@@ -106,8 +106,8 @@ def suffix_str(args):
 
 def simclr_folder(args):
     """Returns the folder to which to save a resnet trained with [args]."""
-    folder = f"{project_dir}/models_simclr/{args.data}-{args.backbone}{suffix_str(args)}"
-    return experiment_folder(args, folder)
+    folder = f"{project_dir}/models_simclr/{args.data}-{args.backbone}-bs{args.bs}-lr{args.lr}-res{args.res}{suffix_str(args)}"
+    return folder
 
 def generator_folder(args, ignore_conflict=True):
     """Returns the folder to which to save a Generator saved with [args]."""

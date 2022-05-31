@@ -102,7 +102,7 @@ def get_eval_trial_accuracy(data_tr, data_te, F, out_dim, num_classes, trial=0,
     F.eval()
     loss_fn = nn.CrossEntropyLoss().to(device)
 
-    for e in tqdm(range(1), desc="Validation epochs", leave=False):
+    for e in tqdm(range(epochs), desc="Validation epochs", leave=False):
         model.train()
 
         scaler = GradScaler()

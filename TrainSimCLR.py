@@ -34,6 +34,8 @@ if __name__ == "__main__":
         help="path to data if not in normal place")
     P.add_argument("--res", default=128, choices=[32, 64, 128, 256], type=int,
         help="image resolution to load")
+    P.add_argument("--gpus", nargs="+", default=[0, 1],
+        help="GPU IDs to run with")
 
     # Non-hyperparameter arguments
     P.add_argument("--eval_iter", default=10, type=int,
@@ -84,31 +86,50 @@ if __name__ == "__main__":
     ############################################################################
     # Load prior state if it exists, otherwise instantiate a new training run.
     ############################################################################
-    if args.resume is not None:
-        run_id, resume_data = wandb_load(args.resume)
-        cur_seed = set_seed(resume_data["seed"])
-        data_path = args.data_path
+    save_dir = simclr_folder(args)
+    if str(args.resume).isdigit():
+        args.resume = int(args.resume) - 1
+        if int(args.resume) == -1:
+            resume_file = None
+        elif os.path.exists(f"{save_dir}/{args.resume}.pt"):
+            resume_file = f"{save_dir}/{args.resume}.pt"
+        else:
+            raise ValueError(f"File {save_dir}/{args.resume}.pt doesn't exist")
+    elif isinstance(args.resume, str):
+        resume_file = args.resume
+    else:
+        resume_file = None
 
-        wandb.init(id=run_id, resume="must", project="isicle-simclr", config=args)
+    if resume_file is not None:
+        resume_data = torch.load(resume_file)
+        curr_args = args
+        args = resume_data["args"]
+        args.data_path = curr_args.data_path
+        args.gpus = curr_args.gpus
+        args.wandb = curr_args.wandb
+        save_dir = simclr_folder(args)
+        cur_seed = set_seed(resume_data["seed"])
+
+        wandb.init(id=args.run_id, resume="must", mode=args.wandb,
+            project="isicle-simclr", config=args)
         wandb.save("*.pt")
         model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
+        scheduler = resume_data["scheduler"]
         last_epoch = resume_data["last_epoch"]
         args = resume_data["args"]
-        args.data_path = data_path
-
         save_dir = simclr_folder(args)
     else:
-        cur_seed = set_seed(args.seed)
-        args.run_id = wandb.util.generate_id()
+        cur_seed = set_seed(args.seed) 
         save_dir = simclr_folder(args)
-
+        args.run_id = wandb.util.generate_id()
         wandb.init(anonymous="allow", id=args.run_id, project="isicle-simclr",
             mode=args.wandb, config=args)
 
         model = HeadedResNet(args.backbone, args.proj_dim,
             head_type="projection",
-            small_image=(args.res < 64)).to(device)
+            small_image=(args.res < 64))
+        model = nn.DataParallel(model, device_ids=args.gpus).to(device)
         if args.lars:
             optimizer = Adam(lars_params(model), lr=args.lr, weight_decay=1e-6)
             optimizer = LARS(optimizer, args.trust)
@@ -140,10 +161,12 @@ if __name__ == "__main__":
         **seed_kwargs(cur_seed))
 
     loss_fn = NTXEntLoss(args.temp)
-    scheduler = CosineAnnealingWarmupRestarts(optimizer,
-        first_cycle_steps=args.epochs * len(loader),
-        max_lr=args.lr,  min_lr=1e-6,
-        warmup_steps=args.n_ramp * len(loader), last_epoch=last_epoch)
+
+    if resume_file is None:
+        scheduler = CosineAnnealingWarmupRestarts(optimizer,
+            first_cycle_steps=args.epochs * len(loader),
+            max_lr=args.lr,  min_lr=1e-6,
+            warmup_steps=args.n_ramp * len(loader), last_epoch=last_epoch)
 
     ############################################################################
     # Begin training!
@@ -180,7 +203,7 @@ if __name__ == "__main__":
 
         epoch_loss = epoch_loss.item()
         if e % args.eval_iter == 0 and not e == 0 and args.eval_iter > 0:
-            val_acc_avg, val_acc_std = classification_eval(model.backbone,
+            val_acc_avg, val_acc_std = classification_eval(model.module.backbone,
                 data_eval, "cv", augs_fn, augs_te,
                 data_name=args.data,
                 data_split=args.eval,
@@ -193,10 +216,11 @@ if __name__ == "__main__":
         else:
             tqdm.write(f"End of epoch {e} | lr {scheduler.get_lr()[0]:.5f} | average loss over epoch {epoch_loss / len(loader):.5f}")
 
-        if e % args.save_iter == 0 and not e == 0:
+        if e % args.save_iter == 0:
             save_checkpoint({"model": model.cpu(),
                 "last_epoch": e, "args": args, "scheduler": scheduler,
                 "optimizer": optimizer}, f"{save_dir}/{e}.pt")
             tqdm.write("Saved training state")
+            model = model.to(device)
 
         
