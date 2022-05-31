@@ -114,28 +114,28 @@ def get_data_splits(args):
 ################################################################################
 # Augmentations
 ################################################################################
-def get_real_augs(crop_size=32):
+def get_real_augs(res=32):
     """Returns augmentations that ensure images remain on the real manifold."""
     augs_tr = transforms.Compose([
-        transforms.RandomResizedCrop(crop_size),
+        transforms.RandomResizedCrop(res),
         transforms.RandomHorizontalFlip(p=0.5),
         transforms.ToTensor()
     ])
 
     augs_te = transforms.Compose([
-        transforms.RandomResizedCrop(crop_size),
+        transforms.RandomResizedCrop(res),
         transforms.ToTensor()])
 
     return augs_tr, augs_tr, augs_te
 
-def get_contrastive_augs(crop_size=32, gaussian_blur=False, color_s=0):
+def get_contrastive_augs(res=32, gaussian_blur=False, color_s=0):
     """Returns a (SSL transforms, finetuning transforms, testing transforms)
     tuple based on [data_str].
 
     Args:
-    data_str  -- a string specifying the dataset to get transforms for
-    color_s   -- the strength of color distortion
-    strong    -- whether to use strong augmentations or not
+    res             -- the resolution of images output by the transforms
+    gaussian_blur   -- whether to use Gaussian blur or not
+    color_s         -- color distortion strength
     """
     color_jitter = transforms.ColorJitter(0.8 * color_s,
          0.8 * color_s, 0.8 * color_s, 0.2 * color_s)
@@ -143,12 +143,12 @@ def get_contrastive_augs(crop_size=32, gaussian_blur=False, color_s=0):
         transforms.RandomApply([color_jitter], p=0.8),
         transforms.RandomGrayscale(p=0.2)])
 
-    augs_tr_list = [transforms.RandomResizedCrop(crop_size)]
+    augs_tr_list = [transforms.RandomResizedCrop(res)]
 
     if color_s > 0:
         augs_tr_list.append(color_distortion)
     if gaussian_blur:
-        augs_tr_list.append(transforms.GaussianBlur(23, sigma=(.1, 2)))
+        augs_tr_list.append(transforms.GaussianBlur(res // 10, sigma=(.1, 2)))
 
     augs_tr_list += [
         transforms.RandomHorizontalFlip(p=0.5),
@@ -158,7 +158,7 @@ def get_contrastive_augs(crop_size=32, gaussian_blur=False, color_s=0):
     augs_tr = transforms.Compose(augs_tr_list)
 
     augs_te = transforms.Compose([
-        transforms.RandomResizedCrop(crop_size),
+        transforms.RandomResizedCrop(res),
         transforms.ToTensor()])
 
     return augs_tr, augs_tr, augs_te

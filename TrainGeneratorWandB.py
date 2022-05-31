@@ -254,9 +254,6 @@ def get_args(args=None):
         help="GPU ids")
     
     # Training hyperparameter arguments. These are logged!
-    P.add_argument("--lr_decay", default="cosine",
-        choices=["cosine", "cosine-restarts"],
-        help="learning rate decay strategy")
     P.add_argument("--data", required=True, choices=datasets,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
@@ -273,7 +270,7 @@ def get_args(args=None):
         help="batch size")
     P.add_argument("--ns", type=int, nargs="+", default=[128],
         help="number of samples for IMLE")
-    P.add_argument("--ipc", type=int, default=1024,
+    P.add_argument("--ipc", type=int, default=10240,
         help="Effective gradient steps per set of codes. --ipc // --mini_bs is equivalent to num_days in the original CAMNet formulation")
     P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
@@ -361,7 +358,7 @@ if __name__ == "__main__":
 
     if resume_file is None:
         save_dir = generator_folder(args, ignore_conflict=False)
-        set_seed(args.seed)
+        cur_seed = set_seed(args.seed)
 
         # Setup the experiment. Importantly, we copy the experiment's ID to
         # [args] so that we can resume it later.
@@ -386,10 +383,10 @@ if __name__ == "__main__":
         args.chunk_epochs = curr_args.chunk_epochs
         args.wandb = curr_args.wandb
         save_dir = generator_folder(args)
-        set_seed(resume_data["seed"])
+        cur_seed = set_seed(resume_data["seed"])
 
         wandb.init(id=args.run_id, resume="must", mode=args.wandb,
-            project="isicle-generator", )
+            project="isicle-generator", config=args)
 
         model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
@@ -412,7 +409,7 @@ if __name__ == "__main__":
     data_eval = Subset(data_eval, indices=range(0, len(data_eval), eval_len))
 
     loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
-        batch_size=max(len(args.gpus), args.bs), num_workers=8, drop_last=True)
+        batch_size=max(len(args.gpus), args.bs), num_workers=8, drop_last=True, **seed_kwargs(cur_seed))
     loader_eval = DataLoader(data_eval, shuffle=False,
         batch_size=max(len(args.gpus), args.mini_bs // args.spi), num_workers=8,
         drop_last=True)
@@ -430,21 +427,10 @@ if __name__ == "__main__":
     ########################################################################
     if resume_file is None:
         cycle_size = args.ipc // args.mini_bs
-        if args.lr_decay == "cosine-restarts":
-            scheduler = CosineAnnealingWarmupRestarts(optimizer,
-                first_cycle_steps=cycle_size,
-                gamma=.05 ** (1 / (args.epochs * len(loader_tr))),
-                max_lr=args.lr,
-                min_lr=1e-6,
-                warmup_steps=int(cycle_size ** .5) // 2,
-                last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
-        elif args.lr_decay == "cosine":
-            scheduler = CosineAnnealingLR(optimizer,
-                args.epochs * len(loader_tr) * cycle_size,
-                eta_min=1e-8,
-                last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
-        else:
-            raise ValueError(f"Unknown scheduler {args.lr_decay}")
+        scheduler = CosineAnnealingLR(optimizer,
+            args.epochs * len(loader_tr) * cycle_size,
+            eta_min=1e-8,
+            last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
 
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
