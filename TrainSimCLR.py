@@ -3,7 +3,7 @@ from tqdm import tqdm
 import wandb
 
 import torch
-from torch.optim import Adam, SGD
+from torch.optim import Adam
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torch.cuda.amp import GradScaler, autocast
@@ -15,6 +15,8 @@ from Evaluation import classification_eval
 from utils.UtilsContrastive import *
 from utils.Utils import *
 from utils.UtilsNN import *
+
+from torchlars import LARS
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="SimCLR training")
@@ -131,7 +133,8 @@ if __name__ == "__main__":
             small_image=(args.res < 64))
         model = nn.DataParallel(model, device_ids=args.gpus).to(device)
         if args.lars:
-            optimizer = Adam(lars_params(model), lr=args.lr, weight_decay=1e-6)
+            # optimizer = Adam(lars_params(model), lr=args.lr, weight_decay=1e-6)
+            optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
             optimizer = LARS(optimizer, args.trust)
         else:
             optimizer = Adam(model.parameters(), lr=args.lr, weight_decay=1e-6)
@@ -171,7 +174,7 @@ if __name__ == "__main__":
     ############################################################################
     # Begin training!
     ############################################################################
-    for e in tqdm(range(max(last_epoch + 1, 1), args.epochs + 1),
+    for e in tqdm(range(max(last_epoch + 1, 0), args.epochs + 1),
         desc="Epochs",
         dynamic_ncols=True):
 
@@ -222,5 +225,4 @@ if __name__ == "__main__":
                 "optimizer": optimizer}, f"{save_dir}/{e}.pt")
             tqdm.write("Saved training state")
             model = model.to(device)
-
         
