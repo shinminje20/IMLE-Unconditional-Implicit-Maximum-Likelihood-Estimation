@@ -144,7 +144,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 level_codes[level_idx][change_idxs] = new_codes[change_idxs]
                 least_losses[change_idxs] = losses[change_idxs]
 
-    return level_codes
+    return [l.cpu() for l in level_codes]
 
 def get_codes_in_chunks(cx, y, model, z_gen, loss_fn, num_samples=16,
     sample_parallelism=16, code_bs=128):
@@ -186,7 +186,7 @@ def get_codes_in_chunks(cx, y, model, z_gen, loss_fn, num_samples=16,
             num_samples=num_samples,
             sample_parallelism=sample_parallelism)
         level_codes = [torch.cat(c) for c in zip(level_codes, chunk_codes)]
-    
+
     return level_codes
 
 def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
@@ -203,12 +203,12 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
 
     Returns:
     results     -- 2D grid of images to show
-    loss        -- loss for the returned images. Because it's computed over
-                    only the last level, it will be much less than recorded
-                    training loss.
+    loss        -- average (LPIPS, MSE, Resolution) losses for the images.
+                    Because it's computed over only the last level, the
+                    Resolution loss will be less than recorded training loss
     """
     results = []
-    loss = 0
+    lpips_loss, mse_loss, combined_loss = 0, 0, 0
     with torch.no_grad():
         for x,y in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
             bs = len(x)
@@ -216,18 +216,20 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
             cx_expanded = cx.repeat_interleave(args.spi, dim=0)
             codes = z_gen(bs * args.spi, level="all", input="show_components")
             outputs = model(cx_expanded, codes, loi=-1)
-            losses = loss_fn(outputs, y[-1])
+            lpips_loss_, mse_loss_, combined_loss_ = loss_fn(outputs, y[-1], return_metrics=True)
             outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
-            idxs = torch.argsort(losses.view(bs, args.spi), dim=-1)
+            idxs = torch.argsort(combined_loss_.view(bs, args.spi), dim=-1)
             outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
             images = [[s for s in samples] for samples in outputs]
             images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
 
-            loss += losses.mean().item()
+            lpips_loss += lpips_loss_.mean().item()
+            mse_loss += mse_loss_.mean().item()
+            combined_loss += combined_loss_.mean().item()
             results += images
 
-    return results, loss / len(loader_eval)
+    return results, lpips_loss / len(loader_eval), mse_loss / len(loader_eval), combined_loss / len(loader_eval)
 
 def get_args(args=None):
     P = argparse.ArgumentParser(description="CAMNet training")
@@ -252,12 +254,14 @@ def get_args(args=None):
         help="GPU ids")
     P.add_argument("--code_bs", type=int, default=128,
         help="GPU ids")
-    
+
     # Training hyperparameter arguments. These are logged!
     P.add_argument("--data", required=True, choices=datasets,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
         help="resolutions to see data at")
+    P.add_argument("--alpha", type=float, default=.1,
+        help="Amount of weight on MSE loss")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
     P.add_argument("--proj_dim", default=1000, type=int,
@@ -318,7 +322,7 @@ def get_args(args=None):
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
-    
+
     args = P.parse_args() if args is None else P.parse_args(args)
     args.levels = len(args.res) - 1
     args.ns = make_list(args.ns, length=args.levels)
@@ -444,16 +448,16 @@ if __name__ == "__main__":
     for e in tqdm(range(last_epoch + 1, end_epoch),
         desc="Epochs",
         dynamic_ncols=True):
-        
+
         for batch_idx,(x,ys) in tqdm(enumerate(loader_tr),
             desc="Batches",
             leave=False,
             dynamic_ncols=True,
             total=len(loader_tr)):
             batch_loss = 0
-            
+
             ys = [y.to(device, non_blocking=True) for y in ys]
-            cx = corruptor(x.to(device, non_blocking=True))         
+            cx = corruptor(x.to(device, non_blocking=True))
             codes = get_codes_in_chunks(cx, ys, model, z_gen, loss_fn,
                 num_samples=args.ns,
                 sample_parallelism=args.sp,
@@ -475,12 +479,12 @@ if __name__ == "__main__":
                 codes = [c.to(device) for c in codes]
                 ys = [y.to(device) for y in ys]
 
-                fx = model(cx, codes, loi=None)                    
-                loss = compute_loss_over_list(fx, ys, loss_fn)    
+                fx = model(cx, codes, loi=None)
+                loss = compute_loss_over_list(fx, ys, loss_fn)
                 loss.backward()
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
-                
+
                 scheduler.step()
                 batch_loss += loss.detach()
                 cur_step += 1
@@ -488,25 +492,27 @@ if __name__ == "__main__":
                     "minibatch loss": loss.detach(),
                     "learning rate": get_lr(scheduler)[0]
                 }, step=cur_step)
-                
+
             batch_loss = batch_loss / args.ipc
             del x, codes, ys, loss, cx
 
             ####################################################################
             # Log data after each batch
             ####################################################################
-            images_val, loss_val = validate(corruptor, model, z_gen,
-                loader_eval, loss_fn, args)
+            images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
+                corruptor, model, z_gen, loader_eval, loss_fn, args)
             images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
             save_image_grid(images_val, images_file)
             wandb.log({
-                "validation loss": loss_val,
+                "LPIPS loss": lpips_loss_val,
+                "MSE loss": mse_loss_val,
+                "combined loss": comb_loss_val,
                 "generated images": wandb.Image(images_file),
             }, step=cur_step)
-            
-            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {get_lr(scheduler)[0]:.5e} | loss_val {loss_val:.5e}")
 
-            del images_val, loss_val
+            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {get_lr(scheduler)[0]:.5e} | loss_val {comb_loss_val:.5e}")
+
+            del images_val, lpips_loss_val, mse_loss_val, comb_loss_val
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,

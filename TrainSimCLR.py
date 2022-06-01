@@ -174,7 +174,7 @@ if __name__ == "__main__":
     ############################################################################
     # Begin training!
     ############################################################################
-    for e in tqdm(range(max(last_epoch + 1, 0), args.epochs + 1),
+    for e in tqdm(range(max(last_epoch + 1, 0), args.epochs),
         desc="Epochs",
         dynamic_ncols=True):
 

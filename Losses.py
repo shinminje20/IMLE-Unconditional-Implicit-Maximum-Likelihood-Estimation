@@ -36,13 +36,16 @@ class ResolutionLoss(nn.Module):
         self.lpips = ProjectedLPIPSFeats(proj_dim=proj_dim)
         self.alpha = alpha
 
-    def forward(self, fx, y):
+    def forward(self, fx, y, return_metrics=False):
         lpips_loss = compute_loss_over_list(self.lpips(fx), self.lpips(y),
             batch_mse, list_reduction="batch")
+        mse_loss = batch_mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1))
+        result = lpips_loss + self.alpha * mse_loss
 
-        mse = batch_mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1))
-        result = lpips_loss + self.alpha * mse
-        return result.squeeze()
+        if return_metrics:
+            return lpips_loss, mse_loss, result
+        else:
+            return result.squeeze()
 
 class ProjectedLPIPSFeats(nn.Module):
     """Returns loss between LPIPS features of generated and target images."""
