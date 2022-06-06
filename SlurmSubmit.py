@@ -18,13 +18,17 @@ from utils.Utils import *
 
 def get_time(hours):
     """Returns [hours] in SLURM string form.
-
     Args:
     hours   (int) -- the number of hours to run one chunk for
     """
-    days = hours // 24
-    hours = hours % 24
-    return f"{days}-{hours - 1}:59:59"
+    total_seconds = (hours * 3600) - 1
+    days = total_seconds // (3600 * 24)
+    total_seconds = total_seconds % (3600 * 24)
+    hours = total_seconds // 3600
+    total_seconds = total_seconds % 3600
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    return f"{days}-{hours}:{minutes}:{seconds}"
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser()
