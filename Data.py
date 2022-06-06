@@ -34,7 +34,8 @@ from utils.Utils import *
 # 
 #   data_path/dataset_resolutionxresolution_suffix/split
 ################################################################################
-dataset2metdata = {
+data_suffixes = ["", "_deci", "_centi", "_milli"]
+dataset2metadata = {
     "bird": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
     "butterfly": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
     "camnet3": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
@@ -42,9 +43,9 @@ dataset2metdata = {
     "cifar10": {"splits": ["train", "test"], "res": [32]},
     "miniImagenet": {"splits": ["train", "val", "test"], "res": [32, 64, 128, 256]},
 }
-
-data_suffixes = ["", "_deci", "_centi", "_milli"]
-datasets = flatten([f"{d}{s}" for d in dataset2metdata for s in data_suffixes])
+dataset2metadata = {f"{d}{s}": v for d,v in dataset2metadata.items()
+    for s in data_suffixes}
+datasets = dataset2metadata.keys()
 
 def data_name_without_suffix(data_name):
     data_name = data_name.replace("_deci", "")
@@ -101,9 +102,9 @@ def get_data_splits(data_str, eval_str="cv", res=32, data_path=data_dir):
     ############################################################################
     eval_str = "train" if eval_str == "cv" else eval_str
     
-    if data_str not in dataset2metdata:
+    if data_str not in dataset2metadata:
         raise ValueError(f"dataset {data_str} not in dataset2metadata dictionary")
-    if not eval_str in dataset2metdata[data_str]["splits"]:
+    if not eval_str in dataset2metadata[data_str]["splits"]:
         raise ValueError(f"dataset {data_str} has no split {eval_str}")
 
     if data_str == "cifar10" and (res == 32 or all([r == 32 for r in res])):
