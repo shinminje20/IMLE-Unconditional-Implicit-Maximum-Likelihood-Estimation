@@ -25,21 +25,42 @@ from utils.Utils import *
 
 ################################################################################
 # Dataset medatata. For each dataset, we need to know what splits it has, and
-# what resolutions it exists at. We expect the dictionary below to map to files
-# of the form
+# what resolutions it exists at. The initial declaration of [dataset2metadata]
+# gives the "base" datasets known to the repository. For instance, the folder
 #
-#   data_path/dataset_resolutionxresolution/split
+#   data_dir/bird_128x128/val
 #
-# and potentially
-# 
-#   data_path/dataset_resolutionxresolution_suffix/split
+# can be turned into an ImageFolder, where [data_dir] is usually but not
+# necessarily the data folder (if it isn't, the --data_path argument must be
+# specified).
+#
+# Because datasets may be large, one can specify a suffix for each that will
+# indicate how much smaller it is. The exact amount by which such a dataset can
+# be smaller is somewhat interpretive so it can be done intelligently. For
+# instance, the camnet3 dataset contains 3840 training examples and 60
+# validation examples, each divided evenly into three classes. The camnet3_centi
+# dataset would likely contain 36≈3840 / 100 training examples—36 is easier to
+# work with than 38—and the same 60 validation samples, as 60 is already small.
+# Making the size of a dataset smaller would typically not impact the
+# resolutions we maintain for it. The training split of the camnet3_centi
+# dataset, at, say, 32x32 resolution would then require its own
+# ImageFolder-compatiblefolder at
+#
+#   data_dir/camnet3_centi_32x32/train
+#
+# Datasets can be resized via the MakeSmallDataset.py script in the data folder.
+#
+# It is assumed that all suffixes exist for all datasets in this code. This is
+# not necessarily the case, and as such [datasets] contains a superset of the
+# actually available data. This permits less memory usage, and constructing a
+# dataset where the underlying data is missing will throw an error.
 ################################################################################
 data_suffixes = ["", "_deci", "_centi", "_milli"]
 dataset2metadata = {
-    "bird": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
-    "butterfly": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
-    "camnet3": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
-    "strawberry": {"splits": ["train", "val"], "res": [16, 32, 63, 128, 256]},
+    "bird": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
+    "butterfly": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
+    "camnet3": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
+    "strawberry": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
     "cifar10": {"splits": ["train", "test"], "res": [32]},
     "miniImagenet": {"splits": ["train", "val", "test"], "res": [32, 64, 128, 256]},
 }
