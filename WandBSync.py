@@ -1,5 +1,6 @@
 import os
 from tqdm import tqdm
+import shutil
 
 files = [f"wandb/{f}" for f in os.listdir("wandb") if f.startswith("offline")]
 for f in tqdm(files):
@@ -8,10 +9,10 @@ for f in tqdm(files):
     with open("wandb_sync_results.txt", "r") as f:
         result = f.read()
 
-    if result.endswith("done."):
+    if result.strip().endswith("done."):
         continue
     else:
-        shutil.rmtree(f)
+        # shutil.rmtree(f)
         tqdm.write(f"{f} threw an error, and it was removed")
 
 shutil.rmtree("wandb_sync_results.txt")
