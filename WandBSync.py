@@ -12,7 +12,7 @@ for f in tqdm(files):
     if result.strip().endswith("done."):
         continue
     else:
-        # shutil.rmtree(f)
+        shutil.rmtree(f)
         tqdm.write(f"{f} threw an error, and it was removed")
 
 os.remove("wandb_sync_results.txt")
