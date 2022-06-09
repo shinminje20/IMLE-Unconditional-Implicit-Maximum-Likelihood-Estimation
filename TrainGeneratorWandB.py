@@ -400,32 +400,46 @@ if __name__ == "__main__":
     # Set up the loss function
     loss_fn = nn.DataParallel(ResolutionLoss(), device_ids=args.gpus).to(device)
 
-    # Set up the training and evaluation DataLoaders
+    ############################################################################
+    # Set up the Datasets and DataLoaders. We need to to treat datasets where
+    # the distribution is the different for training and validation splits
+    # (eg. miniImagenet) differently from those where it's the same. We're more
+    # interested in within-distribution learning.
+    ############################################################################
+    same_distribution_splits = dataset2metadata[args.data]["same_distribution_splits"]
     data_tr, data_eval = get_data_splits(args.data,
-        eval_str="val",
+        eval_str="val" if same_distribution_splits else "cv",
         res=args.res,
         data_path=args.data_path)
-
     data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
-
-    # Get the evaluation data. We need to do this carefully so as to use
-    # DataParallel and not have the data get dropped in the DataLoader.
     data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
+
     eval_len = len(data_eval) // (args.spi + 2)
     eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-    data_eval = Subset(data_eval, indices=range(0, len(data_eval), eval_len))
+    eval_idxs = set(range(0, len(data_eval), eval_len))
+    data_eval = Subset(data_eval, indices=list(eval_idxs))
 
-    loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
-        batch_size=max(len(args.gpus), args.bs), num_workers=8, drop_last=True, **seed_kwargs(cur_seed))
-    loader_eval = DataLoader(data_eval, shuffle=False,
-        batch_size=max(len(args.gpus), args.mini_bs // args.spi), num_workers=8,
+    if not same_distribution_splits:
+        idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
+        data_tr = Subset(data_tr, indices=idxs)
+
+    loader_tr = DataLoader(data_tr,
+        pin_memory=True,
+        shuffle=True,
+        batch_size=max(len(args.gpus), args.bs),
+        num_workers=8,
+        drop_last=True,
+        **seed_kwargs(cur_seed))
+    loader_eval = DataLoader(data_eval,
+        shuffle=False,
+        batch_size=max(len(args.gpus), args.mini_bs // args.spi),
+        num_workers=8,
         drop_last=True)
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
     # [sample_method] input.
-    z_gen = partial(get_z_gen,
-        get_z_dims(args),
+    z_gen = partial(get_z_gen, get_z_dims(args),
         sample_method=args.sample_method)
 
     ########################################################################

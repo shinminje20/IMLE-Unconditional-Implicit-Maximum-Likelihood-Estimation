@@ -57,12 +57,23 @@ from utils.Utils import *
 ################################################################################
 data_suffixes = ["", "_deci", "_centi", "_milli"]
 dataset2metadata = {
-    "bird": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
-    "butterfly": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
-    "camnet3": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
-    "strawberry": {"splits": ["train", "val"], "res": [16, 32, 64, 128, 256]},
-    "cifar10": {"splits": ["train", "test"], "res": [32]},
-    "miniImagenet": {"splits": ["train", "val", "test"], "res": [32, 64, 128, 256]},
+    "bird": {"splits": ["train", "val"],
+        "res": [16, 32, 64, 128, 256],
+        "same_distribution_splits": True},
+    "butterfly": {"splits": ["train", "val"],
+        "res": [16, 32, 64, 128, 256],
+        "same_distribution_splits": True},
+    "camnet3": {"splits": ["train", "val"],
+        "res": [16, 32, 64, 128, 256],
+        "same_distribution_splits": True},
+    "strawberry": {"splits": ["train", "val"],
+        "res": [16, 32, 64, 128, 256],
+        "same_distribution_splits": True},
+    "cifar10": {"splits": ["train", "test"],
+        "res": [32]},
+    "miniImagenet": {"splits": ["train", "val", "test"],
+        "res": [32, 64, 128, 256],
+        "same_distribution_splits": False},
 }
 dataset2metadata = {f"{d}{s}": v for d,v in dataset2metadata.items()
     for s in data_suffixes}
@@ -118,24 +129,21 @@ def get_data_splits(data_str, eval_str="cv", res=32, data_path=data_dir):
         else:
             return PreAugmentedImageFolder(paths)
 
-    ############################################################################
-    # CIFAR-10 has its own weird logic
-    ############################################################################
+    data_path = f"{data_path}/{data_str}"
     eval_str = "train" if eval_str == "cv" else eval_str
-    
     if data_str not in dataset2metadata:
         raise ValueError(f"dataset {data_str} not in dataset2metadata dictionary")
     if not eval_str in dataset2metadata[data_str]["splits"]:
         raise ValueError(f"dataset {data_str} has no split {eval_str}")
 
+    ############################################################################
+    # CIFAR-10 has its own weird logic
+    ############################################################################
     if data_str == "cifar10" and (res == 32 or all([r == 32 for r in res])):
         data_tr = CIFAR10(root=data_path, train=True, download=True)
         data_eval = CIFAR10(root=data_path, train=(eval_str == "train"),
             download=True)
         return data_tr, data_eval
-
-    data_path = f"{data_path}/{data_str}"
-    eval_str = "train" if eval_str == "cv" else eval_str
 
     if res is None:
         data_paths_tr = f"{data_path}/train"
@@ -144,11 +152,38 @@ def get_data_splits(data_str, eval_str="cv", res=32, data_path=data_dir):
         res = res if isinstance(res, int) else res[0]
         data_paths_tr = f"{data_path}_{res}x{res}/train"
         data_paths_eval = f"{data_path}_{res}x{res}/{eval_str}"
-    else:
+    elif isinstance(res, list) and len(res) > 1:
         data_paths_tr = [f"{data_path}_{r}x{r}/train" for r in res]
         data_paths_eval = [f"{data_path}_{r}x{r}/{eval_str}" for r in res]
+    else:
+        raise ValueError(f"Unmatched type for `res`: {res}")
 
     return path_to_imagefolder(data_paths_tr), path_to_imagefolder(data_paths_eval)
+
+def get_artificial_train_val_splits(data, val_size=None, val_fraction=None):
+    """Returns a (training data, validation data) tuple by splitting [data]
+    according to [val_size] or [val_fraction], with the validationd data chosen
+    evenly spaced within [data].
+    """
+    if val_fraction is not None and (val_fraction < 0 or val_fraction > 1):
+        raise ValueError(f"Got `val_fraction` of {val_fraction}, but it must be in [0, 1].")
+    if val_size is not None and val_size > len(data):
+        raise ValueError(f"Got `val_size` of {val_size} but only {len(data)} examples exist.")
+
+    if val_size is not None and val_fraction is not None:
+        val_length = max(val_size, int(val_frac * len(data)))
+        tqdm.write("Both `val_fraction` and `val_size` are specified. Whichever leads to a larger validation split will is used, giving a validation split of length {val_length}.")
+    elif val_size is not None:
+        val_length = val_size
+    elif val_fraction is not None:
+        val_length = int(val_frac * len(data))
+    else:
+        raise ValueError("Impossible case")
+
+    val_idxs = set(range(0, len(data), len(data) // val_length))
+    train_idxs = {idx for idx in range(len(data)) if not idx in val_idxs}
+    return Subset(data, indices=train_idxs), Subset(data, indices=val_idxs)
+
 
 ################################################################################
 # Augmentations
