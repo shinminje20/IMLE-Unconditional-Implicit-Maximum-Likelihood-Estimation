@@ -252,7 +252,7 @@ def get_args(args=None):
         help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
     P.add_argument("--gpus", type=int, default=[0, 1], nargs="+",
         help="GPU ids")
-    P.add_argument("--code_bs", type=int, default=128,
+    P.add_argument("--code_bs", type=int, default=2,
         help="GPU ids")
 
     # Training hyperparameter arguments. These are logged!
@@ -268,7 +268,7 @@ def get_args(args=None):
         help="projection dimensionality")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
-    P.add_argument("--bs", type=int, default=64,
+    P.add_argument("--bs", type=int, default=512,
         help="batch size")
     P.add_argument("--mini_bs", type=int, default=8,
         help="batch size")
@@ -334,6 +334,8 @@ def get_args(args=None):
         if not (ns * sp) % len(args.gpus) == 0:
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
+
+    assert args.code_bs >= len(args.gpus)
 
     if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
         raise ValueError(f"--ipc should be a multiple of --mini_bs")

@@ -56,8 +56,13 @@ if __name__ == "__main__":
         raise ValueError(f"Unknown script '{submission_args.script}")
 
     SCRIPT = f"python {submission_args.script} {' '.join(unparsed_script_args)} --resume $SLURM_ARRAY_TASK_ID --jobid $SLURM_ARRAY_JOB_ID --data_path ~/scratch/ISICLE/data"
+
+    # Set --wandb to 'offline' unless otherwise specified
+    if not "--wandb" in unparsed_script_args:
+        SCRIPT = f"{SCRIPT} --wandb offline"
+
     slurm_template = slurm_template.replace("SCRIPT", SCRIPT)
-    
+
     slurm_script = f"slurm/_{NAME}.sh"
     with open(slurm_script, "w+") as f:
         f.write(slurm_template)
