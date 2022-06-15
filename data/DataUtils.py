@@ -11,7 +11,7 @@ data_dir = os.path.dirname(os.path.abspath(__file__))
 def fix_data_path(path):
     """Corrects errors in a path that can happen due to data renaming."""
     return path.replace("__", "_").replace("_-", "-").replace("--", "-")
-    
+
 def has_res(data_name):
     try:
         find_data_res(data_name)
