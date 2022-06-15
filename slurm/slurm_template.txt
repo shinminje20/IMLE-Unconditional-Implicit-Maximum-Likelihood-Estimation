@@ -45,6 +45,6 @@ SCRIPT
 # Print completion time.
 date
 
-echo "----- START OF TASK $SLURM_ARRAY_TASK_ID -----" >> job_results/%x_all_results.txt
-cat job_results/%x_%a.txt >> job_results/%x_all_results.txt
-rm job_results/%x_%a.txt
+echo "----- START OF TASK $SLURM_ARRAY_TASK_ID -----" >> job_results/NAME_all_results.txt
+cat job_results/NAME_$SLURM_ARRAY_TASK_ID.txt >> job_results/NAME_all_results.txt
+rm job_results/NAME_$SLURM_ARRAY_TASK_ID.txt
