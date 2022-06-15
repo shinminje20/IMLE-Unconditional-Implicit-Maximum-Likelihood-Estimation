@@ -52,6 +52,17 @@ if __name__ == "__main__":
         slurm_template = slurm_template.replace("TIME", TIME)
         slurm_template = slurm_template.replace("NAME", NAME)
         slurm_template = slurm_template.replace("NUM_GPUS", NUM_GPUS)
+    if submission_args.script == "TrainGeneratorWandB16Bit.py":
+        from TrainGeneratorWandB16Bit import get_args
+        args = get_args(unparsed_script_args)
+        CHUNKS = str(args.epochs - 1)
+        NAME = generator_folder(args).replace(f"{project_dir}/generators/", "")
+        NUM_GPUS = str(len(args.gpus))
+        TIME = get_time(submission_args.time)
+        slurm_template = slurm_template.replace("CHUNKS", CHUNKS)
+        slurm_template = slurm_template.replace("TIME", TIME)
+        slurm_template = slurm_template.replace("NAME", NAME)
+        slurm_template = slurm_template.replace("NUM_GPUS", NUM_GPUS)
     else:
         raise ValueError(f"Unknown script '{submission_args.script}")
 
@@ -69,7 +80,3 @@ if __name__ == "__main__":
 
     tqdm.write(f"Running\t{SCRIPT}")
     os.system(f"sbatch {slurm_script}")
-    
-    
-
-

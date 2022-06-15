@@ -2,7 +2,7 @@ import argparse
 from collections import defaultdict
 from datetime import datetime
 from tqdm import tqdm
-from comet_ml import Experiment, ExistingExperiment
+import wandb
 
 import torch.nn as nn
 import torch.nn.functional as F
@@ -82,13 +82,17 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
     sp          -- list of sample parallelisms, one for each level
     num_samples -- list of numbers of samples, one for each level
     """
+    num_failed_computations, num_computations = 0, 0
     num_samples = make_list(num_samples, len(y))
     sample_parallelism = make_list(sample_parallelism, len(y))
 
     bs = len(cx)
     level_codes = z_gen(bs, level="all")
     with torch.no_grad():
-        for level_idx in tqdm(range(len(num_samples)), desc="Levels", leave=False, dynamic_ncols=True):
+        for level_idx in tqdm(range(len(num_samples)),
+            desc="Sampling: levels",
+            leave=False,
+            dynamic_ncols=True):
 
             # Get inputs for sampling for the current level. We need to
             # store the least losses we have for each example, and to find
@@ -109,7 +113,10 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 iter_range = range(ns // sp + 1)
                 sps = make_list(sp, length=ns // sp) + [ns % sp]
 
-            for idx in tqdm(iter_range, desc="Sampling", leave=False, dynamic_ncols=True):
+            for idx in tqdm(iter_range,
+                desc="Sampling: iterations over level",
+                leave=False,
+                dynamic_ncols=True):
 
                 # Get the sample parallelism for this trial. Then, get new
                 # codes to sample for the CAMNet level currently being
@@ -118,9 +125,19 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 new_codes = z_gen(bs * sp, level=level_idx)
                 test_codes = old_codes + [new_codes]
 
-                # Compute loss for the new codes.
-                outputs = model(cx, test_codes, loi=level_idx)
-                losses = loss_fn(outputs, y[level_idx])
+                # Compute loss for the new codes using autocast. If this
+                # generates NaNs or Infs, try again without autocasting. Log
+                # the result, so we know in general how badly autocasting works.
+                with autocast():
+                    outputs = model(cx, test_codes, loi=level_idx)
+                    losses = loss_fn(outputs, y[level_idx])
+
+                if torch.sum(torch.isnan(losses) + torch.isinf(losses)) > 0:
+                    num_failed_computations += 1
+                    tqdm.write("Autocast computation had NaNs or Infs.")
+                    outputs = model(cx, test_codes, loi=level_idx)
+                    losses = loss_fn(outputs, y[level_idx])
+                num_computations += 1
 
                 # [losses] may have multiple values for each input example
                 # due to using sample parallelism. Therefore, we find the
@@ -138,6 +155,53 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 level_codes[level_idx][change_idxs] = new_codes[change_idxs]
                 least_losses[change_idxs] = losses[change_idxs]
 
+    return [l.cpu() for l in level_codes], num_failed_computations, num_computations
+
+def get_codes_in_chunks(cx, y, model, z_gen, loss_fn, num_samples=16,
+    sample_parallelism=16, code_bs=128):
+    """Returns a list of new latent codes found via hierarchical sampling with
+    the batch dimension chunked to allow running larger batches.
+
+    Args:
+    cx          -- a BSxCxHxW tensor of corrupted images, on device
+    model       -- model backbone. Must support a 'loi' argument and a tensor of
+                    losses, one for each element in an input batch
+    z_gen       -- function mapping from batch sizes and levels to z_dims
+    sp          -- list of sample parallelisms, one for each level
+    num_samples -- list of numbers of samples, one for each level
+    code_bs     -- the size of each batch dimension chunk
+    """
+    def partition_into_batches(x, chunks):
+        """Returns [x] split into [chunks] sections along each constituent
+        tensor's zero dimension.
+        """
+        if isinstance(x, (list, tuple)):
+            return [partition_into_batches(x_, chunks) for x_ in x]
+        elif isinstance(x, torch.Tensor):
+            return torch.tensor_split(x, chunks)
+        else:
+            raise ValueError()
+    num_failed_computations, num_computations = 0, 0
+
+    chunks = max(1, len(cx) // code_bs)
+    cx = partition_into_batches(cx, chunks)
+    y = partition_into_batches(y, chunks)
+
+    level_codes = level_codes = z_gen(0, level="all")
+    for cx_ys in tqdm(zip(cx, *y),
+        total=chunks,
+        desc="Sampling: chunks",
+        leave=False,
+        dynamic_ncols=True):
+
+        chunk_codes, nf, nc = get_new_codes(cx_ys[0], cx_ys[1:], model, z_gen, loss_fn,
+            num_samples=num_samples,
+            sample_parallelism=sample_parallelism)
+        level_codes = [torch.cat(c) for c in zip(level_codes, chunk_codes)]
+        num_failed_computations += nf
+        num_computations += nc
+
+    tqdm.write(f"Autocast failure rate: {nc / nc} | num failures {nf} | num computations {nc}")
     return level_codes
 
 def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
@@ -154,12 +218,12 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
 
     Returns:
     results     -- 2D grid of images to show
-    loss        -- loss for the returned images. Because it's computed over
-                    only the last level, it will be much less than recorded
-                    training loss.
+    loss        -- average (LPIPS, MSE, Resolution) losses for the images.
+                    Because it's computed over only the last level, the
+                    Resolution loss will be less than recorded training loss
     """
     results = []
-    loss = 0
+    lpips_loss, mse_loss, combined_loss = 0, 0, 0
     with torch.no_grad():
         for x,y in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
             bs = len(x)
@@ -167,23 +231,26 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
             cx_expanded = cx.repeat_interleave(args.spi, dim=0)
             codes = z_gen(bs * args.spi, level="all", input="show_components")
             outputs = model(cx_expanded, codes, loi=-1)
-            losses = loss_fn(outputs, y[-1])
+            lpips_loss_, mse_loss_, combined_loss_ = loss_fn(outputs, y[-1], return_metrics=True)
             outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
-            idxs = torch.argsort(losses.view(bs, args.spi), dim=-1)
+            idxs = torch.argsort(combined_loss_.view(bs, args.spi), dim=-1)
             outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
             images = [[s for s in samples] for samples in outputs]
             images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
 
-            loss += losses.mean().item()
+            lpips_loss += lpips_loss_.mean().item()
+            mse_loss += mse_loss_.mean().item()
+            combined_loss += combined_loss_.mean().item()
             results += images
 
-    return results, loss / len(loader_eval)
+    return results, lpips_loss / len(loader_eval), mse_loss / len(loader_eval), combined_loss / len(loader_eval)
 
 def get_args(args=None):
     P = argparse.ArgumentParser(description="CAMNet training")
     # Non-hyperparameter arguments. These aren't logged!
-    P.add_argument("--comet", choices=[0, 1], default=1, type=int,
+    P.add_argument("--wandb", choices=["disabled", "online", "offline"],
+        default="online",
         help="disabled: no W&B logging, online: normal W&B logging")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
@@ -198,33 +265,37 @@ def get_args(args=None):
         help="samples per image in logging, showing the model's diversity.")
     P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
         help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
-    P.add_argument("--gpus", type=int, default=[0], nargs="+",
+    P.add_argument("--gpus", type=int, default=[0, 1], nargs="+",
         help="GPU ids")
-    
+    P.add_argument("--code_bs", type=int, default=2,
+        help="GPU ids")
+
     # Training hyperparameter arguments. These are logged!
     P.add_argument("--data", required=True, choices=datasets,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
         help="resolutions to see data at")
+    P.add_argument("--alpha", type=float, default=.1,
+        help="Amount of weight on MSE loss")
     P.add_argument("--seed", type=int, default=0,
         help="random seed")
     P.add_argument("--proj_dim", default=1000, type=int,
         help="projection dimensionality")
     P.add_argument("--epochs", default=20, type=int,
         help="number of epochs (months) to train for")
-    P.add_argument("--bs", type=int, default=64,
+    P.add_argument("--bs", type=int, default=512,
         help="batch size")
     P.add_argument("--mini_bs", type=int, default=8,
         help="batch size")
-    P.add_argument("--ns", type=int, nargs="+", default=128,
+    P.add_argument("--ns", type=int, nargs="+", default=[128],
         help="number of samples for IMLE")
-    P.add_argument("--ipc", type=int, default=1024,
+    P.add_argument("--ipc", type=int, default=10240,
         help="Effective gradient steps per set of codes. --ipc // --mini_bs is equivalent to num_days in the original CAMNet formulation")
     P.add_argument("--lr", type=float, default=1e-4,
         help="learning rate")
     P.add_argument("--color_space", choices=["rgb", "lab"], default="rgb",
         help="Color space to use during training")
-    P.add_argument("--sp", type=int, default=128, nargs="+",
+    P.add_argument("--sp", type=int, default=[128], nargs="+",
         help="parallelism across samples during code training")
 
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
@@ -266,17 +337,8 @@ def get_args(args=None):
         help="NN weight initialization method")
     P.add_argument("--init_scale", type=float, default=.1,
         help="Scale for weight initialization")
-    
-    return P.parse_args() if args is None else P.parse_args(args)
 
-if __name__ == "__main__":
-    args = get_args()
-
-    torch.autograd.set_detect_anomaly(True)
-
-    ############################################################################
-    # Check and improve arguments
-    ############################################################################
+    args = P.parse_args() if args is None else P.parse_args(args)
     args.levels = len(args.res) - 1
     args.ns = make_list(args.ns, length=args.levels)
     args.sp = make_list(args.sp, length=args.levels)
@@ -288,8 +350,15 @@ if __name__ == "__main__":
             raise ValueError(f"number of samples * sample parallelism must be a multiple of the number of GPUS for each level")
     args.spi = args.spi - (args.spi % len(args.gpus))
 
+    assert args.code_bs >= len(args.gpus)
+
     if not args.ipc % args.mini_bs == 0 or args.ipc // args.mini_bs == 0:
         raise ValueError(f"--ipc should be a multiple of --mini_bs")
+
+    return args
+
+if __name__ == "__main__":
+    args = get_args()
 
     ############################################################################
     # Handle resuming.
@@ -310,18 +379,13 @@ if __name__ == "__main__":
 
     if resume_file is None:
         save_dir = generator_folder(args, ignore_conflict=False)
-        set_seed(args.seed)
+        cur_seed = set_seed(args.seed)
 
         # Setup the experiment. Importantly, we copy the experiment's ID to
         # [args] so that we can resume it later.
-        experiment = Experiment(
-            project_name="isicle-generator",
-            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
-            disabled=not args.comet)
-        experiment.set_name(save_dir.replace(f"/{project_dir}/generators", ""))
-        args.run_id = experiment.get_key()
-        experiment.log_parameters(args_to_hparams(args))
-        
+        args.run_id = wandb.util.generate_id()
+        wandb.init(anonymous="allow", id=args.run_id, config=args,
+            mode=args.wandb, project="isicle-generator")
         corruptor = Corruption(**vars(args))
         model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
         optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
@@ -337,15 +401,12 @@ if __name__ == "__main__":
         args.data_path = curr_args.data_path
         args.gpus = curr_args.gpus
         args.chunk_epochs = curr_args.chunk_epochs
-        args.comet = curr_args.comet
+        args.wandb = curr_args.wandb
         save_dir = generator_folder(args)
-        set_seed(resume_data["seed"])
+        cur_seed = set_seed(resume_data["seed"])
 
-        experiment = ExistingExperiment(
-            project_name="isicle-generator",
-            api_key="iUYYQgU5SMNOOfZegluYPSUgv",
-            disabled=not args.comet,
-            experiment_key=args.run_id)
+        wandb.init(id=args.run_id, resume="must", mode=args.wandb,
+            project="isicle-generator", config=args)
 
         model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
@@ -356,28 +417,46 @@ if __name__ == "__main__":
     # Set up the loss function
     loss_fn = nn.DataParallel(ResolutionLoss(), device_ids=args.gpus).to(device)
 
-    # Set up the training and evaluation DataLoaders
-    data_tr, data_eval = get_data_splits(args)
+    ############################################################################
+    # Set up the Datasets and DataLoaders. We need to to treat datasets where
+    # the distribution is the different for training and validation splits
+    # (eg. miniImagenet) differently from those where it's the same. We're more
+    # interested in within-distribution learning.
+    ############################################################################
+    same_distribution_splits = dataset2metadata[args.data]["same_distribution_splits"]
+    data_tr, data_eval = get_data_splits(args.data,
+        eval_str="val" if same_distribution_splits else "cv",
+        res=args.res,
+        data_path=args.data_path)
     data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
-
-    # Get the evaluation data. We need to do this carefully so as to use
-    # DataParallel and not have the data get dropped in the DataLoader.
     data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
+
     eval_len = len(data_eval) // (args.spi + 2)
     eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-    data_eval = Subset(data_eval, indices=range(0, len(data_eval), eval_len))
+    eval_idxs = set(range(0, len(data_eval), eval_len))
+    data_eval = Subset(data_eval, indices=list(eval_idxs))
 
-    loader_tr = DataLoader(data_tr, pin_memory=True, shuffle=True,
-        batch_size=max(len(args.gpus), args.bs), num_workers=8, drop_last=True)
-    loader_eval = DataLoader(data_eval, shuffle=False,
-        batch_size=max(len(args.gpus), args.mini_bs // args.spi), num_workers=8,
+    if not same_distribution_splits:
+        idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
+        data_tr = Subset(data_tr, indices=idxs)
+
+    loader_tr = DataLoader(data_tr,
+        pin_memory=True,
+        shuffle=True,
+        batch_size=max(len(args.gpus), args.bs),
+        num_workers=8,
+        drop_last=True,
+        **seed_kwargs(cur_seed))
+    loader_eval = DataLoader(data_eval,
+        shuffle=False,
+        batch_size=max(len(args.gpus), args.mini_bs // args.spi),
+        num_workers=8,
         drop_last=True)
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
     # [sample_method] input.
-    z_gen = partial(get_z_gen,
-        get_z_dims(args),
+    z_gen = partial(get_z_gen, get_z_dims(args),
         sample_method=args.sample_method)
 
     ########################################################################
@@ -385,10 +464,11 @@ if __name__ == "__main__":
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
     if resume_file is None:
+        cycle_size = args.ipc // args.mini_bs
         scheduler = CosineAnnealingLR(optimizer,
-            args.epochs * len(loader_tr) * (args.ipc // args.mini_bs),
+            args.epochs * len(loader_tr) * cycle_size,
             eta_min=1e-8,
-            last_epoch=max(-1, last_epoch * len(loader_tr) * (args.ipc // args.mini_bs)))
+            last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
 
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
@@ -399,18 +479,20 @@ if __name__ == "__main__":
     for e in tqdm(range(last_epoch + 1, end_epoch),
         desc="Epochs",
         dynamic_ncols=True):
-        
+
         for batch_idx,(x,ys) in tqdm(enumerate(loader_tr),
             desc="Batches",
             leave=False,
             dynamic_ncols=True,
             total=len(loader_tr)):
             batch_loss = 0
-            
+
             ys = [y.to(device, non_blocking=True) for y in ys]
-            cx = corruptor(x.to(device, non_blocking=True))         
-            codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
-                num_samples=args.ns, sample_parallelism=args.sp)
+            cx = corruptor(x.to(device, non_blocking=True))
+            codes = get_codes_in_chunks(cx, ys, model, z_gen, loss_fn,
+                num_samples=args.ns,
+                sample_parallelism=args.sp,
+                code_bs=args.code_bs)
             batch_dataset = CorruptedCodeYDataset(cx, codes, ys,
                 expand_factor=args.ipc // args.bs)
             batch_loader = DataLoader(batch_dataset,
@@ -428,33 +510,44 @@ if __name__ == "__main__":
                 codes = [c.to(device) for c in codes]
                 ys = [y.to(device) for y in ys]
 
-                fx = model(cx, codes, loi=None)                    
-                loss = compute_loss_over_list(fx, ys, loss_fn)    
-                loss.backward()
-                optimizer.step()
+                with autocast():
+                    fx = model(cx, codes, loi=None)
+                    loss = compute_loss_over_list(fx, ys, loss_fn)
+
+                scaler.scale(loss).backward()
+                scaler.step(optimizer)
+                scaler.update()
                 optimizer.zero_grad(set_to_none=True)
-                
+
                 scheduler.step()
                 batch_loss += loss.detach()
                 cur_step += 1
+                wandb.log({
+                    "minibatch loss": loss.detach(),
+                    "learning rate": get_lr(scheduler)[0]
+                }, step=cur_step)
 
-                experiment.log_metric("minibatch loss", loss.detach(), step=cur_step)
-                experiment.log_metric("learning rate", scheduler.get_last_lr()[0], step=cur_step)
-                
+                del x, codes, ys, loss, cx
+
             batch_loss = batch_loss / args.ipc
-            del x, codes, ys, loss, cx
 
             ####################################################################
             # Log data after each batch
             ####################################################################
-            images_val, loss_val = validate(corruptor, model, z_gen,
-                loader_eval, loss_fn, args)
+            images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
+                corruptor, model, z_gen, loader_eval, loss_fn, args)
             images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
             save_image_grid(images_val, images_file)
-            experiment.log_metric("validation loss", loss_val, step=cur_step)
-            experiment.log_image(images_file, name="generated images", step=cur_step)
-            
-            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {scheduler.get_last_lr()[0]:.5e} | loss_val {loss_val:.5e}")
+            wandb.log({
+                "LPIPS loss": lpips_loss_val,
+                "MSE loss": mse_loss_val,
+                "combined loss": comb_loss_val,
+                "generated images": wandb.Image(images_file),
+            }, step=cur_step)
+
+            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {get_lr(scheduler)[0]:.5e} | loss_val {comb_loss_val:.5e}")
+
+            del images_val, lpips_loss_val, mse_loss_val, comb_loss_val
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
             "last_epoch": e, "args": args, "scheduler": scheduler,
