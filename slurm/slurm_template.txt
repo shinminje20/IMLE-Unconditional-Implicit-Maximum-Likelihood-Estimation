@@ -32,7 +32,7 @@ module load httpproxy
 echo "Starting job number $SLURM_ARRAY_TASK_ID"
 
 source ~/.bashrc
-conda activate py39ISICLE         skix8jich!SKAU!plon
+conda activate py39ISICLE
 
 # Python will buffer output of your script unless you set this.
 # If you're not using python, figure out how to turn off output
