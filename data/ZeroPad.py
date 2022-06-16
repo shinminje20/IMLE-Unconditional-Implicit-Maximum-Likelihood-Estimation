@@ -34,7 +34,7 @@ def zero_pad_and_resize(file, size=256):
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser()
-    P.add_argument("--data_folder", required=True, type=str,
+    P.add_argument("--data", required=True, type=str,
         help="Path to data folder. Should be structured as data_folder/split/class/image")
     P.add_argument("--replace", choices=[0, 1], type=int, default=0,
         help="Replace files rather than create a copy")
@@ -42,10 +42,12 @@ if __name__ == "__main__":
         help="File create results in. Defaults to the current data directory")
     P.add_argument("--size", type=int, default=256,
         help="Output image size")
+    P.add_argument("--splits", nargs="+", default=None,
+        help="Splits to resize")
     args = P.parse_args()
 
     if args.replace and args.output_dir is None:
-        args.output_dir = args.data_folder
+        args.output_dir = args.data
         tqdm.write("--replace specified, so new images will be written on top of old ones")
     elif not args.replace and not args.output_dir is None:
         tqdm.write(f"--replace not specified; new images will be written to {args.output_dir}")
@@ -56,10 +58,16 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Impossible Case B")
 
-    for split in tqdm(os.listdir(args.data_folder), desc="splits"):
-        for cls in tqdm(os.listdir(f"{args.data_folder}/{split}"), desc="classes", leave=False):
-            for image_file in os.listdir(f"{args.data_folder}/{split}/{cls}"):
+    args.splits = os.listdir(args.data) if args.splits is None else args.splits
+
+    for split in tqdm(args.splits, desc="splits"):
+        for cls in tqdm(os.listdir(f"{args.data}/{split}"), desc="classes", leave=False):
+            for image_file in os.listdir(f"{args.data}/{split}/{cls}"):
                 new_image = zero_pad_and_resize(
-                    f"{args.data_folder}/{split}/{cls}/{image_file}",
+                    f"{args.data}/{split}/{cls}/{image_file}",
                     size=args.size)
+
+                if not os.path.exists(f"{args.output_dir}/{split}/{cls}"):
+                    os.makedirs(f"{args.output_dir}/{split}/{cls}")
+
                 new_image.save(f"{args.output_dir}/{split}/{cls}/{image_file}")
