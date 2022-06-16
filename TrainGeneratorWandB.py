@@ -509,7 +509,7 @@ if __name__ == "__main__":
                     "learning rate": get_lr(scheduler)[0]
                 }, step=cur_step)
                 
-                del x, codes, ys, loss, cx
+                del codes, ys, loss, cx
 
             batch_loss = batch_loss / args.ipc
 

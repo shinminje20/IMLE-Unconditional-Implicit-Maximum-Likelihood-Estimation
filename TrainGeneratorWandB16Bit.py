@@ -474,6 +474,8 @@ if __name__ == "__main__":
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
 
+    scaler = GradScaler()
+
     end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
     cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
     for e in tqdm(range(last_epoch + 1, end_epoch),
@@ -527,7 +529,7 @@ if __name__ == "__main__":
                     "learning rate": get_lr(scheduler)[0]
                 }, step=cur_step)
 
-                del x, codes, ys, loss, cx
+                del codes, ys, loss, cx
 
             batch_loss = batch_loss / args.ipc
 
