@@ -201,7 +201,7 @@ def get_codes_in_chunks(cx, y, model, z_gen, loss_fn, num_samples=16,
         num_failed_computations += nf
         num_computations += nc
 
-    tqdm.write(f"Autocast failure rate: {nc / nc} | num failures {nf} | num computations {nc}")
+    tqdm.write(f"Autocast failure rate: {nf / nc} | num failures {nf} | num computations {nc}")
     return level_codes
 
 def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):

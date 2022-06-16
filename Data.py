@@ -71,7 +71,7 @@ dataset2metadata = {
         "same_distribution_splits": True},
     "cifar10": {"splits": ["train", "test"],
         "res": [32]},
-    "cifar10": {"splits": ["train", "val", "test"],
+    "cub": {"splits": ["train", "val", "test"],
         "res": [32, 64, 128, 256]},
     "miniImagenet": {"splits": ["train", "val", "test"],
         "res": [32, 64, 128, 256],
