@@ -18,6 +18,67 @@ from utils.UtilsNN import *
 
 from torchlars import LARS
 
+class NTXEntLoss(nn.Module):
+    """NT-XEnt loss, modified from PyTorch Lightning."""
+
+    def __init__(self, temp=.5):
+        """Args:
+        temp    -- contrastive loss temperature
+        """
+        super(NTXEntLoss, self).__init__()
+        self.temp = temp
+
+    def forward(self, fx1, fx2, lx1, lx2):
+        """Returns the loss from pre-normalized projections [fx1] and [fx2]."""
+        out = torch.cat([fx1, fx2], dim=0)
+        n_samples = len(out)
+        cov = torch.mm(out, out.t().contiguous())
+        sim = torch.exp(cov / self.temp)
+        mask = ~torch.eye(n_samples, device=sim.device).bool()
+        neg = sim.masked_select(mask).view(n_samples, -1).sum(dim=-1)
+        pos = torch.exp(torch.sum(fx1 * fx2, dim=-1) / self.temp)
+        pos = torch.cat([pos, pos], dim=0)
+        return -torch.log(pos / neg).mean()
+
+def get_lazy_augs(res):
+    """Returns lazy augmentations."""
+    return transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.Resize(res // 4),
+        transforms.Resize(res),
+        transforms.ToTensor(),
+    ])
+
+
+class BetterNTXEntLoss(nn.Module):
+
+    def __init__(self, temp=.5):
+        super(BetterNTXEntLoss, self).__init__()
+        self.temp = temp
+
+    def forward(self, fx1, fx2, lx1, lx2):
+        f_concat = torch.cat([fx1, fx2], dim=0)
+        f_sim_non_exp = torch.matmul(f_concat, f_concat.t().contiguous())
+
+        l_concat = torch.cat([lx1, lx2], dim=0)
+        l_sim_non_exp = torch.matmul(l_concat, l_concat.t().contiguous())
+
+        n_samples = len(f_concat)
+        mask = ~torch.eye(n_samples, device=f_sim_non_exp.device).bool()
+        f_denominator = f_sim_non_exp.masked_select(mask).view(n_samples, -1)
+        l_denominator = l_sim_non_exp.masked_select(mask).view(n_samples, -1)
+        denominator_non_exp = torch.multiply(
+            f_sim_non_exp.masked_select(mask).view(n_samples, -1),
+            l_sim_non_exp.masked_select(mask).view(n_samples, -1))
+        denominator = torch.exp(denominator_non_exp / self.temp).sum(dim=-1)
+
+        numerator_non_exp = torch.sum((fx1 * fx2) / (lx1 * lx2), dim=-1)
+        numerator = torch.exp(numerator_non_exp / self.temp)
+        numerator = torch.cat([numerator, numerator], dim=0)
+        return -torch.log(numerator / denominator).mean()
+
+
+
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="SimCLR training")
     P.add_argument("--wandb", default="online",
@@ -158,12 +219,12 @@ if __name__ == "__main__":
     else:
         augs_tr, augs_fn, augs_te = get_real_augs(res=args.res)
    
-    data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr)
+    data_ssl = ManyTransformsDataset(data_tr, augs_tr, augs_tr, get_lazy_augs(args.res), get_lazy_augs(args.res))
     loader = DataLoader(data_ssl, shuffle=True, batch_size=args.bs,
         drop_last=True, num_workers=24, pin_memory=True,
         **seed_kwargs(cur_seed))
 
-    loss_fn = NTXEntLoss(args.temp)
+    loss_fn = BetterNTXEntLoss(args.temp)
 
     if resume_file is None:
         scheduler = CosineAnnealingWarmupRestarts(optimizer,
@@ -182,7 +243,7 @@ if __name__ == "__main__":
         epoch_loss = 0
         scaler = GradScaler()
 
-        for batch_idx,(x1,x2) in tqdm(enumerate(loader),
+        for batch_idx,(x1,x2,x3,x4) in tqdm(enumerate(loader),
             desc="Batches",
             total=len(loader),
             leave=False,
@@ -192,7 +253,11 @@ if __name__ == "__main__":
                 model.zero_grad(set_to_none=True)
                 fx1 = model(x1.float().to(device, non_blocking=True))
                 fx2 = model(x2.float().to(device, non_blocking=True))
-                loss = loss_fn(fx1, fx2).unsqueeze(0)
+
+                with torch.no_grad():
+                    lx1 = model(x3.float().to(device, non_blocking=True))
+                    lx2 = model(x4.float().to(device, non_blocking=True))
+                loss = loss_fn(fx1, fx2, lx1, lx2).unsqueeze(0)
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
