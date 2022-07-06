@@ -10,10 +10,13 @@ from torch.nn.utils import clip_grad_norm_
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
-from torch.utils.data import DataLoader, Subset
+from torch.utils.data import Subset
 from torch.cuda.amp import autocast, GradScaler
 import torchvision.utils as tv_utils
 
+from KorKMinusOne import KorKMinusOne
+from DatasetNewCode import Dataset_new_code
+from LatentDataLoader import LatentDataLoader
 from CAMNet import *
 from Corruptions import Corruption
 from Data import *
@@ -282,7 +285,9 @@ def get_args(args=None):
         help="Color space to use during training")
     P.add_argument("--sp", type=int, default=[128], nargs="+",
         help="parallelism across samples during code training")
-
+    P.add_argument("--subsample_size", default=None, type=int,
+        help="number of subsample data ")
+        
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
         help="The method with which to sample latent codes")
 
@@ -425,18 +430,19 @@ if __name__ == "__main__":
         idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
         data_tr = Subset(data_tr, indices=idxs)
 
-    loader_tr = DataLoader(data_tr,
-        pin_memory=True,
-        shuffle=True,
-        batch_size=max(len(args.gpus), args.bs),
-        num_workers=8,
-        drop_last=True,
-        **seed_kwargs(cur_seed))
-    loader_eval = DataLoader(data_eval,
-        shuffle=False,
-        batch_size=max(len(args.gpus), args.mini_bs // args.spi),
-        num_workers=8,
-        drop_last=True)
+    # loader_tr = DataLoader(data_tr,
+    #     pin_memory=True,
+    #     shuffle=True,
+    #     batch_size=max(len(args.gpus), args.bs),
+    #     num_workers=8,
+    #     drop_last=True,
+    #     **seed_kwargs(cur_seed))
+    # loader_eval = DataLoader(data_eval,
+    #     shuffle=False,
+    #     batch_size=max(len(args.gpus), args.mini_bs // args.spi),
+    #     num_workers=8,
+    #     drop_last=True)
+    
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
@@ -444,94 +450,140 @@ if __name__ == "__main__":
     z_gen = partial(get_z_gen, get_z_dims(args),
         sample_method=args.sample_method)
 
+#note: size of dataset: num of iter / epoch, user probably want more iteration, for one sampling, 
+# sub sampling, every time subsamling: we shoudnt not exclude unsampled data from previsou sampling
+# fixed batche size, number of iterations are independent to that.
+#, minibatch, k
+# good verification,
+# implemented off of the ISICLE base
+# basically our current code has too many for loop for training 
+# dataloader that takes number of iteration parameter
+# usecase: more iteration on sample, independent to the batch size and epoch.
+# we will have parameter for dataloader. K
+# k=number of times you’ve sampled
+# number of iterations=number of iterations per samplin
+
+# note: use slurm 
+# meet in a month in july 24 th
+# subsampling should be done in next 2 weeks
+
+    
+    
+    loader_eval = LatentDataLoader(data_eval, model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
+                shuffle=False,
+                batch_size=max(len(args.gpus), args.mini_bs // args.spi),
+                num_workers=8,
+                drop_last=True)
     ########################################################################
     # Construct the scheduler—strictly speaking, constructing it makes no sense
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
-    if resume_file is None:
-        cycle_size = args.ipc // args.mini_bs
-        scheduler = CosineAnnealingLR(optimizer,
-            args.epochs * len(loader_tr) * cycle_size,
-            eta_min=1e-8,
-            last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
+    # if resume_file is None:
+    #     cycle_size = args.ipc // args.mini_bs
+    #     scheduler = CosineAnnealingLR(optimizer,
+    #         args.epochs * len(loader_tr) * cycle_size,
+    #         eta_min=1e-8,
+    #         last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
 
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
 
-    end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
-    cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
-    for e in tqdm(range(last_epoch + 1, end_epoch),
-        desc="Epochs",
-        dynamic_ncols=True):
+    # end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
+    # cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
+    
 
-        for batch_idx,(x,ys) in tqdm(enumerate(loader_tr),
-            desc="Batches",
+    # Make data loader that batches number of "subsample_size" of data.
+    # how many times each codes is used.
+    # each example # of times is used.
+    # {(input, output): 0}
+    # x many batches, e examples, 
+    # Try to find dataloader that subsamples
+    # np.array vs list
+    # Outer loop
+    # Inner loop (in direction)
+    # Demonstrate empiraclly this works.
+    # Note: Monday meeting with Tristan
+
+    for e in tqdm(range(args.epochs),
+        desc="Epochs",
+        leave=False,
+        dynamic_ncols=True):
+        batch_loss = 0
+
+        idxs = [idx for idx in range(len(data_tr))]
+        kkm = KorKMinusOne(idxs, shuffle=True)
+        
+        subsample_size = args.subsample_size if args.subsample_size is not None else len(data_tr)
+
+        epoch_data = Subset(data_tr, indices=[kkm.pop() for _ in range(subsample_size)])
+        
+        loader_tr = LatentDataLoader(epoch_data, model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
+                pin_memory=True,
+                shuffle=True,
+                batch_size=max(len(args.gpus), args.bs),
+                num_workers=8,
+                drop_last=True,
+                **seed_kwargs(cur_seed))        
+        
+        for idx,(cx, codes, ys) in tqdm(enumerate(loader_tr),
+            desc="Iterations",
             leave=False,
             dynamic_ncols=True,
             total=len(loader_tr)):
-            batch_loss = 0
+            print("============================ Iteration ============================")
+            print("cx: ", cx)
+            print("len(cx): ", len(cx))
+            print("\n")
+            print("codes: ", codes)
+            print("len(codes): ", len(codes))
+            print("\n")
+            print("ys: ", ys)
+            print("len(ys): ", len(ys))
+            print("==========================================================================")
+#note: 8 x 3 x 16 x 16
+# modular and easy to use 
+            cx = cx.to(device)
+            codes = [c.to(device) for c in codes]
+            ys = [y.to(device) for y in ys]
 
-            ys = [y.to(device, non_blocking=True) for y in ys]
-            cx = corruptor(x.to(device, non_blocking=True))
-            codes = get_codes_in_chunks(cx, ys, model, z_gen, loss_fn,
-                num_samples=args.ns,
-                sample_parallelism=args.sp,
-                code_bs=args.code_bs)
-            batch_dataset = CorruptedCodeYDataset(cx, codes, ys,
-                expand_factor=args.ipc // args.bs)
-            batch_loader = DataLoader(batch_dataset,
-                batch_size=args.mini_bs,
-                shuffle=True,
-                num_workers=8)
+            fx = model(cx, codes, loi=None)
+            loss = compute_loss_over_list(fx, ys, loss_fn)
+            loss.backward()
+            optimizer.step()
+            optimizer.zero_grad(set_to_none=True)
 
-            for idx,(cx, codes, ys) in tqdm(enumerate(batch_loader),
-                desc="Minibatches",
-                leave=False,
-                dynamic_ncols=True,
-                total=len(batch_loader)):
-
-                cx = cx.to(device)
-                codes = [c.to(device) for c in codes]
-                ys = [y.to(device) for y in ys]
-
-                fx = model(cx, codes, loi=None)
-                loss = compute_loss_over_list(fx, ys, loss_fn)
-                loss.backward()
-                optimizer.step()
-                optimizer.zero_grad(set_to_none=True)
-
-                scheduler.step()
-                batch_loss += loss.detach()
-                cur_step += 1
-                wandb.log({
-                    "minibatch loss": loss.detach(),
-                    "learning rate": get_lr(scheduler)[0]
-                }, step=cur_step)
-                
-                del codes, ys, loss, cx
-
-            batch_loss = batch_loss / args.ipc
-
-            ####################################################################
-            # Log data after each batch
-            ####################################################################
-            images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
-                corruptor, model, z_gen, loader_eval, loss_fn, args)
-            images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
-            save_image_grid(images_val, images_file)
+            scheduler.step()
+            batch_loss += loss.detach()
+            cur_step += 1
             wandb.log({
-                "LPIPS loss": lpips_loss_val,
-                "MSE loss": mse_loss_val,
-                "combined loss": comb_loss_val,
-                "generated images": wandb.Image(images_file),
+                "minibatch loss": loss.detach(),
+                "learning rate": get_lr(scheduler)[0]
             }, step=cur_step)
+            
+            del codes, ys, loss, cx
+        print("=================================================================")
+        batch_loss = batch_loss / args.ipc
 
-            tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {get_lr(scheduler)[0]:.5e} | loss_val {comb_loss_val:.5e}")
+        ####################################################################
+        # Log data after each batch
+        ####################################################################
+        images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
+            corruptor, model, z_gen, loader_eval, loss_fn, args)
+        images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
+        save_image_grid(images_val, images_file)
+        wandb.log({
+            "LPIPS loss": lpips_loss_val,
+            "MSE loss": mse_loss_val,
+            "combined loss": comb_loss_val,
+            "generated images": wandb.Image(images_file),
+        }, step=cur_step)
 
-            del images_val, lpips_loss_val, mse_loss_val, comb_loss_val
+        tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {get_lr(scheduler)[0]:.5e} | loss_val {comb_loss_val:.5e}")
 
-        save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
-            "last_epoch": e, "args": args, "scheduler": scheduler,
-            "optimizer": optimizer}, f"{save_dir}/{e}.pt")
-        corruptor, model = corruptor.to(device), model.to(device)
+        del images_val, lpips_loss_val, mse_loss_val, comb_loss_val
+
+    save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
+        "last_epoch": e, "args": args, "scheduler": scheduler,
+        "optimizer": optimizer}, f"{save_dir}/{e}.pt")
+    corruptor, model = corruptor.to(device), model.to(device)
