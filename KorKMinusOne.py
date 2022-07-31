@@ -2,6 +2,21 @@
 # from collections import defaultdict
 # from torch.utils.data import Dataset, DataLoader, Subset
 from random import sample
+
+class KorKMinusOne:
+    def __init__(self, idxs, shuffle=False):
+        self.counter = 0
+        self.shuffle = shuffle
+        self.idxs = idxs
+    def pop(self):
+        if self.counter == len(self.idxs):
+            self.counter = 0
+            self.idxs = sample(self.idxs, k=len(self.idxs)) if self.shuffle else self.idxs
+        
+        result = self.idxs[self.counter]
+        self.counter += 1
+        return result
+        
 # min-Heapq that can push back an element into heapq with incremented key by one
 # class AutoPushHeap(object):
 #    def __init__(self, idx_list, subsample_size):
@@ -43,19 +58,7 @@ from random import sample
         
 #         return int(popped_idx)
 
-class KorKMinusOne:
-    def __init__(self, idxs, shuffle=False):
-        self.counter = 0
-        self.shuffle = shuffle
-        self.idxs = idxs
-    def pop(self):
-        if self.counter == len(self.idxs):
-            self.counter = 0
-            self.idxs = sample(self.idxs, k=len(self.idxs)) if self.shuffle else self.idxs
-        
-        result = self.idxs[self.counter]
-        self.counter += 1
-        return result
+
 
 # class SubsampleDataset(Dataset):
 #     def __init__(self, data, subsample_size):

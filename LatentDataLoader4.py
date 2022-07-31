@@ -18,13 +18,13 @@ import torch.multiprocessing as multiprocessing
 from torch._utils import ExceptionWrapper
 from torch._six import string_classes
 
-from torch.utils.data import IterDataPipe, IterableDataset, Sampler, SequentialSampler, RandomSampler, BatchSampler, Dataset, DataLoader
+from torch.utils.data import IterDataPipe, IterableDataset, Sampler, SequentialSampler, RandomSampler, BatchSampler, Dataset, DataLoader, Subset, ConcatDataset
 from torch.utils.data import _utils
 
 from utils.Utils import *
 
 from itertools import chain
-
+from KorKMinusOne import KorKMinusOne
 
 import torch.utils.data.graph_settings
 
@@ -76,53 +76,21 @@ class CorruptedCodeYDataset(Dataset):
         codes = [c[idx] for c in self.codes]
         ys = [y[idx] for y in self.ys]
         return cx, codes, ys
-    # """
-    # Args:
-    # cx      -- BSxCxHxW tensor of corrupted images
-    # codes   -- list of codes of shape BSxCODE_DIM. Elements in the list should
-    #             be codes for sequentially greater resolutions
-    # ys      -- list of BSxCxHxW target images. Elements in the list should be
-    #             for sequentially greater resolutions
-    # """
-    # def __init__(self, data, model, z_gen, loss_fn, num_samples, sample_parallelism, code_bs, expand_factor=1):
-    #     super(Dataset_new_code, self).__init__()
-        
-    #     self.codes = []
-    #     self.x = None
-    #     self.ys = []
-    #     self.expand_factor = self.expand_factor
+
+class KKMDataset(Dataset):
     
-    # def __len__(self): return len(self.cx) * self.expand_factor
+    def __init__(self, data, kkm, subsample_size):
+        super(KKMDataset, self).__init__()
+        self.kkm = kkm
+        self.subsample_size = subsample_size
+        self.iter_data = Subset(data, indices=[self.kkm.pop() for _ in range(self.subsample_size)])
+    def __len__(self): return len(self.iter_data)
 
-    # def __getitem__(self, idx):
-    #     idx = idx // self.expand_factor
-    #     x = self.x[idx]
-    #     codes = [c[idx] for c in self.codes]
-    #     ys = [y[idx] for y in self.ys]
-    #     return x, codes, ys
-    
-    # def __sample_z__(self, data, model, z_gen, loss_fn, num_samples, sample_parallelism, code_bs):
-    #     print("================================== Calling __sampling__() ==================================")
+    def __getitem__(self, idx):
         
-        
-    #     # loader = DataLoader(data, batch_size=len(data))
-    #     # print(iter(loader))
-    #     # x, ys= data[:]
-        
-
-        
-    #     self.ys = [y.to(device, non_blocking=True) for y in ys]
-    #     self.x = corruptor(x.to(device, non_blocking=True))
-    #     self.codes = get_codes_in_chunks(xx, ys, model, z_gen, loss_fn,
-    #         num_samples=num_samples,
-    #         sample_parallelism=sample_parallelism,
-    #         code_bs=code_bs)
-
-    #     self.x = self.x.cpu()
-    #     self.codes = [c.cpu() for c in self.codes]
-    #     self.ys = [y.cpu() for y in self.ys]
-
+        return self.iter_data[idx]
 # ============================================ Data Loader ============================================
+
 
 class _DatasetKind(object):
     Map = 0
@@ -244,7 +212,8 @@ class LatentDataLoader(Generic[T_co]):
     _iterator : Optional['_BaseDataLoaderIter']
     __initialized = False
 
-    def __init__(self, dataset: Dataset[T_co], model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, code_bs, batch_size: Optional[int] = 1,
+    def __init__(self, dataset: Dataset[T_co], model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, 
+                code_bs, subsample_size=None, num_iteration=1, batch_size: Optional[int] = 1,
                  shuffle: bool = False, sampler: Union[Sampler, Iterable, None] = None,
                  batch_sampler: Union[Sampler[Sequence], Iterable[Sequence], None] = None,
                  num_workers: int = 0, collate_fn: Optional[_collate_fn_t] = None,
@@ -270,6 +239,9 @@ class LatentDataLoader(Generic[T_co]):
             raise ValueError('persistent_workers option needs num_workers > 0')
         
         self.dataset = dataset
+        self.kkm = KorKMinusOne([idx for idx in range(len(dataset))], shuffle=True)
+        self.num_iteration = num_iteration
+        self.subsample_size = subsample_size if subsample_size is not None else len(dataset)
         self.num_workers = num_workers
         self.prefetch_factor = prefetch_factor
         self.pin_memory = pin_memory
@@ -401,18 +373,34 @@ class LatentDataLoader(Generic[T_co]):
             return _SingleProcessDataLoaderIter(self)
         else:
             self.check_worker_number_rationality()
-            loader = latent_generator(self.dataset, self.model, self.corruptor, self.z_gen, self.loss_fn,
-                                        self.pin_memory,
-                                        self.shuffle,
-                                        self.drop_last,
-                                        self.num_workers,
-                                        num_samples=self.num_samples,
-                                        sample_parallelism=self.sample_parallelism,
-                                        code_bs=self.code_bs, batch_size=self.batch_size)
             
- 
-            return _MultiProcessingDataLoaderIter(loader)
-
+            loaders = []
+            # print(f'======================================Start: _get_iterator ======================================')          
+            
+            iter_data = Subset(self.dataset, indices=[self.kkm.pop() for _ in range(self.subsample_size)])
+            codes, corrupted, targets  = get_codes_in_chunks(iter_data, self.model, self.corruptor, self.z_gen, self.loss_fn, num_samples=self.num_samples,
+                                        sample_parallelism=self.sample_parallelism, code_bs=self.code_bs)
+            print("len(codes): ", len(codes))
+            print("len(corrupted): ", len(corrupted))
+            print("len(targets): ", len(targets))
+            dataset = CorruptedCodeYDataset(corrupted, codes, targets)       
+            
+            for i in range(self.num_iteration):
+                loader = DataLoader(dataset, 
+                        pin_memory=self.pin_memory,
+                        shuffle=self.shuffle,
+                        batch_size=self.batch_size,
+                        num_workers=self.num_workers,
+                        drop_last=self.drop_last)
+                
+                loaders.append(_MultiProcessingDataLoaderIter(loader))
+                # return _MultiProcessingDataLoaderIter(loader)
+            loaders = chain(*loaders)
+            print("================================== print self: ", self)
+            print("================================== loader: ", loader)
+            # print(f'======================================END: _get_iterator ======================================')
+            return loaders
+    
     @property
     def multiprocessing_context(self):
         return self.__multiprocessing_context
@@ -664,41 +652,68 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
 
     return level_codes
 
-# note: allocate first and fill it later (speed)
-# list comprehension torch.cat
-# call next k many times
-def latent_generator(data, model, corruptor, z_gen, loss_fn, pin_memory, shuffle, drop_last, num_workers, num_samples,sample_parallelism, code_bs, batch_size):
+def get_codes_in_chunks(data, model, corruptor, z_gen, loss_fn, num_samples=16,
+    sample_parallelism=16, code_bs=128):
+    """Returns a list of new latent codes found via hierarchical sampling with
+    the batch dimension chunked to allow running larger batches.
+    Args:
+    data        -- GeneratorDataset, or Subset thereof
+    model       -- model backbone. Must support a 'loi' argument and a tensor of
+                    losses, one for each element in an input batch
+    z_gen       -- function mapping from batch sizes and levels to z_dims
+    sp          -- list of sample parallelisms, one for each level
+    num_samples -- list of numbers of samples, one for each level
+    code_bs     -- the size of each batch dimension chunk
+    """
+    level_codes = z_gen(len(data), level="all")
+    loader = DataLoader(data,
+        batch_size=code_bs,
+        pin_memory=True,
+        num_workers=24,
+        drop_last=False)
+
+    corrupted_images = []
+    targets_images = None
     
-    batch_data = DataLoader(data, batch_size=code_bs, shuffle=False)
-    loaders = []
-    for x, ys in tqdm(batch_data, total=len(batch_data), desc="Batching", leave=False, dynamic_ncols=True):
+    for idx,(x,ys) in tqdm(enumerate(loader),
+        desc="Sampling chunks of batch",
+        total=len(loader),
+        leave=False,
+        dynamic_ncols=True):
 
         ys = [y.to(device, non_blocking=True) for y in ys]
         cx = corruptor(x.to(device, non_blocking=True))
-        level_codes = z_gen(0, level="all")
-
-        new_codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
+        chunk_codes = get_new_codes(cx, ys, model, z_gen, loss_fn,
             num_samples=num_samples,
             sample_parallelism=sample_parallelism)
-        level_codes = [torch.cat(c) for c in zip(level_codes, new_codes)] # ineffeicient inplace
+        
+        indices = range(idx * code_bs, min(len(data), (idx+1) * code_bs))
+        indices = torch.tensor(indices)
+        for level_idx in range(len(chunk_codes)):
+            level_codes[level_idx][indices] = chunk_codes[level_idx]
+        
+        # Save the resulting images
+        corrupted_images.append(cx.cpu())
+        if targets_images is None:
+            targets_images = [[y.cpu()] for y in ys]
+        else:
+            for t,y in zip(targets_images, ys):
+                t.append(y.cpu())
 
-#seires of dataloader, 
-# innerloop : tracking of times of sampled in the subset
-# dataloader => # of iterations.
-        dataset = CorruptedCodeYDataset(cx, level_codes, ys)
-
-        loader = DataLoader(dataset, 
-                    pin_memory=pin_memory,
-                    shuffle=shuffle,
-                    batch_size=batch_size,
-                    num_workers=num_workers,
-                    drop_last=drop_last)
-        loaders = chain(loaders, loader)
+    corrupted_images = torch.cat(corrupted_images, axis=0)
+    targets_images = [torch.cat(t, axis=0) for t in targets_images]
     
-    return loaders
+    return level_codes, corrupted_images, targets_images
+# note: allocate first and fill it later (speed)
+# list comprehension torch.cat
+# call next k many times
 
 class _BaseDataLoaderIter(object):
     def __init__(self, loader: LatentDataLoader) -> None:
+        print(" ========================= _BaseDataLoaderIter loader: =========================")
+        print("loader: ", loader)
+        print("len(loader): ", len(loader))
+        print("================================================================================")
         self._dataset = loader.dataset
         self._dataset_kind = loader._dataset_kind
         self._IterableDataset_len_called = loader._IterableDataset_len_called
@@ -714,29 +729,34 @@ class _BaseDataLoaderIter(object):
         self._base_seed = torch.empty((), dtype=torch.int64).random_(generator=loader.generator).item()
         self._persistent_workers = loader.persistent_workers
         self._num_yielded = 0
-        self._num_of_iteration = 0
         self._profile_name = "enumerate(DataLoader)#{}.__next__".format(self.__class__.__name__)
 
     def __iter__(self) -> '_BaseDataLoaderIter':
+        # print("__iter__(self) -> '_BaseDataLoaderIter':")
         return self
 
     def _reset(self, loader, first_iter=False):
+        # print("_reset(self, loader, first_iter=False):")
         self._sampler_iter = iter(self._index_sampler)
         self._num_yielded = 0
         self._IterableDataset_len_called = loader._IterableDataset_len_called
 
     def _next_index(self):
+        # print("_next_index(self)")
         return next(self._sampler_iter)  # may raise StopIteration
 
     def _next_data(self):
+        # print("_next_data(self):")
         raise NotImplementedError
 
     def __next__(self) -> Any:
         with torch.autograd.profiler.record_function(self._profile_name):
+            print("def __next__(self) -> Any:")
             if self._sampler_iter is None:
-                self._reset()
+                # TODO(https://github.com/pytorch/pytorch/issues/76750)
+                self._reset()  # type: ignore[call-arg]
             data = self._next_data()
-
+            self._num_yielded += 1
             if self._dataset_kind == _DatasetKind.Iterable and \
                     self._IterableDataset_len_called is not None and \
                     self._num_yielded > self._IterableDataset_len_called:
@@ -1433,23 +1453,31 @@ class _MultiProcessingDataLoaderIter(_BaseDataLoaderIter):
 
     def _try_put_index(self):
         assert self._tasks_outstanding < self._prefetch_factor * self._num_workers
-
+        print("===================Start: _try_put_index =====================")
         try:
             index = self._next_index()
+            print("index = self._next_index()")
         except StopIteration:
+            #resample
+            print("StopIteration")
+            print("=================== End: _try_put_index =====================")
             return
         for _ in range(self._num_workers):  # find the next active worker, if any
             worker_queue_idx = next(self._worker_queue_idx_cycle)
             if self._workers_status[worker_queue_idx]:
+                print("if self._workers_status[worker_queue_idx]:")
                 break
         else:
             # not found (i.e., didn't break)
+            print("# not found (i.e., didn't break)")
+            print("=================== End: _try_put_index =====================")
             return
 
         self._index_queues[worker_queue_idx].put((self._send_idx, index))
         self._task_info[self._send_idx] = (worker_queue_idx,)
         self._tasks_outstanding += 1
         self._send_idx += 1
+        print("=================== End: _try_put_index =====================")
 
     def _process_data(self, data):
         self._rcvd_idx += 1

@@ -16,7 +16,7 @@ import torchvision.utils as tv_utils
 
 from KorKMinusOne import KorKMinusOne
 from DatasetNewCode import Dataset_new_code
-from LatentDataLoader import LatentDataLoader
+from CIMLEDataLoader import CIMLEDataLoader
 from CAMNet import *
 from Corruptions import Corruption
 from Data import *
@@ -287,6 +287,8 @@ def get_args(args=None):
         help="parallelism across samples during code training")
     P.add_argument("--subsample_size", default=None, type=int,
         help="number of subsample data ")
+    P.add_argument("--num_iteration", default=1, type=int,
+        help="number of subsample data ")
         
     P.add_argument("--sample_method", choices=["normal", "mixture"], default="normal",
         help="The method with which to sample latent codes")
@@ -354,6 +356,7 @@ if __name__ == "__main__":
     # Handle resuming.
     ############################################################################
     save_dir = generator_folder(args)
+    print("save directory : ", save_dir)
     if str(args.resume).isdigit():
         args.resume = int(args.resume) - 1
         if int(args.resume) == -1:
@@ -469,21 +472,20 @@ if __name__ == "__main__":
 
     
     
-    loader_eval = LatentDataLoader(data_eval, model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
-                shuffle=False,
-                batch_size=max(len(args.gpus), args.mini_bs // args.spi),
-                num_workers=8,
-                drop_last=True)
+    # loader_eval = CIMLEDataLoader(data_eval, model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
+    #             shuffle=False,
+    #             batch_size=max(len(args.gpus), args.mini_bs // args.spi),
+    #             num_workers=8,
+    #             drop_last=True)
+    loader_eval = DataLoader(data_eval,
+        shuffle=False,
+        batch_size=max(len(args.gpus), args.bs),
+        num_workers=8,
+        drop_last=True)
     ########################################################################
     # Construct the scheduler—strictly speaking, constructing it makes no sense
     # here, but we need to do it only if we're starting a new run.
     ########################################################################
-    # if resume_file is None:
-    #     cycle_size = args.ipc // args.mini_bs
-    #     scheduler = CosineAnnealingLR(optimizer,
-    #         args.epochs * len(loader_tr) * cycle_size,
-    #         eta_min=1e-8,
-    #         last_epoch=max(-1, last_epoch * len(loader_tr) * cycle_size))
 
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
@@ -491,99 +493,76 @@ if __name__ == "__main__":
 
     # end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
     # cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
+
+#note: 8 x 3 x 16 x 16
+# modular and easy to use 
+
+    loader_tr = CIMLEDataLoader(data_tr, model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
+                    subsample_size=args.subsample_size,
+                    num_iteration=args.num_iteration,
+                    pin_memory=True,
+                    shuffle=True,
+                    batch_size=max(len(args.gpus), args.bs),
+                    num_workers=8,
+                    drop_last=True)
     
+    if resume_file is None:
+        scheduler = CosineAnnealingLR(optimizer,
+            args.epochs * args.num_iteration,
+            eta_min=1e-8,
+            last_epoch=max(-1, last_epoch * args.num_iteration))
 
-    # Make data loader that batches number of "subsample_size" of data.
-    # how many times each codes is used.
-    # each example # of times is used.
-    # {(input, output): 0}
-    # x many batches, e examples, 
-    # Try to find dataloader that subsamples
-    # np.array vs list
-    # Outer loop
-    # Inner loop (in direction)
-    # Demonstrate empiraclly this works.
-    # Note: Monday meeting with Tristan
-
+    cur_step = 0
+    
     for e in tqdm(range(args.epochs),
         desc="Epochs",
-        leave=False,
         dynamic_ncols=True):
-        batch_loss = 0
-
-        idxs = [idx for idx in range(len(data_tr))]
-        kkm = KorKMinusOne(idxs, shuffle=True)
         
-        subsample_size = args.subsample_size if args.subsample_size is not None else len(data_tr)
-
-        epoch_data = Subset(data_tr, indices=[kkm.pop() for _ in range(subsample_size)])
-        
-        loader_tr = LatentDataLoader(epoch_data, model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
-                pin_memory=True,
-                shuffle=True,
-                batch_size=max(len(args.gpus), args.bs),
-                num_workers=8,
-                drop_last=True,
-                **seed_kwargs(cur_seed))        
-        
-        for idx,(cx, codes, ys) in tqdm(enumerate(loader_tr),
-            desc="Iterations",
+        for batch_idx, (cx, codes, ys) in tqdm(enumerate(loader_tr),
+            desc="Batches",
             leave=False,
             dynamic_ncols=True,
             total=len(loader_tr)):
-            print("============================ Iteration ============================")
-            print("cx: ", cx)
-            print("len(cx): ", len(cx))
-            print("\n")
-            print("codes: ", codes)
-            print("len(codes): ", len(codes))
-            print("\n")
-            print("ys: ", ys)
-            print("len(ys): ", len(ys))
-            print("==========================================================================")
-#note: 8 x 3 x 16 x 16
-# modular and easy to use 
-            cx = cx.to(device)
-            codes = [c.to(device) for c in codes]
-            ys = [y.to(device) for y in ys]
-
-            fx = model(cx, codes, loi=None)
-            loss = compute_loss_over_list(fx, ys, loss_fn)
+            
+            batch_loss = 0
+            fx = model(cx.to(device), [c.to(device) for c in codes])
+            loss = compute_loss_over_list(fx, [y.to(device) for y in ys], loss_fn)
+            del codes, cx
+            
             loss.backward()
             optimizer.step()
             optimizer.zero_grad(set_to_none=True)
-
             scheduler.step()
+
             batch_loss += loss.detach()
             cur_step += 1
             wandb.log({
-                "minibatch loss": loss.detach(),
+                "iteration loss": loss.detach(),
                 "learning rate": get_lr(scheduler)[0]
             }, step=cur_step)
             
-            del codes, ys, loss, cx
-        print("=================================================================")
-        batch_loss = batch_loss / args.ipc
+            del ys, loss, batch_loss
 
+            
         ####################################################################
-        # Log data after each batch
+        # Log data after each epoch
         ####################################################################
         images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
             corruptor, model, z_gen, loader_eval, loss_fn, args)
-        images_file = f"{save_dir}/val_images/step{e * len(loader_tr) + batch_idx}.png"
+        images_file = f"{save_dir}/val_images/step{e * len(loader_tr)}.png"
         save_image_grid(images_val, images_file)
         wandb.log({
-            "LPIPS loss": lpips_loss_val,
-            "MSE loss": mse_loss_val,
-            "combined loss": comb_loss_val,
-            "generated images": wandb.Image(images_file),
+            "Epoch_LPIPS loss": lpips_loss_val,
+            "Epoch_MSE loss": mse_loss_val,
+            "Epoch_combined loss": comb_loss_val,
+            "Epoch_generated images": wandb.Image(images_file),
         }, step=cur_step)
 
-        tqdm.write(f"Epoch {e:3}/{args.epochs} | batch {batch_idx:5}/{len(loader_tr)} | batch training loss {batch_loss.item():.5e} | lr {get_lr(scheduler)[0]:.5e} | loss_val {comb_loss_val:.5e}")
+        tqdm.write(f"Epoch {e:3}/{args.epochs} | Epoch_lr {get_lr(scheduler)[0]:.5e} | Epoch_loss_val {comb_loss_val:.5e}")
 
         del images_val, lpips_loss_val, mse_loss_val, comb_loss_val
 
-    save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
-        "last_epoch": e, "args": args, "scheduler": scheduler,
-        "optimizer": optimizer}, f"{save_dir}/{e}.pt")
-    corruptor, model = corruptor.to(device), model.to(device)
+        save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
+            "last_epoch": e, "args": args, "scheduler": scheduler,
+            "optimizer": optimizer}, f"{save_dir}/{e}.pt")
+        corruptor, model = corruptor.to(device), model.to(device)
