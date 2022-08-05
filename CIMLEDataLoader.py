@@ -35,21 +35,18 @@ class CIMLEDataLoader(object):
         self.chain_loaders = []
         self.data_len = 0
     def __iter__(self):
-        
-        loaders = []
         # (len datset // subsample_size) * num of epochs = total num_samplings
         # --num_samplings
 
 
         # num_iteration: # of iteration per samples
+        loaders = []
+        iter_data = Subset(self.dataset, indices=[self.kkm.pop() for _ in range(self.subsample_size)])
+
         codes, corrupted, targets  = get_codes_in_chunks(iter_data, self.model, self.corruptor, self.z_gen, self.loss_fn, num_samples=self.num_samples,
                                     sample_parallelism=self.sample_parallelism, code_bs=self.code_bs)
         corrupted_dataset = CorruptedCodeYDataset(corrupted, codes, targets)       
-        
-        # save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
-        #     "last_epoch": e, "args": args, "scheduler": scheduler,
-        #     "optimizer": optimizer}, f"{save_dir}/{e}.pt")
-
+            
         self.data_len = 0
         for i in range(self.loader_generate_cycle):
             if i == self.loader_generate_cycle - 1:

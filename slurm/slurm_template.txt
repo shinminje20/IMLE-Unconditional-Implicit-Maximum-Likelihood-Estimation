@@ -14,7 +14,7 @@
 #SBATCH --output=job_results/_%x_%a.txt
 
 # Below sets the email notification, swap to your email to receive notifications
-#SBATCH --mail-user=tristanengst@gmail.com
+#SBATCH --mail-user=shinminje@gmail.com
 #SBATCH --mail-type=BEGIN
 #SBATCH --mail-type=END
 #SBATCH --mail-type=FAIL
