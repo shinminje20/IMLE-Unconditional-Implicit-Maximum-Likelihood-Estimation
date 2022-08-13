@@ -44,7 +44,7 @@ if __name__ == "__main__":
     if submission_args.script == "TrainGeneratorWandB.py":
         from TrainGeneratorWandB import get_args
         args = get_args(unparsed_script_args)
-        CHUNKS = str(args.epochs - 1)
+        CHUNKS = str(args.outer_loops - 1)
         NAME = generator_folder(args).replace(f"{project_dir}/generators/", "")
         NUM_GPUS = str(len(args.gpus))
         TIME = get_time(submission_args.time)
@@ -66,7 +66,7 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Unknown script '{submission_args.script}")
 
-    SCRIPT = f"python {submission_args.script} {' '.join(unparsed_script_args)} --resume $SLURM_ARRAY_TASK_ID --jobid $SLURM_ARRAY_JOB_ID --data_path ~/scratch/ISICLE/data"
+    SCRIPT = f"python {submission_args.script} {' '.join(unparsed_script_args)} --resume $SLURM_ARRAY_TASK_ID --uid {args.uid} --job_id $SLURM_ARRAY_JOB_ID --data_path ~/scratch/ISICLE/data"
 
     # Set --wandb to 'offline' unless otherwise specified
     if not "--wandb" in unparsed_script_args:

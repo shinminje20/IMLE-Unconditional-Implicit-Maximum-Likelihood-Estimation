@@ -7,7 +7,7 @@ from utils.Utils import *
 from random import sample
 
 class CIMLEDataLoader(object):
-    def __init__(self, dataset, model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, code_bs,
+    def __init__(self, dataset, kkm, model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, code_bs,
                     subsample_size=None,
                     num_iteration=1,
                     pin_memory: bool = False,
@@ -16,7 +16,7 @@ class CIMLEDataLoader(object):
                     num_workers: int = 0,
                     drop_last: bool = False):
         self.dataset = dataset
-        self.kkm = KorKMinusOne([idx for idx in range(len(self.dataset))], shuffle=True)
+        self.kkm = kkm
         self.subsample_size = subsample_size if subsample_size is not None else len(self.dataset)
         self.num_iteration = num_iteration
         self.loader_generate_cycle = (self.num_iteration // (self.subsample_size // batch_size)) + 1 if self.num_iteration > (self.subsample_size // batch_size) else 1
@@ -35,26 +35,24 @@ class CIMLEDataLoader(object):
         self.chain_loaders = []
         self.data_len = 0
     def __iter__(self):
-        
-        loaders = []
         # (len datset // subsample_size) * num of epochs = total num_samplings
         # --num_samplings
 
 
         # num_iteration: # of iteration per samples
+        loaders = []
+        iter_data = Subset(self.dataset, indices=[self.kkm.pop() for _ in range(self.subsample_size)])
+
         codes, corrupted, targets  = get_codes_in_chunks(iter_data, self.model, self.corruptor, self.z_gen, self.loss_fn, num_samples=self.num_samples,
                                     sample_parallelism=self.sample_parallelism, code_bs=self.code_bs)
         corrupted_dataset = CorruptedCodeYDataset(corrupted, codes, targets)       
-        
-        # save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
-        #     "last_epoch": e, "args": args, "scheduler": scheduler,
-        #     "optimizer": optimizer}, f"{save_dir}/{e}.pt")
-
+            
         self.data_len = 0
         for i in range(self.loader_generate_cycle):
             if i == self.loader_generate_cycle - 1:
-                if self.num_iteration % (self.subsample_size // self.batch_size) != 0:
-                    Subset_corrupted_dataset = Subset(corrupted_dataset, sample(range(len(corrupted_dataset)), self.num_iteration % (self.subsample_size // self.batch_size)*self.batch_size))
+                if self.num_iteration % (self.subsample_size // self.batch_size) != 0 and self.num_iteration > self.subsample_size:
+                    Subset_corrupted_dataset = Subset(corrupted_dataset, sample(range(len(corrupted_dataset)),
+                                                     self.num_iteration % (self.subsample_size // self.batch_size)))
                     loader = DataLoader(Subset_corrupted_dataset, 
                         pin_memory=self.pin_memory,
                         shuffle=self.shuffle,
