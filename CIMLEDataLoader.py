@@ -7,7 +7,7 @@ from utils.Utils import *
 from random import sample
 
 class CIMLEDataLoader(object):
-    def __init__(self, dataset, model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, code_bs,
+    def __init__(self, dataset, kkm, model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, code_bs,
                     subsample_size=None,
                     num_iteration=1,
                     pin_memory: bool = False,
@@ -16,7 +16,7 @@ class CIMLEDataLoader(object):
                     num_workers: int = 0,
                     drop_last: bool = False):
         self.dataset = dataset
-        self.kkm = KorKMinusOne([idx for idx in range(len(self.dataset))], shuffle=True)
+        self.kkm = kkm
         self.subsample_size = subsample_size if subsample_size is not None else len(self.dataset)
         self.num_iteration = num_iteration
         self.loader_generate_cycle = (self.num_iteration // (self.subsample_size // batch_size)) + 1 

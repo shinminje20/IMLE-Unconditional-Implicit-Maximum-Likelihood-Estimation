@@ -111,10 +111,17 @@ def simclr_folder(args):
         os.makedirs(folder)
     return folder
 
-def generator_folder(args, ignore_conflict=True):
+def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args]."""
-    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-epochs{args.epochs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr}-mask_frac{args.mask_frac}-mask_res{args.mask_res}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}-seed{args.seed}" + suffix_str(args)   
-    return experiment_folder(args, folder, ignore_conflict=ignore_conflict)
+    jobId = args.uid if args.job_id is None else args.job_id
+    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-OuterLoops{args.outer_loops}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}-seed{args.seed}-{jobId}{suffix_str(args)}"   
+    
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+    if not os.path.exists(f"{folder}/config.json"):
+        with open(f"{folder}/config.json", "w+") as f:
+            json.dump(vars(args), f)
+    return folder
 
 def isicle_folder(args):
     raise NotImplementedError()
