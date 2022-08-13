@@ -92,6 +92,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
     loss        -- average (LPIPS, MSE, Resolution) losses for the images.
                     Because it's computed over only the last level, the
                     Resolution loss will be less than recorded training loss
+    # function to write 
     """
     results = []
     lpips_loss, mse_loss, combined_loss = 0, 0, 0
@@ -101,15 +102,6 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
             codes = z_gen(bs * args.spi , level="all")
             
             outputs = model(codes[-1], 0, alpha=0)
-            print("============================================================")
-            print("len(y[0]): ", len(y[0]))
-            print("len(codes): ", len(codes))
-            print("codes[-1].shape: ", codes[-1].shape)
-            print("len(y[-1): ", len(y[-1]))
-            print("y[-1].shape: ", y[-1].shape)
-            print("type(y): ", type(y))
-            print("outputs.shape: ", outputs.shape)
-            print("============================================================")
             lpips_loss_, mse_loss_, combined_loss_ = loss_fn(outputs, y[-1].view(codes[-1].shape[0], codes[-1].shape[1]), 'batch')
             outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
@@ -125,6 +117,8 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
 
     return results, lpips_loss / len(loader_eval), mse_loss / len(loader_eval), combined_loss / len(loader_eval)
 
+# function specification.
+# 
 def get_args(args=None):
     P = argparse.ArgumentParser(description="CAMNet training")
     # Non-hyperparameter arguments. These aren't logged!
@@ -367,10 +361,11 @@ if __name__ == "__main__":
                     drop_last=True)
     
     if resume_file is None:
+        k_or_k_minus_one = KorKMinusOne(range(len(data_tr)), shuffle=True)
         scheduler = CosineAnnealingLR(optimizer,
             args.outer_loops * args.num_iteration,
             eta_min=1e-8,
-            last_epoch=max(-1, last_epoch * args.num_iteration))
+            last_epoch=max(-1, last_loop * args.num_iteration))
 
     cur_step = 0
     

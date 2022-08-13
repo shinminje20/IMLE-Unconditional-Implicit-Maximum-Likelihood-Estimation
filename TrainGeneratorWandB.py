@@ -30,7 +30,7 @@ from functools import partial
 def get_z_dims(args):
     """Returns a list of random noise dimensionalities for one sampling."""
     return [(args.map_nc + args.code_nc * r ** 2,) for r in args.res[:-1]]
-
+#  num_of_input_channels_to_mapping_net * num_of_code_channel * 64^2
 mm = None
 def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_components=5,  **kwargs):
     """Returns a latent code for a model.
@@ -53,7 +53,7 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_compo
         global mm
         if mm is None:
             mm = [torch.rand(1, num_components, *dim) for dim in z_dims]
-            mm = [nn.functional.normalize(m, dim=2) for m in mm]
+            mm = [nn.functional.x(m, dim=2) for m in mm]
 
         if input is None:
             idxs = torch.tensor(random.choices(range(num_components), k=bs))
@@ -67,10 +67,10 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_compo
         neg_ones = [[-1] * (1 + len(dim)) for dim in z_dims]
         if level == "all":
             means = [mm[level].expand(bs, *neg_ones[level])[torch.arange(bs), idxs] for level in range(len(mm))]
-            return [m + torch.randn(m.shape) / num_components for m in means]
+            return [m + torch.randn(m.shape) for m in means]
         else:
             means = mm[level].expand(bs, *neg_ones[level])[torch.arange(bs), idxs]
-            return means + torch.randn(means.shape) / num_components
+            return means + torch.randn(means.shape)
     else:
         raise NotImplementedError()
 
@@ -369,9 +369,9 @@ if __name__ == "__main__":
     if resume_file is None:
         k_or_k_minus_one = KorKMinusOne(range(len(data_tr)), shuffle=True)
         scheduler = CosineAnnealingLR(optimizer,
-            args.outer_loops,
+            args.outer_loops * args.num_iteration,
             eta_min=1e-8,
-            last_epoch=max(-1, last_loop))
+            last_epoch=max(-1, last_loop * args.num_iteration))
 
 
     loader_tr = CIMLEDataLoader(data_tr, k_or_k_minus_one,  model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
