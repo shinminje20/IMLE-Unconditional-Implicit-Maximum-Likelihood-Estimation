@@ -130,7 +130,7 @@ class UnconditionalIMLELoss(nn.Module):
         self.alpha = torch.tensor(alpha)
         self.phi = LPIPSAndImageFeats(alpha=alpha)
     
-    def forward(fz, y, reduction):
+    def forward(self, fz, y, reduction):
         """Returns unconditional 
 
         Args:
@@ -139,8 +139,10 @@ class UnconditionalIMLELoss(nn.Module):
         reduction   -- The reduction for the loss with several modes, see below
         """
         fz_feats = self.phi(fz).unsqueeze(0)
+        # print("y, type(y): ", y.shape, type(y))
         y_feats = self.phi(y).unsqueeze(0)
-        
+        # print("fz_feats", fz_feats.shape)
+        # print("y_feats", y_feats.shape)
         if reduction == "none":
             # Returns a BS_1xBS_2 tensor in which the [ij] element is the
             # squared distance from the [ith] target to the [jth] generated
@@ -148,14 +150,16 @@ class UnconditionalIMLELoss(nn.Module):
             # min/argmin over the axis one in this tensor to find the nearest
             # neighbors of a target (real) image and the associated squared
             # distances.
-            return torch.square(torch.cdist(y_feats, fz_feats))
+            temp = torch.cdist(y_feats, fz_feats)
+            # print("cdist.shape", temp.shape)
+            return torch.square(torch.cdist(y_feats, fz_feats)).squeeze(0)
         elif reduction == "batch":
             # Returns a BS_1-D tensor in which the [ith] element is the square
             # distance between [ith] generated image and the [ith] target (real)
             # image. This requires the number of generated and real images to be
             # equal. This is the reduction is most useful for validation, when
             # we wish to know pairwise squared distances.
-            return torch.mean(torch.square((y_feats - fz_feats)), axis=1)
+            return torch.mean(torch.square((y_feats - fz_feats)), axis=1).squeeze(0)
         elif reduction == "mean":
             # Returns a single-element tensor in giving the mean of the distance
             # between [ith] generated image and the [ith] target (real) image.

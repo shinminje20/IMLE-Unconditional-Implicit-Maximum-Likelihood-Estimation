@@ -16,7 +16,8 @@ import torchvision.utils as tv_utils
 
 from KorKMinusOne import KorKMinusOne
 from DatasetNewCode import Dataset_new_code
-from CIMLEDataLoader import CIMLEDataLoader
+from IMLEDataLoader import IMLEDataLoader
+from Generator import Generator
 from CAMNet import *
 from Corruptions import Corruption
 from Data import *
@@ -29,7 +30,7 @@ from functools import partial
 
 def get_z_dims(args):
     """Returns a list of random noise dimensionalities for one sampling."""
-    return [(args.map_nc + args.code_nc * r ** 2,) for r in args.res[:-1]]
+    return [(512,) for r in args.res[:-1]] #TODO hard code need to be updated
 
 mm = None
 def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_components=5,  **kwargs):
@@ -95,13 +96,21 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
     results = []
     lpips_loss, mse_loss, combined_loss = 0, 0, 0
     with torch.no_grad():
-        for x,y in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
-            bs = len(x)
-            cx = corruptor(x)
-            cx_expanded = cx.repeat_interleave(args.spi, dim=0)
-            codes = z_gen(bs * args.spi, level="all", input="show_components")
-            outputs = model(cx_expanded, codes, loi=-1)
-            lpips_loss_, mse_loss_, combined_loss_ = loss_fn(outputs, y[-1], return_metrics=True)
+        for (_, y) in tqdm(loader_eval, desc="Generating samples", leave=False, dynamic_ncols=True):
+            bs = len(y[0])
+            codes = z_gen(bs * args.spi , level="all")
+            
+            outputs = model(codes[-1], 0, alpha=0)
+            print("============================================================")
+            print("len(y[0]): ", len(y[0]))
+            print("len(codes): ", len(codes))
+            print("codes[-1].shape: ", codes[-1].shape)
+            print("len(y[-1): ", len(y[-1]))
+            print("y[-1].shape: ", y[-1].shape)
+            print("type(y): ", type(y))
+            print("outputs.shape: ", outputs.shape)
+            print("============================================================")
+            lpips_loss_, mse_loss_, combined_loss_ = loss_fn(outputs, y[-1].view(codes[-1].shape[0], codes[-1].shape[1]), 'batch')
             outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
             idxs = torch.argsort(combined_loss_.view(bs, args.spi), dim=-1)
@@ -124,8 +133,8 @@ def get_args(args=None):
         help="disabled: no W&B logging, online: normal W&B logging")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
-    P.add_argument("--job_id", default=None, type=str,
-        help="Useful to know")
+    P.add_argument("--jobid", default=None, type=str,
+        help="Variable for storing SLURM job ID")
     P.add_argument("--resume", type=str, default=None,
         help="a path or epoch number to resume from or nothing for no resuming")
 
@@ -264,7 +273,11 @@ if __name__ == "__main__":
         wandb.init(anonymous="allow", id=args.run_id, config=args,
             mode=args.wandb, project="isicle-generator")
         corruptor = Corruption(**vars(args))
-        model = nn.DataParallel(CAMNet(**vars(args)), device_ids=args.gpus).to(device)
+
+        model = nn.DataParallel(Generator(num_channels=3,
+                             resolution=32,
+                             structure='fixed',
+                             **seed_kwargs(cur_seed))).to(device)
         optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
         last_epoch = -1
     else:
@@ -292,7 +305,7 @@ if __name__ == "__main__":
         scheduler = resume_data["scheduler"]
 
     # Set up the loss function
-    loss_fn = nn.DataParallel(ResolutionLoss(alpha=args.alpha), device_ids=args.gpus).to(device)
+    loss_fn = nn.DataParallel(UnconditionalIMLELoss(alpha=args.alpha), device_ids=args.gpus).to(device)
 
     ############################################################################
     # Set up the Datasets and DataLoaders. We need to to treat datasets where
@@ -317,50 +330,15 @@ if __name__ == "__main__":
         idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
         data_tr = Subset(data_tr, indices=idxs)
 
-    # loader_tr = DataLoader(data_tr,
-    #     pin_memory=True,
-    #     shuffle=True,
-    #     batch_size=max(len(args.gpus), args.bs),
-    #     num_workers=8,
-    #     drop_last=True,
-    #     **seed_kwargs(cur_seed))
-    # loader_eval = DataLoader(data_eval,
-    #     shuffle=False,
-    #     batch_size=max(len(args.gpus), args.mini_bs // args.spi),
-    #     num_workers=8,
-    #     drop_last=True)
-    
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
     # [sample_method] input.
     z_gen = partial(get_z_gen, get_z_dims(args),
         sample_method=args.sample_method)
-
-#note: size of dataset: num of iter / epoch, user probably want more iteration, for one sampling, 
-# sub sampling, every time subsamling: we shoudnt not exclude unsampled data from previsou sampling
-# fixed batche size, number of iterations are independent to that.
-#, minibatch, k
-# good verification,
-# implemented off of the ISICLE base
-# basically our current code has too many for loop for training 
-# dataloader that takes number of iteration parameter
-# usecase: more iteration on sample, independent to the batch size and epoch.
-# we will have parameter for dataloader. K
-# k=number of times you’ve sampled
-# number of iterations=number of iterations per samplin
-
-# note: use slurm 
-# meet in a month in july 24 th
-# subsampling should be done in next 2 weeks
-
+   
     
     
-    loader_eval = DataLoader(data_eval,
-        shuffle=False,
-        batch_size=max(len(args.gpus), args.bs),
-        num_workers=8,
-        drop_last=True)
     ########################################################################
     # Construct the scheduler—strictly speaking, constructing it makes no sense
     # here, but we need to do it only if we're starting a new run.
@@ -373,10 +351,13 @@ if __name__ == "__main__":
     # end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
     # cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
 
-#note: 8 x 3 x 16 x 16
-# modular and easy to use 
+    loader_eval = DataLoader(data_eval,
+        shuffle=False,
+        batch_size=max(len(args.gpus), args.bs),
+        num_workers=8,
+        drop_last=True)
 
-    loader_tr = CIMLEDataLoader(data_tr, model, corruptor, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
+    loader_tr = IMLEDataLoader(data_tr, model, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
                     subsample_size=args.subsample_size,
                     num_iteration=args.num_iteration,
                     pin_memory=True,
@@ -392,55 +373,24 @@ if __name__ == "__main__":
             last_epoch=max(-1, last_epoch * args.num_iteration))
 
     cur_step = 0
-    # learning rate shcdule, check whether issue come from learning rate or other part.
-    # all experience,
-    # run Unconditioanl and conditional in parallel
-    # num_outer_loop = (len(data_tr) // args.subsample_size) * args.epochs 
     
-    # ============================================================================= Engineering
-    # Note: August 
-    # Writing Design principle:
-    # Write down high-level design principle
-    # what is the goal and how you achieve that goal,   (Chained dataloader, KKM)
-    # make clear how all them work
-    # maybe even write psuedo-code
-
-    # Documentation for the user:
-    # One or Two exapmle how to use  arguments, maybe draw diagram, what the different qualitizes are
-    # when different
-    # data points and dataset illustrate.
-    # Threre is reason why didn't go for source code dataloader, (why something prevent to use it rather than current one)
-    #  ===> describe problem and solution.
-    # high-level classes that sort of i'm using in pytorch. How the different parts of pytorch has, call 
-    
-    # Plan ahead. running experiemnet on slurm.
-    # work in parallel.
-    # so that work leave enough time for debuggin
-    # getting the result that can be included in report.
-    # Sometimes you wanna have a faster setting experiement yourself. Compared to original CAMNET code. 
-
-    # ============================================================================= Research
-    # make it run unconditional IMLE
-    # Right now, next experiement is lack, Gaussian Mix
-    # Try to think back
-    # Try to apply similar principle
-    # =============================================================================
-
-
     for e in tqdm(range(args.outer_loops),
         desc="OuterLoops",
         dynamic_ncols=True):
         
-        for batch_idx, (cx, codes, ys) in tqdm(enumerate(loader_tr),
+        for batch_idx, (codes, ys) in tqdm(enumerate(loader_tr),
             desc="Batches",
             leave=False,
             dynamic_ncols=True,
             total=len(loader_tr)):
             
             batch_loss = 0
+
+            ys = imaysges.to(device)
+
             fx = model(cx.to(device), [c.to(device) for c in codes])
             loss = compute_loss_over_list(fx, [y.to(device) for y in ys], loss_fn)
-            del codes, cx
+            del codes
             
             loss.backward()
             optimizer.step()

@@ -275,6 +275,24 @@ class XYDataset(Dataset):
         image, label = self.data[idx]
         return self.transform(image), label
 
+class XDataset(Dataset):
+    """A simple dataset returning examples of the form (transform(x), y)."""
+
+    def __init__(self, data, transform=transforms.ToTensor(), memoize=False):
+        """Args:
+        data        -- a sequence of (x,y) pairs
+        transform   -- the transform to apply to each returned x-value
+        """
+        super(XDataset, self).__init__()
+        self.transform = transform
+        self.data = data
+
+    def __len__(self): return len(self.data)
+
+    def __getitem__(self, idx):
+        image = self.data[idx]
+        return self.transform(image)
+
 class FeatureDataset(Dataset):
     """A dataset of model features.
 
@@ -394,6 +412,55 @@ class GeneratorDataset(Dataset):
         images = [d[idx][0] for d in self.datasets]
         images = self.transform(images)
         return images[0], images[1:]
+
+    def __repr__(self): return f"GeneratorDataset\n\tshapes {self.shapes}"
+
+class UCGeneratorDataset(Dataset):
+    """A dataset for returning data for generative modeling. Returns data in as
+
+        model_input, [model_output_1, ... model_output_n]
+
+    where [model_input] is half the resolution of [model_output_1], and
+    [model_output_i] is half the resolution of [model_output_i+1]. All returned
+    images are CxHxW.
+
+    **Apply corruptions at the minibatch level in the training loop directly.**
+
+    Args:
+    datasets    -- list of ImageFolders containing training data at sequentially
+                    doubling resolutions
+    transform   -- transformation applied deterministically to both input and
+                    target images
+    """
+    def __init__(self, datasets, transform, validate=False):
+        self.datasets = datasets
+        self.transform = transform
+
+        ########################################################################
+        # Validate the sequence of datasets. The H and W dimensions of
+        ########################################################################
+        if validate:
+            tqdm.write("----- Validating GeneratorDataset -----")
+            if not all([len(d) == len(self.datasets[0]) for d in self.datasets]):
+                raise ValueError(f"All input datasets must have the same shape, but shapes were {[len(d) for d in self.datasets]}")
+
+            shapes = [d[0][0].size for d in self.datasets]
+            if len(self.datasets) > 2:
+                for s1,s2 in zip(shapes[:-1], shapes[1:]):
+                    if not s1[1] == s2[1] / 2 and  s1[2] == s2[2] / 2:
+                        raise ValueError(f"Got sequential resolutions of {s1} and {s2}")
+            else:
+                tqdm.write(f"Shape sequence is {shapes}. Ensure that the generative model is correctly configred to use these.")
+
+            self.shapes = [s[0] for s in shapes]
+            tqdm.write(f"Validated source datasets: lengths {[len(d) for d in self.datasets]} | shape sequence {shapes}")
+
+    def __len__(self): return len(self.datasets[0])
+
+    def __getitem__(self, idx):
+        images = [d[idx][0] for d in self.datasets]
+        images = self.transform(images)
+        return images
 
     def __repr__(self): return f"GeneratorDataset\n\tshapes {self.shapes}"
 
