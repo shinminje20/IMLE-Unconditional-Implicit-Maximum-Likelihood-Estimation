@@ -121,3 +121,54 @@ class LPIPSFeats(nn.Module):
         ]
 
         return [l.flatten(start_dim=1) for l in feats]
+
+class LPIPSAndImageFeats(nn.Module):
+    """Neural net for getting LPIPS features. Heavily modifed from CamNet.
+    
+    Inputs must be in [0, 1].
+    """
+    def __init__(self, alpha=.1):
+        super(LPIPSAndImageFeats, self).__init__()
+        self.vgg = vgg16()
+        self.alpha = torch.tensor(alpha)
+
+        self.shift = nn.Parameter(torch.Tensor([-.030,-.088,-.188])[None,:,None,None])
+        self.scale = nn.Parameter(torch.Tensor([.458,.448,.450])[None,:,None,None])
+
+        get_lpips_weights()
+        W = torch.load(f"{path.dirname(f'{__file__}')}/vgg_lpips_weights.pth")
+        self.lin0 = nn.Parameter(torch.sqrt(W["lin0.model.1.weight"]))
+        self.lin1 = nn.Parameter(torch.sqrt(W["lin1.model.1.weight"]))
+        self.lin2 = nn.Parameter(torch.sqrt(W["lin2.model.1.weight"]))
+        self.lin3 = nn.Parameter(torch.sqrt(W["lin3.model.1.weight"]))
+        self.lin4 = nn.Parameter(torch.sqrt(W["lin4.model.1.weight"]))
+
+        self.eval()
+
+    def forward(self, x):
+        """Returns an n_samples x 124928 tensor where each the ith row is the
+        LPIPS features of the ith example in [x].
+        Args:
+        x           -- input to get LPIPS features for with shape B x C x H x W
+        normalize   -- whether to normalize the input in 0...1 to -1...1
+        """
+        x = 2 * x - 1
+        x = (x - self.shift) / self.scale
+        vgg_feats = [normalize_tensor(v) for v in self.vgg(x)]
+
+        feats = [
+            torch.multiply(self.lin0, vgg_feats[0]),
+            torch.multiply(self.lin1, vgg_feats[1]),
+            torch.multiply(self.lin2, vgg_feats[2]),
+            torch.multiply(self.lin3, vgg_feats[3]),
+            torch.multiply(self.lin4, vgg_feats[4])
+        ]
+
+        result = [l.flatten(start_dim=1) for l in feats]
+        result = [l / torch.sqrt(torch.tensor(l.shape[-1])) for l in result]
+
+        _, c, h, w = x.shape
+        amount_of_res = torch.tensor(c * h * w)
+        result += [x.flatten(start_dim=1) * torch.sqrt(self.alpha / amount_of_res)]
+        result = torch.cat(result, axis=1)
+        return result
