@@ -492,7 +492,7 @@ if __name__ == "__main__":
         ####################################################################
         images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
             corruptor, model, z_gen, loader_eval, loss_fn, args)
-        images_file = f"{save_dir}/val_images/step{loop * len(loader_tr)}.png"
+        images_file = f"{save_dir}/val_images/step{(loop + 1) * len(loader_tr)}.png"
         save_image_grid(images_val, images_file)
         wandb.log({
             "Loop_LPIPS loss": lpips_loss_val,
