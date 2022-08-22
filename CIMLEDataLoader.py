@@ -19,8 +19,7 @@ class CIMLEDataLoader(object):
         self.kkm = kkm
         self.subsample_size = subsample_size if subsample_size is not None else len(self.dataset)
         self.num_iteration = num_iteration
-        self.loader_generate_cycle = (self.num_iteration // (self.subsample_size // batch_size)) + 1 
-                                        if self.num_iteration > (self.subsample_size // batch_size) else 1
+        self.loader_generate_cycle = (self.num_iteration // (self.subsample_size // batch_size)) + 1 if self.num_iteration > (self.subsample_size // batch_size) else 1
         self.model = model
         self.z_gen = z_gen
         self.loss_fn = loss_fn
@@ -169,7 +168,16 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 sp = sps[idx]
                 new_codes = z_gen(bs * sp, level=level_idx)
                 test_codes = old_codes + [new_codes]
-
+                print("=====================================")
+                print("len(level_codes[:level_idx]): ", len(level_codes[:level_idx]))
+                # print("level_codes[:level_idx].shape: ", level_codes[:level_idx][-1].shape)
+                print("new_codes.shape: ", new_codes.shape)
+                print("test_codes.shape: ", test_codes[-1].shape)
+                print("new_codes.shape", new_codes.shape)
+                # print("ouputs.shape: ", outputs.shape)
+                print("y[level_idx].shape: ", y[-1].shape)
+                print("=====================================")
+                raise "asdfasdf"
                 # Compute loss for the new codes.
                 outputs = model(cx, test_codes, loi=level_idx)
                 losses = loss_fn(outputs, y[level_idx])

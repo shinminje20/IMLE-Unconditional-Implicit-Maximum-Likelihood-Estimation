@@ -111,13 +111,27 @@ def simclr_folder(args):
         os.makedirs(folder)
     return folder
 
+def data_without_split_or_path(data_str):
+    """Returns [data_str] without its split."""
+    splits = ["train", "val", "test"]
+    if any([data_str.endswith(f"/{s}") for s in splits]):
+        return os.path.basename(os.path.dirname(data_str))
+    else:
+        raise ValueError(f"Case for handing data_str {data_str} unknown")
+
+def tuple_to_str(t):
+    if isinstance(t, (set, tuple, list)):
+        return "_".join([str(t_) for t_ in t])
+    else:
+        return t
+
 def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args]."""
-    jobId = args.uid if args.job_id is None else args.job_id
-    folder = f"{project_dir}/generators/{args.data}-bs{args.bs}-OuterLoops{args.outer_loops}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr}-ns{'_'.join([str(n) for n in args.ns])}-res{'_'.join([str(r) for r in args.res])}-seed{args.seed}-{jobId}{suffix_str(args)}"   
+    uid = args.uid if args.job_id is None else args.job_id
+
+    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-bs{args.bs}-epochs{args.epochs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr:.2e}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
     
-    if not os.path.exists(folder):
-        os.makedirs(folder)
+    conditional_safe_make_directory(folder)
     if not os.path.exists(f"{folder}/config.json"):
         with open(f"{folder}/config.json", "w+") as f:
             json.dump(vars(args), f)
@@ -223,6 +237,22 @@ def save_image_grid(images, path):
 # Miscellaneous utilities
 ################################################################################
 
+def has_resolution(data_str):
+    """Returns if [data_str] has a resolution."""
+    if not "x" in data_str:
+        return False
+    else:
+        x_idxs = [idx for idx,c in enumerate(data_str) if c == "x"]
+        for x_idx in x_idxs:
+            for n in range(1, min(x_idx, len(data_str) - x_idx)):
+                res1 = data_str[x_idx - n:x_idx]
+                res2 = data_str[x_idx + 1:x_idx + 1 + n]
+                if res1.isdigit() and res2.isdigit():
+                    return True
+                else:
+                    break
+        return False
+        
 def remove_duplicates(x):
     """Removes duplicates from order 1 list [x]."""
     seen_elements = set()
@@ -308,6 +338,17 @@ def dict_to_json(dictionary, f):
     """Saves dict [dictionary] to file [f]."""
     with open(f, "w+") as f:
         json.dump(dictionary, f)
+
+def conditional_safe_make_directory(f):
+    """Wrapper for conditional os.makedirs() is safe for use in a parallel
+    environment when two processes may try to create the directory
+    simultaneously.
+    """
+    if not os.path.exists(f):
+        try:
+            os.makedirs(f)
+        except FileExistsError as e:
+            pass
 
 def get_lr(scheduler):
     if isinstance(scheduler, CosineAnnealingWarmupRestarts):

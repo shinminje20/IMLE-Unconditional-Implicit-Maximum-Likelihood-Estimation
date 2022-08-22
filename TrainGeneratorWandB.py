@@ -135,6 +135,8 @@ def get_args(args=None):
         help="path to where datasets are stored")
     P.add_argument("--spi", type=int, default=6,
         help="samples per image in logging, showing the model's diversity.")
+    P.add_argument("--num_val_images", type=int, default=10,
+        help="Number of images to use for validation")
     P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
         help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
     P.add_argument("--gpus", type=int, default=[0, 1], nargs="+",
@@ -143,7 +145,11 @@ def get_args(args=None):
         help="GPU ids")
 
     # Training hyperparameter arguments. These are logged!
-    P.add_argument("--data", required=True, choices=datasets,
+    # P.add_argument("--data", required=True, choices=datasets,
+    #     help="data to train on")
+    P.add_argument("--data_tr", type=is_valid_data, required=True,
+        help="data to train on")
+    P.add_argument("--data_val", type=is_valid_data, required=True,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
         help="resolutions to see data at")
@@ -306,22 +312,51 @@ if __name__ == "__main__":
     # (eg. miniImagenet) differently from those where it's the same. We're more
     # interested in within-distribution learning.
     ############################################################################
-    same_distribution_splits = dataset2metadata[args.data]["same_distribution_splits"]
-    data_tr, data_eval = get_data_splits(args.data,
-        eval_str="val" if same_distribution_splits else "cv",
+    # same_distribution_splits = dataset2metadata[args.data]["same_distribution_splits"]
+    # data_tr, data_eval = get_data_splits(args.data,
+    #     eval_str="val" if same_distribution_splits else "cv",
+    #     res=args.res,
+    #     data_path=args.data_path)
+
+    # data_tr, data_val = get_imagefolder_data(args.data_tr, args.data_val,
+    #     res=args.res,
+    #     data_path=args.data_path)
+
+    # data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
+    # data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
+
+    # eval_len = len(data_eval) // (args.spi + 2)
+    # eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
+    # eval_idxs = set(range(0, len(data_eval), eval_len))
+    # data_eval = Subset(data_eval, indices=list(eval_idxs))
+
+    # if not same_distribution_splits:
+    #     idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
+    #     data_tr = Subset(data_tr, indices=idxs)
+    
+    data_tr, data_val = get_imagefolder_data(args.data_tr, args.data_val,
         res=args.res,
         data_path=args.data_path)
+
     data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
-    data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
+    # If args.data_val is 'cv', then we need to split it off from the training
+    # data. If it's its own dataset, we can use each dataset directly. However,
+    # we still need to select args.num_val_images from it.
+    if args.data_val == "cv":
+        step = int((len(data_tr) / args.num_val_images) + .5)
+        idxs_val = {idx for idx in range(0, len(data_tr), step)}
 
-    eval_len = len(data_eval) // (args.spi + 2)
-    eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-    eval_idxs = set(range(0, len(data_eval), eval_len))
-    data_eval = Subset(data_eval, indices=list(eval_idxs))
+        if len(idxs_val) == len(data_tr):
+            raise ValueError(f"Too many validation images selected; no data is left for training. Reduce --num_val_images to below {len(data_tr) // 2}")
 
-    if not same_distribution_splits:
-        idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
-        data_tr = Subset(data_tr, indices=idxs)
+        idxs_tr = [idx for idx in range(len(data_tr)) if not idx in idxs_val]
+        data_tr = Subset(data_tr, indices=idxs_tr)
+        data_val = Subset(data_tr, indices=list(idxs_val))
+    else:
+        data_val = GeneratorDataset(data_val, get_gen_augs(args))
+        step = int((len(data_val) / args.num_val_images) + .5)
+        idxs_val = {idx for idx in range(0, len(data_val), step)}
+        data_val = Subset(data_val, indices=list(idxs_val))
     
 
     # Get a function that returns random codes given a level. We will use
@@ -349,7 +384,7 @@ if __name__ == "__main__":
 
     
     
-    loader_eval = DataLoader(data_eval,
+    loader_eval = DataLoader(data_val,
         shuffle=False,
         batch_size=max(len(args.gpus), args.bs),
         num_workers=8,
@@ -460,13 +495,13 @@ if __name__ == "__main__":
         images_file = f"{save_dir}/val_images/step{loop * len(loader_tr)}.png"
         save_image_grid(images_val, images_file)
         wandb.log({
-            "Epoch_LPIPS loss": lpips_loss_val,
-            "Epoch_MSE loss": mse_loss_val,
-            "Epoch_combined loss": comb_loss_val,
-            "Epoch_generated images": wandb.Image(images_file),
+            "Loop_LPIPS loss": lpips_loss_val,
+            "Loop_MSE loss": mse_loss_val,
+            "Loop_combined loss": comb_loss_val,
+            "Loop_generated images": wandb.Image(images_file),
         }, step=cur_step)
 
-        tqdm.write(f"Loop {loop:3}/{args.outer_loops} | Epoch_lr {get_lr(scheduler)[0]:.5e} | Epoch_loss_val {comb_loss_val:.5e}")
+        tqdm.write(f"Loop {loop:3}/{args.outer_loops} | Loop_lr {get_lr(scheduler)[0]:.5e} | Loop_loss_val {comb_loss_val:.5e}")
 
         del images_val, lpips_loss_val, mse_loss_val, comb_loss_val
 
