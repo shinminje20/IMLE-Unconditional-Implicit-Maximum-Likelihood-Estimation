@@ -405,7 +405,7 @@ if __name__ == "__main__":
         k_or_k_minus_one = KorKMinusOne(range(len(data_tr)), shuffle=True)
         scheduler = CosineAnnealingLR(optimizer,
             args.outer_loops * args.num_iteration,
-            eta_min=1e-8,
+            eta_min=1e-4,
             last_epoch=max(-1, last_loop * args.num_iteration))
 
 
@@ -454,7 +454,7 @@ if __name__ == "__main__":
     # =============================================================================
 
     end_loop = last_loop + 2 if args.chunk_epochs else args.outer_loops
-    cur_step = (last_loop + 1) * len(loader_tr)
+    cur_step = (last_loop + 1) * args.num_iteration
     tqdm.write(f"LOG: Running loops indexed {last_loop + 1} to {end_loop}")
 
     for loop in tqdm(range(last_loop + 1, end_loop),
