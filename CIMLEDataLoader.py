@@ -177,7 +177,7 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 # print("ouputs.shape: ", outputs.shape)
                 print("y[level_idx].shape: ", y[-1].shape)
                 print("=====================================")
-                raise "asdfasdf"
+
                 # Compute loss for the new codes.
                 outputs = model(cx, test_codes, loi=level_idx)
                 losses = loss_fn(outputs, y[level_idx])
