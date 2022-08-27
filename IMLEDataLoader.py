@@ -42,14 +42,16 @@ class IMLEDataLoader(object):
         # num_iteration: # of iteration per samples
         loaders = []
         iter_data = Subset(self.dataset, indices=[self.kkm.pop() for _ in range(self.subsample_size)])
-
+        print("=-=-==-=-==-=-=-=-=-==")
+        print("len(iter_data): ", len(iter_data))
+        print("=-=-==-=-==-=-=-=-=-==")
+        # noise = torch.randn(iter_data.shape[0], self.code_bs).to(device)
+        # fake_samples = model(noise)
         codes, targets  = get_codes_in_chunks(iter_data, self.model, self.z_gen, self.loss_fn, num_samples=self.num_samples,
                                     sample_parallelism=self.sample_parallelism, code_bs=self.code_bs)
 
-        codeYdataset = CodeYDataset(codes, iter_data)  
-        print("=-=-=-=-=-=-=-=-")
-        print("len(codeYdataset)", len(codeYdataset))
-        print("=-=-=-=-=-=-=-=-")
+        codeYdataset = CodeYDataset(fake_samples, targets)  
+
         self.data_len = 0
         for i in range(self.loader_generate_cycle):
             if i == self.loader_generate_cycle - 1:
@@ -167,11 +169,18 @@ def get_new_codes(y, model, z_gen, loss_fn, num_samples=16, sample_parallelism=1
                 test_codes = old_codes + [new_codes]
 
                 # Compute loss for the new codes.
-                # print("============================================================")
-                # # print("test_codes.shape: ", test_codes.shape)
-                # print("new_codes.shape", new_codes.shape)
-                # print("============================================================")
-                outputs = model(test_codes[-1], 0, alpha=0)
+                print("=====================================")
+                print("len(level_codes[:level_idx]): ", len(level_codes[:level_idx]))
+                # print("level_codes[:level_idx].shape: ", level_codes[:level_idx][-1].shape)
+                print("new_codes.shape: ", new_codes.shape)
+                print("test_codes.shape: ", test_codes[-1].shape)
+                print("new_codes.shape", new_codes.shape)
+                # print("ouputs.shape: ", outputs.shape)
+                print("y[level_idx].shape: ", y[-1].shape)
+                print("=====================================")
+                # raise "easdfjklasd"
+                outputs = model(new_codes)
+                
                 losses = loss_fn(outputs, y[level_idx], 'none')
 
                 # [losses] may have multiple values for each input example
@@ -187,13 +196,15 @@ def get_new_codes(y, model, z_gen, loss_fn, num_samples=16, sample_parallelism=1
                 # print("y.shape", y[0].shape, bs, sp)
                 # print("new_codes.shape", new_codes.shape)
                 # print("=-=-=-=-===-")
-                _, idxs = torch.min(losses.view(bs, sp*bs), axis=1)
-                # print("idxs: ", idxs)
-                new_codes= new_codes.unsqueeze(0).expand(bs, -1 , -1)
-                # print("new_codes.shape", new_codes.shape)
+
+                # _, idxs = torch.min(losses.view(bs, sp*bs), axis=1)
+                # new_codes= new_codes.unsqueeze(0).expand(bs, -1 , -1)
                 # new_codes = new_codes.view((bs, sp*bs) + new_codes.shape[1:])
+
+                _, idxs = torch.min(losses.view(bs, sp), axis=1)
+                new_codes = new_codes.view((bs, sp) + new_codes.shape[1:])
                 new_codes = new_codes[torch.arange(bs), idxs]
-                losses = losses.view(bs, sp*bs)[torch.arange(bs), idxs]
+                losses = losses.view(bs, sp)[torch.arange(bs), idxs]
 
                 # Update [level_codes] and [last_losses] to reflect new
                 # codes that get least loss.
@@ -225,12 +236,15 @@ def get_codes_in_chunks(data, model, z_gen, loss_fn, num_samples=16,
 
     targets_images = None
     
-    for idx, (x, ys) in tqdm(enumerate(loader),
+    for idx, (_, ys) in tqdm(enumerate(loader),
         desc="Sampling chunks of batch",
         total=len(loader),
         leave=False,
         dynamic_ncols=True):
-        
+        print("=============")
+        print("len(ys): ", len(ys))
+        print("ys[-1].shape: ", ys[-1].shape)
+        print("=============")
         ys = [y.to(device, non_blocking=True) for y in ys]
         chunk_codes = get_new_codes(ys, model, z_gen, loss_fn,
             num_samples=num_samples,
@@ -240,6 +254,58 @@ def get_codes_in_chunks(data, model, z_gen, loss_fn, num_samples=16,
         indices = torch.tensor(indices)
         for level_idx in range(len(chunk_codes)):
             level_codes[level_idx][indices] = chunk_codes[level_idx]
+        
+        # Save the resulting images
+        if targets_images is None:
+            targets_images = [[y.cpu()] for y in ys]
+        else:
+            for t,y in zip(targets_images, ys):
+                t.append(y.cpu())
+
+    targets_images = [torch.cat(t, axis=0) for t in targets_images]
+    
+    return level_codes, targets_images
+
+
+def new_get_codes_in_chunks(data, model, z_gen, loss_fn, num_samples=16,
+    sample_parallelism=16, code_bs=128):
+    """Returns a list of new latent codes found via hierarchical sampling with
+    the batch dimension chunked to allow running larger batches.
+    Args:
+    data        -- GeneratorDataset, or Subset thereof
+    model       -- model backbone. Must support a 'loi' argument and a tensor of
+                    losses, one for each element in an input batch
+    z_gen       -- function mapping from batch sizes and levels to z_dims
+    sp          -- list of sample parallelisms, one for each level
+    num_samples -- list of numbers of samples, one for each level
+    code_bs     -- the size of each batch dimension chunk
+    """
+    # level_codes = z_gen(len(data), level="all")
+    loader = DataLoader(data,
+        batch_size=code_bs,
+        pin_memory=True,
+        num_workers=24,
+        drop_last=False)
+
+    targets_images = None
+    
+    for idx, (_, ys) in tqdm(enumerate(loader),
+        desc="Sampling chunks of batch",
+        total=len(loader),
+        leave=False,
+        dynamic_ncols=True):
+        
+        ys = [y.to(device, non_blocking=True) for y in ys]
+        # chunk_codes = get_new_codes(ys, model, z_gen, loss_fn,
+        #     num_samples=num_samples,
+        #     sample_parallelism=sample_parallelism)
+        torch.randn((bs,) + z_dims[level])
+        noise = torch.randn(iter_data.shape[0], self.code_bs).to(device)
+        fake_samples = model(noise)
+        # indices = range(idx * code_bs, min(len(data), (idx+1) * code_bs))
+        # indices = torch.tensor(indices)
+        # for level_idx in range(len(chunk_codes)):
+        #     level_codes[level_idx][indices] = chunk_codes[level_idx]
         
         # Save the resulting images
         if targets_images is None:

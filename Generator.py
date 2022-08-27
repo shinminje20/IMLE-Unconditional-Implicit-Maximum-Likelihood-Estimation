@@ -8,6 +8,7 @@ from CustomLayers import (EqualizedConv2d, EqualizedLinear,
                                  PixelNormLayer, Truncation)
 from collections import OrderedDict
 import random
+from torch.nn.functional import interpolate
 
 def update_average(model_tgt, model_src, beta):
     """
@@ -41,7 +42,9 @@ def update_average(model_tgt, model_src, beta):
 class Generator(nn.Module):
 
     def __init__(self, resolution, latent_size=512, dlatent_size=512,
-                 truncation_psi=0.7, truncation_cutoff=8, dlatent_avg_beta=0.995, style_mixing_prob=0.9, **kwargs):
+                 conditional=False, n_classes=0, truncation_psi=0.7,
+                 truncation_cutoff=8, dlatent_avg_beta=0.995,
+                 style_mixing_prob=0.9, **kwargs):
         """
         # Style-based generator used in the StyleGAN paper.
         # Composed of two sub-networks (G_mapping and G_synthesis).
@@ -57,12 +60,20 @@ class Generator(nn.Module):
         
         super(Generator, self).__init__()
 
+        if conditional:
+            assert n_classes > 0, "Conditional generation requires n_class > 0"
+            self.class_embedding = nn.Embedding(n_classes, latent_size)
+            latent_size *= 2
+
+        self.conditional = conditional
         self.style_mixing_prob = style_mixing_prob
 
         # Setup components.
         self.num_layers = (int(np.log2(resolution)) - 1) * 2
-        self.g_mapping = GMapping(latent_size, dlatent_size, dlatent_broadcast=self.num_layers, **kwargs)
-        self.g_synthesis = GSynthesis(resolution=resolution, **kwargs)
+        self.g_mapping = GMapping(resolution, resolution, dlatent_broadcast=self.num_layers, **kwargs)
+        print("================= Generator ======================")
+        print("resolution: ", resolution)
+        self.g_synthesis = GSynthesis(dlatent_size=resolution ,fmap_max=resolution ,resolution=resolution, **kwargs)
 
         if truncation_psi > 0:
             self.truncation = Truncation(avg_latent=torch.zeros(dlatent_size),
@@ -80,9 +91,6 @@ class Generator(nn.Module):
         :param labels_in: Second input: Conditioning labels [mini_batch, label_size].
         :return:
         """
-        # print("=================================================================")
-        # print("type(latents_in): ", type(latents_in))
-        # print("=================================================================")
         dlatents_in = self.g_mapping(latents_in)
 
         if self.training:
@@ -223,7 +231,10 @@ class GSynthesis(nn.Module):
 
         act, gain = {'relu': (torch.relu, np.sqrt(2)),
                      'lrelu': (nn.LeakyReLU(negative_slope=0.2), np.sqrt(2))}[nonlinearity]
-
+        print("================ GSynthesis ================")
+        print("dlatent_size: ", dlatent_size)
+        print("num_channels : ", num_channels)
+        print("================ ============ ================")
         # Early layers.
         self.init_block = InputBlock(nf(1), dlatent_size, const_input_layer, gain, use_wscale,
                                      use_noise, use_pixel_norm, use_instance_norm, use_styles, act)

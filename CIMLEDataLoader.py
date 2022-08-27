@@ -168,18 +168,19 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
                 sp = sps[idx]
                 new_codes = z_gen(bs * sp, level=level_idx)
                 test_codes = old_codes + [new_codes]
+                
+
+                # Compute loss for the new codes.
+                outputs = model(cx, test_codes, loi=level_idx)
                 print("=====================================")
                 print("len(level_codes[:level_idx]): ", len(level_codes[:level_idx]))
                 # print("level_codes[:level_idx].shape: ", level_codes[:level_idx][-1].shape)
                 print("new_codes.shape: ", new_codes.shape)
                 print("test_codes.shape: ", test_codes[-1].shape)
                 print("new_codes.shape", new_codes.shape)
-                # print("ouputs.shape: ", outputs.shape)
+                print("ouputs.shape: ", outputs.shape)
                 print("y[level_idx].shape: ", y[-1].shape)
                 print("=====================================")
-
-                # Compute loss for the new codes.
-                outputs = model(cx, test_codes, loi=level_idx)
                 losses = loss_fn(outputs, y[level_idx])
 
                 # [losses] may have multiple values for each input example
@@ -228,7 +229,6 @@ def get_codes_in_chunks(data, model, corruptor, z_gen, loss_fn, num_samples=16,
         total=len(loader),
         leave=False,
         dynamic_ncols=True):
-
         ys = [y.to(device, non_blocking=True) for y in ys]
         cx = corruptor(x.to(device, non_blocking=True))
         chunk_codes = get_new_codes(cx, ys, model, z_gen, loss_fn,

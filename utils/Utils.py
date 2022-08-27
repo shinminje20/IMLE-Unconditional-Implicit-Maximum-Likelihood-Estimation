@@ -129,7 +129,7 @@ def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args]."""
     uid = args.uid if args.job_id is None else args.job_id
 
-    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-bs{args.bs}-epochs{args.epochs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr:.2e}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
+    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-bs{args.bs}-OuterLoops{args.outer_loops}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr:.2e}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
     
     conditional_safe_make_directory(folder)
     if not os.path.exists(f"{folder}/config.json"):

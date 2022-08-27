@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils import clip_grad_norm_
 from torch.optim import AdamW
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR 
 from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 from torch.utils.data import Subset
 from torch.cuda.amp import autocast, GradScaler
@@ -27,10 +27,22 @@ from utils.UtilsColorSpace import *
 from utils.UtilsNN import *
 
 from functools import partial
+import numpy as np
 
 def get_z_dims(args):
     """Returns a list of random noise dimensionalities for one sampling."""
-    return [(512,) for r in args.res[:-1]] #TODO hard code need to be updated
+    return [(64,)] #TODO hard code need to be updated
+
+# def get_z_dims(args):
+#     """Returns a list of random noise dimensionalities for one sampling."""
+# # =-=-=-=-=-=-=-=-=-=-=-=-=-=-==-
+# # args.map_nc:  128
+# # args.code_nc:  5
+# # r ** 2:  1024
+# # r:  32
+# # 5048
+# # =-=-=-=-=-=-=-=-=-=-=-=-=-=-==-
+#     return [(args.map_nc + args.code_nc * r ** 2,) for r in args.res[:-1]]
 
 mm = None
 def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_components=5,  **kwargs):
@@ -68,10 +80,10 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_compo
         neg_ones = [[-1] * (1 + len(dim)) for dim in z_dims]
         if level == "all":
             means = [mm[level].expand(bs, *neg_ones[level])[torch.arange(bs), idxs] for level in range(len(mm))]
-            return [m + torch.randn(m.shape) / num_components for m in means]
+            return [m + torch.randn(m.shape) for m in means]
         else:
             means = mm[level].expand(bs, *neg_ones[level])[torch.arange(bs), idxs]
-            return means + torch.randn(means.shape) / num_components
+            return means + torch.randn(means.shape)
     else:
         raise NotImplementedError()
 
@@ -127,13 +139,17 @@ def get_args(args=None):
         help="disabled: no W&B logging, online: normal W&B logging")
     P.add_argument("--suffix", default="",
         help="optional training suffix")
-    P.add_argument("--jobid", default=None, type=str,
+    P.add_argument("--job_id", default=None, type=str,
         help="Variable for storing SLURM job ID")
+    P.add_argument("--uid", default=None, type=str,
+        help="Unique identifier for the run. Should be specified only when resuming, as it needs to be generated via WandB otherwise")
     P.add_argument("--resume", type=str, default=None,
         help="a path or epoch number to resume from or nothing for no resuming")
 
     P.add_argument("--data_path", default=data_dir, type=str,
         help="path to where datasets are stored")
+    P.add_argument("--num_val_images", type=int, default=10,
+        help="Number of images to use for validation")
     P.add_argument("--spi", type=int, default=6,
         help="samples per image in logging, showing the model's diversity.")
     P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
@@ -144,7 +160,9 @@ def get_args(args=None):
         help="GPU ids")
 
     # Training hyperparameter arguments. These are logged!
-    P.add_argument("--data", required=True, choices=datasets,
+    P.add_argument("--data_tr", type=is_valid_data, required=True,
+        help="data to train on")
+    P.add_argument("--data_val", type=is_valid_data, required=True,
         help="data to train on")
     P.add_argument("--res", nargs="+", type=int, default=[64, 64, 64, 64, 128],
         help="resolutions to see data at")
@@ -236,6 +254,177 @@ def get_args(args=None):
 
     return args
 
+def progressive_down_sampling(real_batch, depth, curr_depth, alpha):
+        """
+        private helper for down_sampling the original images in order to facilitate the
+        progressive growing of the layers.
+        :param real_batch: batch of real samples
+        :param depth: depth at which training is going on
+        :param alpha: current value of the fade-in alpha
+        :return: real_samples => modified real batch of samples
+        """
+
+        from torch.nn import AvgPool2d
+        from torch.nn.functional import interpolate
+
+
+        # down_sample the real_batch for the given depth
+        down_sample_factor = int(np.power(2, depth - curr_depth - 1))
+        prior_down_sample_factor = max(int(np.power(2, depth - curr_depth)), 0)
+
+        ds_real_samples = AvgPool2d(down_sample_factor)(real_batch)
+
+        if curr_depth > 0:
+            print(" curr_depth > 0")
+            prior_ds_real_samples = interpolate(AvgPool2d(prior_down_sample_factor)(real_batch), scale_factor=2)
+        else:
+            print(" curr_depth == 0")
+            prior_ds_real_samples = ds_real_samples
+
+        # real samples are a combination of ds_real_samples and prior_ds_real_samples
+        real_samples = (alpha * ds_real_samples) + ((1 - alpha) * prior_ds_real_samples)
+
+        # return the so computed real_samples
+        return real_samples
+
+
+def get_new_codes(ys, model, z_gen, loss_fn, num_samples=16, sample_parallelism=16):
+    """Returns a list of new latent codes found via hierarchical sampling.
+
+    Args:
+    cx          -- a BSxCxHxW tensor of corrupted images, on device
+    model       -- model backbone. Must support a 'loi' argument and a tensor of
+                    losses, one for each element in an input batch
+    z_gen       -- function mapping from batch sizes and levels to z_dims
+    sp          -- list of sample parallelisms, one for each level
+    num_samples -- list of numbers of samples, one for each level
+    """
+    num_samples = make_list(num_samples, len(ys))
+    sample_parallelism = make_list(sample_parallelism, len(ys))
+
+    bs = len(ys)
+    level_codes = z_gen(bs)
+    with torch.no_grad():
+        for level_idx in tqdm(range(len(num_samples)),
+            desc="Sampling: levels",
+            leave=False,
+            dynamic_ncols=True):
+
+            # Get inputs for sampling for the current level. We need to
+            # store the least losses we have for each example, and to find
+            # the level-specific number of samples [ns], sample parallelism
+            # [sp], and shape to sample noise in [shape].
+            old_codes = level_codes[:level_idx]
+            least_losses = torch.ones(bs, device=device) * float("inf")
+            ns = num_samples[level_idx]
+            sp = min(ns, sample_parallelism[level_idx])
+
+            # Handle arbitrary sample parallelism. If [sp] evenly divides
+            # [ns], then we just run [ns // sp] tries. Otherwise, we run an
+            # extra try where the sample parallelism is [ns % sp].
+            if ns % sp == 0:
+                iter_range = range(ns // sp)
+                sps = make_list(sp, len(iter_range))
+            else:
+                iter_range = range(ns // sp + 1)
+                sps = make_list(sp, length=ns // sp) + [ns % sp]
+
+            for idx in tqdm(iter_range,
+                desc="Sampling: iterations over level",
+                leave=False,
+                dynamic_ncols=True):
+
+                # Get the sample parallelism for this trial. Then, get new
+                # codes to sample for the CAMNet level currently being
+                # sampled with while using the prior best old codes.
+                sp = sps[idx]
+                new_codes = z_gen(bs * sp, level=level_idx)
+                test_codes = old_codes + [new_codes]
+                
+
+                # Compute loss for the new codes.
+                outputs = model(test_codes, loi=level_idx)
+                print("=====================================")
+                print("len(level_codes[:level_idx]): ", len(level_codes[:level_idx]))
+                # print("level_codes[:level_idx].shape: ", level_codes[:level_idx][-1].shape)
+                print("new_codes.shape: ", new_codes.shape)
+                print("test_codes.shape: ", test_codes[-1].shape)
+                print("new_codes.shape", new_codes.shape)
+                print("ouputs.shape: ", outputs.shape)
+                print("y[level_idx].shape: ", y[-1].shape)
+                print("=====================================")
+                losses = loss_fn(outputs, y[level_idx])
+
+                # [losses] may have multiple values for each input example
+                # due to using sample parallelism. Therefore, we find the
+                # best-comuted loss for each example, giving a tensor of new
+                # losses of the same size as [least_losses]. We do the same
+                # with the newly sampled codes.
+                _, idxs = torch.min(losses.view(bs, sp), axis=1)
+                new_codes = new_codes.view((bs, sp) + new_codes.shape[1:])
+                new_codes = new_codes[torch.arange(bs), idxs]
+                losses = losses.view(bs, sp)[torch.arange(bs), idxs]
+
+                # Update [level_codes] and [last_losses] to reflect new
+                # codes that get least loss.
+                change_idxs = losses < least_losses
+                level_codes[level_idx][change_idxs] = new_codes[change_idxs]
+                least_losses[change_idxs] = losses[change_idxs]
+
+    return level_codes
+
+def get_codes_in_chunks(data, model, z_gen, loss_fn, num_samples=16,
+    sample_parallelism=16, code_bs=128):
+    """Returns a list of new latent codes found via hierarchical sampling with
+    the batch dimension chunked to allow running larger batches.
+    Args:
+    data        -- GeneratorDataset, or Subset thereof
+    model       -- model backbone. Must support a 'loi' argument and a tensor of
+                    losses, one for each element in an input batch
+    z_gen       -- function mapping from batch sizes and levels to z_dims
+    sp          -- list of sample parallelisms, one for each level
+    num_samples -- list of numbers of samples, one for each level
+    code_bs     -- the size of each batch dimension chunk
+    """
+    level_codes = z_gen(len(data))
+    loader = DataLoader(data,
+        batch_size=code_bs,
+        pin_memory=True,
+        num_workers=24,
+        drop_last=False)
+
+    corrupted_images = []
+    targets_images = None
+    
+    for idx, ys in tqdm(enumerate(loader),
+        desc="Sampling chunks of batch",
+        total=len(loader),
+        leave=False,
+        dynamic_ncols=True):
+        ys = [y.to(device, non_blocking=True) for y in ys]
+        # cx = corruptor(x.to(device, non_blocking=True))
+        chunk_codes = get_new_codes(ys, model, z_gen, loss_fn,
+            num_samples=num_samples,
+            sample_parallelism=sample_parallelism)
+        
+        indices = range(idx * code_bs, min(len(data), (idx+1) * code_bs))
+        indices = torch.tensor(indices)
+        for level_idx in range(len(chunk_codes)):
+            level_codes[level_idx][indices] = chunk_codes[level_idx]
+        
+        # Save the resulting images
+        # corrupted_images.append(cx.cpu())
+        if targets_images is None:
+            targets_images = [[y.cpu()] for y in ys]
+        else:
+            for t,y in zip(targets_images, ys):
+                t.append(y.cpu())
+
+    # corrupted_images = torch.cat(corrupted_images, axis=0)
+    targets_images = [torch.cat(t, axis=0) for t in targets_images]
+    
+    return level_codes, targets_images
+
 if __name__ == "__main__":
     args = get_args()
 
@@ -258,7 +447,7 @@ if __name__ == "__main__":
         resume_file = None
 
     if resume_file is None:
-        save_dir = generator_folder(args, ignore_conflict=False)
+        save_dir = generator_folder(args)
         cur_seed = set_seed(args.seed)
 
         # Setup the experiment. Importantly, we copy the experiment's ID to
@@ -267,13 +456,14 @@ if __name__ == "__main__":
         wandb.init(anonymous="allow", id=args.run_id, config=args,
             mode=args.wandb, project="isicle-generator")
         corruptor = Corruption(**vars(args))
-
         model = nn.DataParallel(Generator(num_channels=3,
-                             resolution=32,
-                             structure='fixed',
+                                latent_size=args.res[-1],
+                                dlatent_size=args.res[-1],
+                                resolution=args.res[-1],
+                             structure='linear',
                              **seed_kwargs(cur_seed))).to(device)
         optimizer = AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
-        last_epoch = -1
+        last_loop = -1
     else:
         tqdm.write(f"Resuming from {resume_file}")
         resume_data = torch.load(resume_file)
@@ -295,9 +485,12 @@ if __name__ == "__main__":
         model = resume_data["model"].to(device)
         optimizer = resume_data["optimizer"]
         corruptor = resume_data["corruptor"].to(device)
-        last_epoch = resume_data["last_epoch"]
+        last_loop = resume_data["last_loop"]
         scheduler = resume_data["scheduler"]
-
+    
+    depth = int(np.log2(args.res[-1])) - 4
+    latent_size = args.res[-1]
+    start_depth = 0
     # Set up the loss function
     loss_fn = nn.DataParallel(UnconditionalIMLELoss(alpha=args.alpha), device_ids=args.gpus).to(device)
 
@@ -307,30 +500,42 @@ if __name__ == "__main__":
     # (eg. miniImagenet) differently from those where it's the same. We're more
     # interested in within-distribution learning.
     ############################################################################
-    same_distribution_splits = dataset2metadata[args.data]["same_distribution_splits"]
-    data_tr, data_eval = get_data_splits(args.data,
-        eval_str="val" if same_distribution_splits else "cv",
+    data_tr, data_val = get_imagefolder_IMLE_data(args.data_tr, args.data_val,
         res=args.res,
         data_path=args.data_path)
-    data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
-    data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
+    
+    data_tr = IMLEDataset(data_tr, get_gen_augs(args))
+    # If args.data_val is 'cv', then we need to split it off from the training
+    # data. If it's its own dataset, we can use each dataset directly. However,
+    # we still need to select args.num_val_images from it.
+    if args.data_val == "cv":
+        step = int((len(data_tr) / args.num_val_images) + .5)
+        idxs_val = {idx for idx in range(0, len(data_tr), step)}
 
-    eval_len = len(data_eval) // (args.spi + 2)
-    eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-    eval_idxs = set(range(0, len(data_eval), eval_len))
-    data_eval = Subset(data_eval, indices=list(eval_idxs))
+        if len(idxs_val) == len(data_tr):
+            raise ValueError(f"Too many validation images selected; no data is left for training. Reduce --num_val_images to below {len(data_tr) // 2}")
 
-    if not same_distribution_splits:
-        idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
-        data_tr = Subset(data_tr, indices=idxs)
+        idxs_tr = [idx for idx in range(len(data_tr)) if not idx in idxs_val]
+        data_tr = Subset(data_tr, indices=idxs_tr)
+        data_val = Subset(data_tr, indices=list(idxs_val))
+    else:
+        data_val = IMLEDataset(data_val, get_gen_augs(args))
+        print("data_val: ", data_val)
+        step = int((len(data_val) / args.num_val_images) + .5)
+        # idxs_val = {idx for idx in range(0, len(data_val), step)}
+        # data_val = Subset(data_val, indices=list(idxs_val))
 
 
     # Get a function that returns random codes given a level. We will use
     # this to do cool things with non-Gaussian sampling via the
     # [sample_method] input.
     z_gen = partial(get_z_gen, get_z_dims(args),
-        sample_method=args.sample_method)
-   
+        sample_method="mixture")
+    
+    print("======================")
+    print("len(data_tr): ", len(data_tr))
+    print("len(data_val): ", len(data_val))
+    print("======================")
     
     
     ########################################################################
@@ -345,20 +550,16 @@ if __name__ == "__main__":
     # end_epoch = last_epoch + 2 if args.chunk_epochs else args.epochs
     # cur_step = (last_epoch + 1) * len(loader_tr) * (args.ipc // args.mini_bs)
 
-    loader_eval = DataLoader(data_eval,
-        shuffle=False,
-        batch_size=max(len(args.gpus), args.bs),
-        num_workers=8,
-        drop_last=True)
+    
 
-    loader_tr = IMLEDataLoader(data_tr, model, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
-                    subsample_size=args.subsample_size,
-                    num_iteration=args.num_iteration,
-                    pin_memory=True,
-                    shuffle=True,
-                    batch_size=max(len(args.gpus), args.bs),
-                    num_workers=8,
-                    drop_last=True)
+    # loader_tr = IMLEDataLoader(data_tr, model, z_gen, loss_fn, args.ns, args.sp, args.code_bs,
+    #                 subsample_size=args.subsample_size,
+    #                 num_iteration=args.num_iteration,
+    #                 pin_memory=True,
+    #                 shuffle=True,
+    #                 batch_size=max(len(args.gpus), args.bs),
+    #                 num_workers=8,
+    #                 drop_last=True)
     
     if resume_file is None:
         k_or_k_minus_one = KorKMinusOne(range(len(data_tr)), shuffle=True)
@@ -369,58 +570,137 @@ if __name__ == "__main__":
 
     cur_step = 0
     
-    for e in tqdm(range(args.outer_loops),
-        desc="OuterLoops",
-        dynamic_ncols=True):
+    # 1. iterate thru different resolution, 
+    # 2. torch.cat with those different resolustion samples
+    # 3. Train 
+    end_loop = last_loop + 2 if args.chunk_epochs else args.outer_loops
+    cur_step = (last_loop + 1) * args.num_iteration
+    tqdm.write(f"LOG: Running loops indexed {last_loop + 1} to {end_loop}")
+    
+
+    loader_eval = DataLoader(data_val,
+        shuffle=False,
+        batch_size=max(len(args.gpus), args.bs),
+        num_workers=8,
+        drop_last=True)
+
+    # if resume_file is None:
+    #         model = nn.DataParallel(Generator(num_channels=3,
+    #                             resolution=512,
+    #                          structure='linaer',
+    #                          **seed_kwargs(cur_seed))).to(device)
+    # else:
+    #     model = resume_data["model"].to(device)
+
+    model.train()
+
+    for current_depth in tqdm(range(start_depth, depth)):
         
-        for batch_idx, (codes, ys) in tqdm(enumerate(loader_tr),
-            desc="Batches",
-            leave=False,
-            dynamic_ncols=True,
-            total=len(loader_tr)):
+        batch_size = int(np.power(2, 6 - current_depth))
+        loader = DataLoader(data_tr,
+                            batch_size=batch_size,
+                            shuffle=True,
+                            num_workers=8,
+                            drop_last=True,
+                            pin_memory=True
+                            )
+        ticker = 1
+        
+        # [4, 8, 16, 32, 64] when resolutions [32, 64, 128 ,256, 512]
+        for loop in tqdm(range(args.outer_loops),
+            desc="OuterLoops",
+            dynamic_ncols=True):
             
-            batch_loss = 0
+            total_batches = len(loader)
 
-            ys = imaysges.to(device)
+            fade_point = int((1 /2 * args.outer_loops * total_batches))
 
-            fx = model(cx.to(device), [c.to(device) for c in codes])
-            loss = compute_loss_over_list(fx, [y.to(device) for y in ys], loss_fn)
-            del codes
+            for batch_idx, ys in tqdm(enumerate(loader),
+                desc="Batches",
+                leave=False,
+                dynamic_ncols=True,
+                total=len(loader)):
+                
+                alpha = ticker / fade_point if ticker <= fade_point else 1
+                
+                batch_loss = 0
+                images = ys[0]
+                labels = None
+                
+                images = images.to(device)
+                
+                # noise = torch.randn(images.shape[0], latent_size).to(device)
+                noise = get_z_gen([(batch_size,)], batch_size, sample_method="mixture")
+                print("===============================")
+                print("latent_size: ", latent_size)
+                print("images.shape[0]: ", images.shape[0])
+                print("noise.shape: ", noise.shape)
+                print("===============================")
+                # optimize the generator:
+                # gen_loss = optimize_generator(noise, images, current_depth, alpha, labels)
+                #optimize_generator(noise, real_batch, depth, alpha, labels=None)
+                print("=-=-=-=-=-=-=-=")
+                print("current_depth: ", current_depth)
+                print("=-=-=-=-=-=-=-=")
+                real_samples = progressive_down_sampling(images, depth, current_depth, alpha)
+
+                # generate fake samples:
+                generated_samples = model(noise, 3, alpha)
+
+                # Change this implementation for making it compatible for relativisticGAN
+                # print("real_samples: ", real_samples)
+                # print("len(real_samples): ", len(real_samples[0]))
+                # print("len(fake_samples): ", len(fake_samples[0][0][0]))
+                # raise '2'
+                # loss = compute_loss_over_list(fake_samples, [y.to(device) for y in real_samples], loss_fn)
+                real_samples = real_samples.unsqueeze(0)
+                print("=-=-=-=-=--=-=-=-==-=-=-=-=--=")
+                print("real_samples.shape: ", real_samples.shape)
+                print("fake_samples.shape: ", generated_samples.shape)
+                print("=-=-=-=-=--=-=-=-==-=-=-=-=--=")
+                loss = loss_fn(generated_samples, real_samples, 'none')
+                # loss = loss.gen_loss(
+                #     real_samples, fake_samples, labels, current_depth, alpha)
+
+                # optimize the generator
+                loss.backward()
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                
+                # Gradient Clipping
+                nn.utils.clip_grad_norm_(gen.parameters(), max_norm=10.)
+                scheduler.step()
+
+                cur_step += 1
+                wandb.log({
+                    "batch loss": gen_loss,
+                    "learning rate": get_lr(scheduler)[0]
+                }, step=cur_step)
             
-            loss.backward()
-            optimizer.step()
-            optimizer.zero_grad(set_to_none=True)
-            scheduler.step()
-
-            batch_loss += loss.detach()
-            cur_step += 1
-            wandb.log({
-                "batch loss": loss.detach(),
-                "learning rate": get_lr(scheduler)[0]
-            }, step=cur_step)
-            
-            del ys, loss, batch_loss
-
+                # del codes
+                
+                
+                # del ys, loss, batch_loss
             
         ####################################################################
         # Log data after each epoch
         ####################################################################
         images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
             corruptor, model, z_gen, loader_eval, loss_fn, args)
-        images_file = f"{save_dir}/val_images/step{e * len(loader_tr)}.png"
+        images_file = f"{save_dir}/val_images/step{loop * len(loader_tr)}.png"
         save_image_grid(images_val, images_file)
         wandb.log({
-            "Epoch_LPIPS loss": lpips_loss_val,
-            "Epoch_MSE loss": mse_loss_val,
-            "Epoch_combined loss": comb_loss_val,
-            "Epoch_generated images": wandb.Image(images_file),
+            "Loop_LPIPS loss": lpips_loss_val,
+            "Loop_MSE loss": mse_loss_val,
+            "Loop_combined loss": comb_loss_val,
+            "Loop_generated images": wandb.Image(images_file),
         }, step=cur_step)
 
-        tqdm.write(f"Epoch {e:3}/{args.epochs} | Epoch_lr {get_lr(scheduler)[0]:.5e} | Epoch_loss_val {comb_loss_val:.5e}")
+        tqdm.write(f"Loop {loop:3}/{args.outer_loops} | Loop_lr {get_lr(scheduler)[0]:.5e} | Loop_loss_val {comb_loss_val:.5e}")
 
         del images_val, lpips_loss_val, mse_loss_val, comb_loss_val
 
         save_checkpoint({"corruptor": corruptor.cpu(), "model": model.cpu(),
-            "last_epoch": e, "args": args, "scheduler": scheduler,
-            "optimizer": optimizer}, f"{save_dir}/{e}.pt")
+            "last_loop": loop, "args": args, "scheduler": scheduler,
+            "optimizer": optimizer, "k_or_k_minus_one": k_or_k_minus_one}, f"{save_dir}/{loop}.pt")
         corruptor, model = corruptor.to(device), model.to(device)

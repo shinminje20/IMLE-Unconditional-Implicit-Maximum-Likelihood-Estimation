@@ -138,9 +138,13 @@ class UnconditionalIMLELoss(nn.Module):
         y           -- BS_2xCxHxW tensor giving target images
         reduction   -- The reduction for the loss with several modes, see below
         """
+        print("fz ====================================================================================================")
+        print("fz.shape: ", fz.shape)
         fz_feats = self.phi(fz).unsqueeze(0)
-        # print("y, type(y): ", y.shape, type(y))
+        print("y.shape: ", y.shape)
+        print("y ====================================================================================================")
         y_feats = self.phi(y).unsqueeze(0)
+        
         # print("fz_feats", fz_feats.shape)
         # print("y_feats", y_feats.shape)
         if reduction == "none":
@@ -150,8 +154,8 @@ class UnconditionalIMLELoss(nn.Module):
             # min/argmin over the axis one in this tensor to find the nearest
             # neighbors of a target (real) image and the associated squared
             # distances.
-            temp = torch.cdist(y_feats, fz_feats)
-            # print("cdist.shape", temp.shape)
+            temp = torch.cdist(y_feats, fz_feats) # 1
+            print("temp.shape", temp.shape)
             return torch.square(torch.cdist(y_feats, fz_feats)).squeeze(0)
         elif reduction == "batch":
             # Returns a BS_1-D tensor in which the [ith] element is the square
