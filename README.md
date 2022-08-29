@@ -125,27 +125,3 @@ for loop in range(args.outer_loop)
 
 ## Objectives
 * Style GAN
-
-
-
-# ============================================================================= Engineering
-    # Note: August 
-    # Writing Design principle:
-    # Write down high-level design principle
-    # what is the goal and how you achieve that goal,   (Chained dataloader, KKM)
-    # make clear how all them work
-    # maybe even write psuedo-code
-
-    # Documentation for the user:
-    # One or Two exapmle how to use  arguments, maybe draw diagram, what the different qualitizes are
-    # when different
-    # data points and dataset illustrate.
-    # Threre is reason why didn't go for source code dataloader, (why something prevent to use it rather than current one)
-    #  ===> describe problem and solution.
-    # high-level classes that sort of i'm using in pytorch. How the different parts of pytorch has, call 
-    
-    # Plan ahead. running experiemnet on slurm.
-    # work in parallel.
-    # so that work leave enough time for debuggin
-    # getting the result that can be included in report.
-    # Sometimes you wanna have a faster setting experiement yourself. Compared to original CAMNET code.
