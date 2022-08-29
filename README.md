@@ -1,11 +1,11 @@
 # IMLE
 
-* Refactoring CAM-NET
+* Conditional IMLE refactoring CAM-NET
 
-* Gaussian Mixture noise application
+* Unconditional IMLE with Gaussian Mixture noise
 
 
-# Refactoring CAM-NET
+# Conditional IMLE refactoring CAM-NET
 
 Current CAM-NET has complexity in triple loops usage when training model. The goal here is to improve usability and complexity of CAM-NET model training procedure by reducing triple loops to double loops while keeping the performance of CAM-NET.
 
@@ -65,6 +65,8 @@ kkm = KorKMinusOne(range(len(data_tr)), shuffle=True)
 
 CIMLEDataLoader is a iterator object that subsamples data and returns chained dataloaders lazily, and the number of chained dataloaders are determined by `subsample_size` and `num_iteration` arguments.
 
+Another apporach to implement CIMLEDataLoader was to modify DataLoader source code to sample dataset when `iter` method gets called. However, `len` of dataloader is initialized in `__init__` and updating length of dataloader dynamically as chained dataloader generate was making conflict with other inner methods that are utilizing `__len__()` method. Thus, instead, iterator object has been created. 
+
 ### How CIMLEDataLoader works
 
 #### Initialization
@@ -74,7 +76,7 @@ def __init__(self, dataset, kkm, model, corruptor, z_gen, loss_fn, num_samples, 
 
 CIMLE DataLoader takes additional arguments upon normal Dataloader. kkm, model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, code_bs, subsample_size, num_iteration are additionals. Key arguments here are `kkm`, `num_iteration`, and `subsample_size`.
 
-During initialization, `num_chained_loaders` determines how many chained dataloader to be generatedm. This is calculated as follows:
+During initialization, `num_chained_loaders` determines how many chained dataloader to be generated. This is calculated as follows:
 
 ```
 if num_iteration is greater than (subsample_size // batch_size)          # subsample_size // batch_size is how many batch data can be fitted             
@@ -83,7 +85,13 @@ else
     num_chained_loaders -> 1
 ```
 
-## Result
+By looping through range of `num_chained_loaders`, DataLoaders with `subsample_size // batch_size` iterations are generated and appended into a list. When the loop reached to the last one, it checkes `num_iteration % (subsample_size // batch_size) != 0`. 
+
+This checks whether the `num_iteration` evenly divisible by number of iterations for each subsample `(subsample_size // batch_size)`. If it is divisible, then another DataLoader is generated as previous, otherwise, a DataLoader with `num_iteration % (subsample_size // batch_size)` amounts of iterations is generated which is less iterations than previously generated DataLoaders and appended to the list.
+
+At last, list of DataLoaders will be chained by `itertools.chain` method. 
+
+## Outcome and Usage
 
 By using `CIMLEDataLoader`, user will see less loop complexity, have better readability, and usability.
 
@@ -104,16 +112,19 @@ for epoch in epochs
 
 - updated strcuture
 ```
-loader = CIMLEDataLoader(......)
+k_or_k_minus_one = KorKMinusOne(range(len(data_tr)), shuffle=True)
+loader = CIMLEDataLoader(dataset, k_or_k_minus_one,  model, corruptor, z_gen, loss_fn, ...)
+
 for loop in range(args.outer_loop)
 
-    for (x, latent, ys) in loader
+    for (x, latent, ys) in loader        #### Sampling lazily ####
         #### Training ####
 ```
 
-# Gaussian Mixture noise
+# Unconditional IMLE with Gaussian Mixture noise
 
-
+## Objectives
+* Style GAN
 
 
 
