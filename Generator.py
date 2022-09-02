@@ -59,7 +59,6 @@ class Generator(nn.Module):
         """
         
         super(Generator, self).__init__()
-
         if conditional:
             assert n_classes > 0, "Conditional generation requires n_class > 0"
             self.class_embedding = nn.Embedding(n_classes, latent_size)
@@ -71,8 +70,6 @@ class Generator(nn.Module):
         # Setup components.
         self.num_layers = (int(np.log2(resolution)) - 1) * 2
         self.g_mapping = GMapping(resolution, resolution, dlatent_broadcast=self.num_layers, **kwargs)
-        print("================= Generator ======================")
-        print("resolution: ", resolution)
         self.g_synthesis = GSynthesis(dlatent_size=resolution ,fmap_max=resolution ,resolution=resolution, **kwargs)
 
         if truncation_psi > 0:
@@ -91,6 +88,7 @@ class Generator(nn.Module):
         :param labels_in: Second input: Conditioning labels [mini_batch, label_size].
         :return:
         """
+        # print("=========================================== Forward Generator ================================================")
         dlatents_in = self.g_mapping(latents_in)
 
         if self.training:
@@ -174,6 +172,7 @@ class GMapping(nn.Module):
         self.map = nn.Sequential(OrderedDict(layers))
 
     def forward(self, x):
+        # print("=========================================== Forward GMapping ================================================")
         # First input: Latent vectors (Z) [mini_batch, latent_size].
         x = self.map(x)
 
@@ -231,10 +230,6 @@ class GSynthesis(nn.Module):
 
         act, gain = {'relu': (torch.relu, np.sqrt(2)),
                      'lrelu': (nn.LeakyReLU(negative_slope=0.2), np.sqrt(2))}[nonlinearity]
-        print("================ GSynthesis ================")
-        print("dlatent_size: ", dlatent_size)
-        print("num_channels : ", num_channels)
-        print("================ ============ ================")
         # Early layers.
         self.init_block = InputBlock(nf(1), dlatent_size, const_input_layer, gain, use_wscale,
                                      use_noise, use_pixel_norm, use_instance_norm, use_styles, act)
@@ -266,7 +261,7 @@ class GSynthesis(nn.Module):
             :param alpha: value of alpha for fade-in effect
             :return: y => output
         """
-
+        # print("=========================================== Forward GSynthesis ================================================")
         assert depth < self.depth, "Requested output depth cannot be produced"
 
         if self.structure == 'fixed':

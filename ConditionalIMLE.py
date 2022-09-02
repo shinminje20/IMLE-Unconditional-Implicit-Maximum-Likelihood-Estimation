@@ -1,4 +1,4 @@
-from KorKMinusOne import KorKMinusOne
+
 from torch.utils.data import Dataset, DataLoader, Subset
 import queue
 from typing import Optional
@@ -6,7 +6,33 @@ from itertools import chain
 from utils.Utils import *
 from random import sample
 
+class KorKMinusOne:
+    def __init__(self, idxs, shuffle=False):
+        self.counter = 0
+        self.shuffle = shuffle
+        self.idxs = idxs
+    def pop(self):
+        if self.counter == len(self.idxs):
+            self.counter = 0
+            self.idxs = sample(self.idxs, k=len(self.idxs)) if self.shuffle else self.idxs
+        
+        result = self.idxs[self.counter]
+        self.counter += 1
+        return result
+
 class CIMLEDataLoader(object):
+    """
+    Args:
+    subsample_size      --  argument determines the size of subsample for each `outer_loop` iteration. `subsample_size=len(dataset)` by default.
+    num_iteration       --  argument determines the number of iterations for each subsampled data.
+    kkm                 --  K or K Minus One object
+    model               -- model backbone. Must support a 'loi' argument and a tensor of
+                            losses, one for each element in an input batch
+    z_gen               -- function mapping from batch sizes and levels to z_dims
+    sp                  -- list of sample parallelisms, one for each level
+    num_samples         -- list of numbers of samples, one for each level
+    code_bs             -- the size of each batch dimension chunk
+    """
     def __init__(self, dataset, kkm, model, corruptor, z_gen, loss_fn, num_samples, sample_parallelism, code_bs,
                     subsample_size=None,
                     num_iteration=1,
@@ -19,7 +45,7 @@ class CIMLEDataLoader(object):
         self.kkm = kkm
         self.subsample_size = subsample_size if subsample_size is not None else len(self.dataset)
         self.num_iteration = num_iteration
-        self.loader_generate_cycle = (self.num_iteration // (self.subsample_size // batch_size)) + 1 if self.num_iteration > (self.subsample_size // batch_size) else 1
+        self.num_chained_loaders = (self.num_iteration // (self.subsample_size // batch_size)) + 1 if self.num_iteration > (self.subsample_size // batch_size) else 1
         self.model = model
         self.z_gen = z_gen
         self.loss_fn = loss_fn
@@ -48,8 +74,8 @@ class CIMLEDataLoader(object):
         corrupted_dataset = CorruptedCodeYDataset(corrupted, codes, targets)       
             
         self.data_len = 0
-        for i in range(self.loader_generate_cycle):
-            if i == self.loader_generate_cycle - 1:
+        for i in range(self.num_chained_loaders):
+            if i == self.num_chained_loaders - 1:
                 if self.num_iteration % (self.subsample_size // self.batch_size) != 0 and self.num_iteration > self.subsample_size:
                     Subset_corrupted_dataset = Subset(corrupted_dataset, sample(range(len(corrupted_dataset)),
                                                      self.num_iteration % (self.subsample_size // self.batch_size)))
@@ -172,15 +198,6 @@ def get_new_codes(cx, y, model, z_gen, loss_fn, num_samples=16, sample_paralleli
 
                 # Compute loss for the new codes.
                 outputs = model(cx, test_codes, loi=level_idx)
-                print("=====================================")
-                print("len(level_codes[:level_idx]): ", len(level_codes[:level_idx]))
-                # print("level_codes[:level_idx].shape: ", level_codes[:level_idx][-1].shape)
-                print("new_codes.shape: ", new_codes.shape)
-                print("test_codes.shape: ", test_codes[-1].shape)
-                print("new_codes.shape", new_codes.shape)
-                print("ouputs.shape: ", outputs.shape)
-                print("y[level_idx].shape: ", y[-1].shape)
-                print("=====================================")
                 losses = loss_fn(outputs, y[level_idx])
 
                 # [losses] may have multiple values for each input example

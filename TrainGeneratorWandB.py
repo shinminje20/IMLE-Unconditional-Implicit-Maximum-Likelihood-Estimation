@@ -14,9 +14,8 @@ from torch.utils.data import Subset
 from torch.cuda.amp import autocast, GradScaler
 import torchvision.utils as tv_utils
 
-from KorKMinusOne import KorKMinusOne
 from DatasetNewCode import Dataset_new_code
-from CIMLEDataLoader import CIMLEDataLoader
+from ConditionalIMLE import CIMLEDataLoader, KorKMinusOne
 from CAMNet import *
 from Corruptions import Corruption
 from Data import *
@@ -105,7 +104,7 @@ def validate(corruptor, model, z_gen, loader_eval, loss_fn, args):
             outputs = outputs.view(bs, args.spi, 3, args.res[-1], args.res[-1])
 
             idxs = torch.argsort(combined_loss_.view(bs, args.spi), dim=-1)
-            outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]
+            outputs = outputs[torch.arange(bs).unsqueeze(1), idxs]            
             images = [[s for s in samples] for samples in outputs]
             images = [[y_, c] + s for y_,c,s in zip(y[-1], cx, images)]
 
@@ -129,7 +128,7 @@ def get_args(args=None):
     P.add_argument("--uid", default=None, type=str,
         help="Unique identifier for the run. Should be specified only when resuming, as it needs to be generated via WandB otherwise")
     P.add_argument("--resume", type=str, default=None,
-        help="a path or epoch number to resume from or nothing for no resuming")
+        help="a path or loop number to resume from or nothing for no resuming")
 
     P.add_argument("--data_path", default=data_dir, type=str,
         help="path to where datasets are stored")
@@ -137,8 +136,8 @@ def get_args(args=None):
         help="samples per image in logging, showing the model's diversity.")
     P.add_argument("--num_val_images", type=int, default=10,
         help="Number of images to use for validation")
-    P.add_argument("--chunk_epochs", type=int, choices=[0, 1], default=0,
-        help="whether to chunk by epoch. Useful for ComputeCanada, annoying otherwise.")
+    P.add_argument("--chunk_loops", type=int, choices=[0, 1], default=0,
+        help="whether to chunk by loop. Useful for ComputeCanada, annoying otherwise.")
     P.add_argument("--gpus", type=int, default=[0, 1], nargs="+",
         help="GPU ids")
     P.add_argument("--code_bs", type=int, default=2,
@@ -159,10 +158,8 @@ def get_args(args=None):
         help="random seed")
     P.add_argument("--proj_dim", default=1000, type=int,
         help="projection dimensionality")
-    P.add_argument("--epochs", default=20, type=int,
-        help="number of epochs (months) to train for")
-    P.add_argument("--outer_loops", default=20, type=int,
-        help="number of outer_loops to train for")
+    P.add_argument("--outer_loops", default=40, type=int,
+        help="outer_loop argument is used instead of `epoch`. Each `outer_loop` iteration is one subsampling.")
     P.add_argument("--bs", type=int, default=512,
         help="batch size")
     P.add_argument("--mini_bs", type=int, default=8,
@@ -287,7 +284,7 @@ if __name__ == "__main__":
         args = resume_data["args"]
         args.data_path = curr_args.data_path
         args.gpus = curr_args.gpus
-        args.chunk_epochs = curr_args.chunk_epochs
+        args.chunk_loops = curr_args.chunk_loops
         args.wandb = curr_args.wandb
         save_dir = generator_folder(args)
         cur_seed = set_seed(resume_data["seed"])
@@ -305,43 +302,13 @@ if __name__ == "__main__":
 
     # Set up the loss function
     loss_fn = nn.DataParallel(ResolutionLoss(alpha=args.alpha), device_ids=args.gpus).to(device)
-
-    ############################################################################
-    # Set up the Datasets and DataLoaders. We need to to treat datasets where
-    # the distribution is the different for training and validation splits
-    # (eg. miniImagenet) differently from those where it's the same. We're more
-    # interested in within-distribution learning.
-    ############################################################################
-    # same_distribution_splits = dataset2metadata[args.data]["same_distribution_splits"]
-    # data_tr, data_eval = get_data_splits(args.data,
-    #     eval_str="val" if same_distribution_splits else "cv",
-    #     res=args.res,
-    #     data_path=args.data_path)
-
-    # data_tr, data_val = get_imagefolder_data(args.data_tr, args.data_val,
-    #     res=args.res,
-    #     data_path=args.data_path)
-
-    # data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
-    # data_eval = GeneratorDataset(data_eval, get_gen_augs(args))
-
-    # eval_len = len(data_eval) // (args.spi + 2)
-    # eval_len = round_so_evenly_divides(eval_len, len(args.gpus))
-    # eval_idxs = set(range(0, len(data_eval), eval_len))
-    # data_eval = Subset(data_eval, indices=list(eval_idxs))
-
-    # if not same_distribution_splits:
-    #     idxs = [idx for idx in range(len(data_tr)) if not idx in eval_idxs]
-    #     data_tr = Subset(data_tr, indices=idxs)
     
     data_tr, data_val = get_imagefolder_data(args.data_tr, args.data_val,
         res=args.res,
         data_path=args.data_path)
 
     data_tr = GeneratorDataset(data_tr, get_gen_augs(args))
-    # If args.data_val is 'cv', then we need to split it off from the training
-    # data. If it's its own dataset, we can use each dataset directly. However,
-    # we still need to select args.num_val_images from it.
+
     if args.data_val == "cv":
         step = int((len(data_tr) / args.num_val_images) + .5)
         idxs_val = {idx for idx in range(0, len(data_tr), step)}
@@ -359,36 +326,15 @@ if __name__ == "__main__":
         data_val = Subset(data_val, indices=list(idxs_val))
     
 
-    # Get a function that returns random codes given a level. We will use
-    # this to do cool things with non-Gaussian sampling via the
-    # [sample_method] input.
     z_gen = partial(get_z_gen, get_z_dims(args),
-        sample_method=args.sample_method)
-
-#note: size of dataset: num of iter / epoch, user probably want more iteration, for one sampling, 
-# sub sampling, every time subsamling: we shoudnt not exclude unsampled data from previsou sampling
-# fixed batche size, number of iterations are independent to that.
-#, minibatch, k
-# good verification,
-# implemented off of the ISICLE base
-# basically our current code has too many for loop for training 
-# dataloader that takes number of iteration parameter
-# usecase: more iteration on sample, independent to the batch size and epoch.
-# we will have parameter for dataloader. K
-# k=number of times you’ve sampled
-# number of iterations=number of iterations per samplin
-
-# note: use slurm 
-# meet in a month in july 24 th
-# subsampling should be done in next 2 weeks
-
-    
+        sample_method=args.sample_method)   
     
     loader_eval = DataLoader(data_val,
         shuffle=False,
         batch_size=max(len(args.gpus), args.bs),
         num_workers=8,
         drop_last=True)
+
     ########################################################################
     # Construct the scheduler—strictly speaking, constructing it makes no sense
     # here, but we need to do it only if we're starting a new run.
@@ -397,9 +343,6 @@ if __name__ == "__main__":
     tqdm.write(f"----- Final Arguments -----")
     tqdm.write(dict_to_nice_str(vars(args)))
     tqdm.write(f"----- Beginning Training -----")
-
-    
-    
     
     if resume_file is None:
         k_or_k_minus_one = KorKMinusOne(range(len(data_tr)), shuffle=True)
@@ -419,41 +362,8 @@ if __name__ == "__main__":
                     drop_last=True)
 
     cur_step = 0
-    # learning rate shcdule, check whether issue come from learning rate or other part.
-    # all experience,
-    # run Unconditioanl and conditional in parallel
-    # num_outer_loop = (len(data_tr) // args.subsample_size) * args.epochs 
-    
-    # ============================================================================= Engineering
-    # Note: August 
-    # Writing Design principle:
-    # Write down high-level design principle
-    # what is the goal and how you achieve that goal,   (Chained dataloader, KKM)
-    # make clear how all them work
-    # maybe even write psuedo-code
 
-    # Documentation for the user:
-    # One or Two exapmle how to use  arguments, maybe draw diagram, what the different qualitizes are
-    # when different
-    # data points and dataset illustrate.
-    # Threre is reason why didn't go for source code dataloader, (why something prevent to use it rather than current one)
-    #  ===> describe problem and solution.
-    # high-level classes that sort of i'm using in pytorch. How the different parts of pytorch has, call 
-    
-    # Plan ahead. running experiemnet on slurm.
-    # work in parallel.
-    # so that work leave enough time for debuggin
-    # getting the result that can be included in report.
-    # Sometimes you wanna have a faster setting experiement yourself. Compared to original CAMNET code. 
-
-    # ============================================================================= Research
-    # make it run unconditional IMLE
-    # Right now, next experiement is lack, Gaussian Mix
-    # Try to think back
-    # Try to apply similar principle
-    # =============================================================================
-
-    end_loop = last_loop + 2 if args.chunk_epochs else args.outer_loops
+    end_loop = last_loop + 2 if args.chunk_loops else args.outer_loops
     cur_step = (last_loop + 1) * args.num_iteration
     tqdm.write(f"LOG: Running loops indexed {last_loop + 1} to {end_loop}")
 
@@ -470,6 +380,7 @@ if __name__ == "__main__":
             batch_loss = 0
             fx = model(cx.to(device), [c.to(device) for c in codes])
             loss = compute_loss_over_list(fx, [y.to(device) for y in ys], loss_fn)
+
             del codes, cx
             
             loss.backward()
@@ -488,7 +399,7 @@ if __name__ == "__main__":
 
             
         ####################################################################
-        # Log data after each epoch
+        # Log data after each loop
         ####################################################################
         images_val, lpips_loss_val, mse_loss_val, comb_loss_val = validate(
             corruptor, model, z_gen, loader_eval, loss_fn, args)

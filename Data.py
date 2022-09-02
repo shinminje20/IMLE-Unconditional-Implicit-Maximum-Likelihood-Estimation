@@ -494,7 +494,6 @@ class IMLEDataset(Dataset):
         self.datasets = images
         self.transform = transforms.Compose([
                                                 transforms.RandomHorizontalFlip(),
-                                                transforms.Resize((64, 64)),
                                                 transforms.ToTensor(),
                                                 transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
                                             ])

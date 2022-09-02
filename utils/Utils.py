@@ -128,8 +128,16 @@ def tuple_to_str(t):
 def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args]."""
     uid = args.uid if args.job_id is None else args.job_id
+    lrs = [str(e) for e in args.lr]
+    lr = "_".join(lrs)
 
-    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-bs{args.bs}-OuterLoops{args.outer_loops}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr:.2e}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
+    epochs = [str(e) for e in args.epochs]
+    epochs = "_".join(epochs)
+
+    batch_sizes = [str(e) for e in args.bs]
+    batch_sizes = "_".join(batch_sizes)
+
+    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-mode{args.sample_method}-num_components{args.num_components}-bs{batch_sizes}-Epochs{epochs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{lr}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
     
     conditional_safe_make_directory(folder)
     if not os.path.exists(f"{folder}/config.json"):
