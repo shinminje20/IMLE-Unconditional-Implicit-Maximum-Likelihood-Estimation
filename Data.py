@@ -114,7 +114,6 @@ def seed_kwargs(seed=0):
 ################################################################################
 def get_imagefolder_data(*datasets, res=32, data_path=data_dir):
     """Returns a tranform-free dataset for each path in [*datasets].
-
     Args:
     datasets            -- list of strings that can be interpreted as a dataset,
                             or a path to a folder that can be interpreted as a
@@ -122,7 +121,6 @@ def get_imagefolder_data(*datasets, res=32, data_path=data_dir):
     res                 -- list of resolutions or a list resolution interpreted
                             as a single-item list
     data_path           -- path to where datasets are found
-
     Returns:
     Roughly, [[d(p, r) for r in res] for p in datasets], where [d(.,.)] maps
     a string identifying a folder of data and a resolution to a PyTorch dataset
@@ -140,7 +138,6 @@ def get_imagefolder_data(*datasets, res=32, data_path=data_dir):
 
     def data_str_with_resolution(data_str, res):
         """Returns [data_str] at resolution [res].
-
         Args:
         data_str -- a path to something that could be turned into an ImageFolder
         res     -- the desired resolution
@@ -156,7 +153,6 @@ def get_imagefolder_data(*datasets, res=32, data_path=data_dir):
 
     def data_str_to_dataset(data_str):
         """Returns the dataset that can be built with [data_str].
-
         Args:
         data_str    -- One of 'cv', 'cifar10/train', 'cifar10/test', or a path
                         to a folder over which an ImageFolder can be constructed

@@ -45,7 +45,6 @@ class CIMLEDataLoader(object):
         self.kkm = kkm
         self.subsample_size = subsample_size if subsample_size is not None else len(self.dataset)
         self.num_iteration = num_iteration
-        self.num_chained_loaders = (self.num_iteration // (self.subsample_size // batch_size)) + 1 if self.num_iteration > (self.subsample_size // batch_size) else 1
         self.model = model
         self.z_gen = z_gen
         self.loss_fn = loss_fn
@@ -72,13 +71,14 @@ class CIMLEDataLoader(object):
         codes, corrupted, targets  = get_codes_in_chunks(iter_data, self.model, self.corruptor, self.z_gen, self.loss_fn, num_samples=self.num_samples,
                                     sample_parallelism=self.sample_parallelism, code_bs=self.code_bs)
         corrupted_dataset = CorruptedCodeYDataset(corrupted, codes, targets)       
-            
+        
+        self.num_iteration // len(corrupted_dataset) + 1
         self.data_len = 0
-        for i in range(self.num_chained_loaders):
-            if i == self.num_chained_loaders - 1:
-                if self.num_iteration % (self.subsample_size // self.batch_size) != 0 and self.num_iteration > self.subsample_size:
+        for i in range(num_chained_loaders):
+            if i == num_chained_loaders - 1:
+                if self.num_iteration % len(corrupted_dataset) != 0 and self.num_iteration > len(corrupted_dataset):
                     Subset_corrupted_dataset = Subset(corrupted_dataset, sample(range(len(corrupted_dataset)),
-                                                     self.num_iteration % (self.subsample_size // self.batch_size)))
+                                                     self.num_iteration % len(corrupted_dataset)))
                     loader = DataLoader(Subset_corrupted_dataset, 
                         pin_memory=self.pin_memory,
                         shuffle=self.shuffle,
@@ -138,6 +138,7 @@ class CorruptedCodeYDataset(Dataset):
     def __getitem__(self, idx):
         idx = idx // self.expand_factor
         cx = self.cx[idx]
+        print("__getitem__")
         codes = [c[idx] for c in self.codes]
         ys = [y[idx] for y in self.ys]
         return cx, codes, ys

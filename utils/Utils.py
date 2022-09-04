@@ -128,14 +128,26 @@ def tuple_to_str(t):
 def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args]."""
     uid = args.uid if args.job_id is None else args.job_id
+
+    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-bs{args.bs}-OuterLoops{args.outer_loops}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr:.2e}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
+    
+    conditional_safe_make_directory(folder)
+    if not os.path.exists(f"{folder}/config.json"):
+        with open(f"{folder}/config.json", "w+") as f:
+            json.dump(vars(args), f)
+    return folder
+
+
+def mixture_generator_folder(args):
+    """Returns the folder to which to save a Generator saved with [args]."""
+    uid = args.uid if args.job_id is None else args.job_id
     lrs = [str(e) for e in args.lr]
     lr = "_".join(lrs)
 
     epochs = [str(e) for e in args.epochs]
     epochs = "_".join(epochs)
 
-    batch_sizes = [str(e) for e in args.bs]
-    batch_sizes = "_".join(batch_sizes)
+    batch_sizes = args.bs
 
     folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-mode{args.sample_method}-num_components{args.num_components}-bs{batch_sizes}-Epochs{epochs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{lr}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
     
@@ -231,10 +243,28 @@ def save_image_grid(images, path):
 
     fix, axs = plt.subplots(ncols=max([len(image_row) for image_row in images]),
         nrows=len(images), squeeze=False)
+    
+    print("len(images): ", len(images))
+    print("len(images[0]): ", len(images[0]))
+    print("len(images[0][0]): ", len(images[0][0]))
+    # assert 0
+
     for i,images_row in enumerate(images):
+        print("len(images_row) ,", len(images_row))
         for j,image in enumerate(images_row):
+            print("image.shape ,", image.shape)
             axs[i, j].imshow(np.asarray(functional_TF.to_pil_image(image.detach())), cmap='Greys_r')
             axs[i, j].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
+
+
+    # for k,images_cols in enumerate(images):
+    #     print("images_cols: ", len(images_cols))
+    #     for i, images_row in enumerate(images_cols):
+    #         print("images_row: ", len(images_row))
+    #         for j, image in enumerate(images_row):
+    #             print("image.shape: ", image.shape) 
+    #             axs[i, j].imshow(np.asarray(functional_TF.to_pil_image(image.detach())), cmap='Greys_r')
+    #             axs[i, j].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
 
     if not os.path.exists(os.path.dirname(path)):
         os.makedirs(os.path.dirname(path))

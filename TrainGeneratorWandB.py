@@ -52,7 +52,7 @@ def get_z_gen(z_dims, bs, level=0, sample_method="normal", input=None, num_compo
         global mm
         if mm is None:
             mm = [torch.rand(1, num_components, *dim) for dim in z_dims]
-            mm = [nn.functional.x(m, dim=2) for m in mm]
+            mm = [nn.functional.normalize(m, dim=2) for m in mm]
 
         if input is None:
             idxs = torch.tensor(random.choices(range(num_components), k=bs))
@@ -376,7 +376,11 @@ if __name__ == "__main__":
             leave=False,
             dynamic_ncols=True,
             total=len(loader_tr)):
-            
+            print("=-=-==")
+            print("len(codes): ", len(codes))
+            print("codes[0].shape: ", codes[0].shape)
+            print("codes[0][0]: ", codes[0][0].shape)
+            assert 0 
             batch_loss = 0
             fx = model(cx.to(device), [c.to(device) for c in codes])
             loss = compute_loss_over_list(fx, [y.to(device) for y in ys], loss_fn)

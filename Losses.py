@@ -55,10 +55,10 @@ class ResolutionLoss(nn.Module):
             batch_mse, list_reduction="batch")
         mse_loss = batch_mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1))
         result = lpips_loss + self.alpha * mse_loss
-        # print("========================")
-        # print("mse_loss.shape: ", mse_loss.shape)
-        # print("lpips_loss: ", lpips_loss.shape)
-        # print("========================")
+        print("========================")
+        print("result.shape: ", result.shape)
+        print("result.squeeze().shape: ", result.squeeze().shape)
+        print("========================")
         if return_metrics:
             return lpips_loss, mse_loss, result
         else:
@@ -174,7 +174,10 @@ class UnconditionalIMLELoss(nn.Module):
             # print("temp.shape", temp.shape)
             # output = torch.square(torch.cdist(y_feats, fz_feats))
             # print("output.shape", output.shape)
-            return torch.square(torch.cdist(y_feats, fz_feats)).squeeze(0)
+            # print("torch.square(torch.cdist(y_feats, fz_feats)).squeeze(0): ", torch.square(torch.cdist(y_feats, fz_feats)).squeeze(0).shape)
+            # print("torch.square(torch.cdist(y_feats, fz_feats)).shape: ", torch.square(torch.cdist(y_feats, fz_feats)).shape)
+            # print("torch.cdist(y_feats, fz_feats).shape: ", torch.cdist(y_feats, fz_feats).shape)
+            return torch.mean(torch.square(torch.cdist(y_feats, fz_feats)), axis=1).squeeze(0)
         elif reduction == "batch":
             # Returns a BS_1-D tensor in which the [ith] element is the square
             # distance between [ith] generated image and the [ith] target (real)
@@ -202,10 +205,6 @@ class UnconditionalIMLELoss(nn.Module):
             # print("fz_feats", fz_feats.shape)
             # print("y_feats", y_feats.shape)
             # print("(y_feats - fz_feats).shape: ", (y_feats - fz_feats).shape)
-            # print("torch.square((y_feats - fz_feats)): ", torch.square((y_feats - fz_feats)).shape)
-            # print("torch.mean(torch.square((y_feats - fz_feats))): ", torch.mean(torch.square((y_feats - fz_feats))).shape)
-            # print("torch.mean(torch.square((y_feats - fz_feats))).squeeze(0): ", torch.mean(torch.square((y_feats - fz_feats))).squeeze(0).shape)
-            # print("====================================================================================================")
             return torch.mean(torch.square(y_feats - fz_feats))
         else:
             raise ValueError(f"Unknown reduction '{reduction}'")
