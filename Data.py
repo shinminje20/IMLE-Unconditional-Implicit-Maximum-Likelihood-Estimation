@@ -20,7 +20,6 @@ from torchvision.datasets import ImageFolder, CIFAR10
 from torchvision.datasets.folder import default_loader
 from torchvision import transforms
 
-from Corruptions import *
 from utils.Utils import *
 from Augmentations import *
 import glob
@@ -76,17 +75,6 @@ dataset2metadata = {
     "camnet3": {"splits": ["train", "val"],
         "res": [16, 32, 64, 128, 256],
         "same_distribution_splits": True},
-    "strawberry": {"splits": ["train", "val"],
-        "res": [16, 32, 64, 128, 256],
-        "same_distribution_splits": True},
-    "cifar10": {"splits": ["train", "test"],
-        "res": [32]},
-    "cub": {"splits": ["train", "val", "test"],
-        "res": [32, 64, 128, 256],
-        "same_distribution_splits": True},
-    "miniImagenet": {"splits": ["train", "val", "test"],
-        "res": [32, 64, 128, 256],
-        "same_distribution_splits": False},
 }
 dataset2metadata = {f"{d}{s}": v for d,v in dataset2metadata.items()
     for s in data_suffixes}
