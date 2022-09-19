@@ -23,23 +23,17 @@ def gdown_unzip(url, result):
 
 data2url = {
     # Data from the Cedar cluster
-    "camnet3": "https://drive.google.com/u/1/uc?id=1Yly8SJitGnA25opej57TRLlSyoGmqeIN&export=download",
-    # Data from https://www.kaggle.com/swaroopkml/cifar10-pngs-in-folders
-    "cifar10": "https://drive.google.com/u/1/uc?id=1_CILJzGysgPLflV2HxXSNMjVzlJat6hs&export=download",
-    # Data from https://mtl.yyliu.net/download/Lmzjm9tX.html
-    "miniImagenet": "https://drive.google.com/u/1/uc?id=15iRcb_h5od0GsTkBGRmVTR8LyfJGuJ2k&export=download",
-    # Data prepared via https://gist.github.com/moskomule/2e6a9a463f50447beca4e64ab4699ac4
-    "tinyImagenet": "https://drive.google.com/u/1/uc?id=1mCQOMcVbN0XT_uwcUjU1gdMvVRpBcX3w&export=download",
+    "camnet3": "https://drive.google.com/u/1/uc?id=1Yly8SJitGnA25opej57TRLlSyoGmqeIN&export=download"
 }
 
 if __name__ == "__main__":
     P = argparse.ArgumentParser(description="Dataset downloading and creation")
     P.add_argument("--data",
-        choices=["tinyImagenet", "miniImagenet", "camnet3", "cifar10", "camnet3_lmdb", "camnet3_deci_lmdb", "camnet3_centi_lmdb"],
+        choices=["camnet3"],
         help="also make a class-first dataset split")
     P.add_argument("--also_cls_first", action="store_true",
         help="also make a class-first dataset split")
-    P.add_argument("--sizes", default=[16, 32, 64, 128, 256], type=int,
+    P.add_argument("--sizes", default=[16, 32, 64, 128, 256, 512], type=int,
         nargs="+",
         help="sizes to make the images. -1 or zero for no resizing")
     P.add_argument("--use_existing", type=str,

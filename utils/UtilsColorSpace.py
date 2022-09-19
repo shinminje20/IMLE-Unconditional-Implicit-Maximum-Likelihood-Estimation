@@ -2,7 +2,7 @@
 https://github.com/niopeng/CAM-Net/blob/main/code/utils/util.py
 """
 import torch
-device = torch.device("cuda") if torch.cuda.is_available() else "cpu"
+
 torch.backends.cudnn.benchmark = True
 
 color_output_mode = "A*L*B*L"  # "A*L*B*L" or "AB"

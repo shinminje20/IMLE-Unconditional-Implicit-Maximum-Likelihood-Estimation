@@ -129,7 +129,25 @@ def generator_folder(args):
     """Returns the folder to which to save a Generator saved with [args]."""
     uid = args.uid if args.job_id is None else args.job_id
 
-    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-bs{args.bs}-epochs{args.epochs}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr:.2e}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
+    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-bs{args.bs}-OuterLoops{args.outer_loops}-grayscale{args.grayscale}-ipc{args.ipc}-lr{args.lr:.2e}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
+    
+    conditional_safe_make_directory(folder)
+    if not os.path.exists(f"{folder}/config.json"):
+        with open(f"{folder}/config.json", "w+") as f:
+            json.dump(vars(args), f)
+    return folder
+
+
+def mixture_generator_folder(args):
+    """Returns the folder to which to save a Generator saved with [args]."""
+    uid = args.uid if args.job_id is None else args.job_id
+    lrs = [str(e) for e in args.lr]
+    lr = "_".join(lrs)
+
+
+    batch_sizes = args.bs
+
+    folder = f"{project_dir}/generators/{data_without_split_or_path(args.data_tr)}-mode_{args.sample_method}-components_{args.num_components}-bs_{batch_sizes}-OuterLoops_{args.outer_loops}-lr{lr}-ns{tuple_to_str(args.ns)}-res{tuple_to_str(args.res)}-seed{args.seed}-{uid}{suffix_str(args)}"
     
     conditional_safe_make_directory(folder)
     if not os.path.exists(f"{folder}/config.json"):

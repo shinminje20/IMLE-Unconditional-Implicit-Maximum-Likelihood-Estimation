@@ -66,19 +66,25 @@ class vgg16(torch.nn.Module):
                 self.slice5.add_module(str(x), vgg_pretrained_features[x])
 
     def forward(self, X):
+        # print("====================== vgg16 ===============================")
+        # print("slice1 X.shpae: ", X.shape)
         h = self.slice1(X)
         h_relu1_2 = h
+        # print("slice2 X.shpae: ", X.shape)
         h = self.slice2(h)
         h_relu2_2 = h
+        # print("slice3 X.shpae: ", X.shape)
         h = self.slice3(h)
         h_relu3_3 = h
+        # print("slice4 X.shpae: ", X.shape)
         h = self.slice4(h)
         h_relu4_3 = h
+        # print("slice5 X.shpae: ", X.shape)
         h = self.slice5(h)
         h_relu5_3 = h
         vgg_outputs = namedtuple("VggOutputs", ['relu1_2', 'relu2_2', 'relu3_3', 'relu4_3', 'relu5_3'])
         out = vgg_outputs(h_relu1_2, h_relu2_2, h_relu3_3, h_relu4_3, h_relu5_3)
-
+        # print("====================== ===== ===============================")
         return out
 
 class LPIPSFeats(nn.Module):
@@ -108,6 +114,7 @@ class LPIPSFeats(nn.Module):
         x           -- input to get LPIPS features for with shape B x C x H x W
         normalize   -- whether to normalize the input in 0...1 to -1...1
         """
+        
         x = 2 * x - 1 if normalize else x
         x = (x - self.shift) / self.scale
         vgg_feats = [normalize_tensor(v) for v in self.vgg(x)]
@@ -153,6 +160,7 @@ class LPIPSAndImageFeats(nn.Module):
         normalize   -- whether to normalize the input in 0...1 to -1...1
         """
         x = 2 * x - 1
+        
         x = (x - self.shift) / self.scale
         vgg_feats = [normalize_tensor(v) for v in self.vgg(x)]
 
@@ -166,7 +174,6 @@ class LPIPSAndImageFeats(nn.Module):
 
         result = [l.flatten(start_dim=1) for l in feats]
         result = [l / torch.sqrt(torch.tensor(l.shape[-1])) for l in result]
-
         _, c, h, w = x.shape
         amount_of_res = torch.tensor(c * h * w)
         result += [x.flatten(start_dim=1) * torch.sqrt(self.alpha / amount_of_res)]

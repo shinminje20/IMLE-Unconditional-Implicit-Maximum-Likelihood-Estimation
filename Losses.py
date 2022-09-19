@@ -20,6 +20,7 @@ def compute_loss_over_list(fxs, ys, loss_fn, list_reduction="sum"):
                         'mean' for the mean loss produced by each pair
                         'batch' for the batch reduction
     """
+    
     assert len(fxs) == len(ys)
     if list_reduction == "sum":
         losses = torch.cat([loss_fn(fx, y).mean().view(1) for fx,y in zip(fxs, ys)])
@@ -37,11 +38,14 @@ class ResolutionLoss(nn.Module):
         self.alpha = alpha
 
     def forward(self, fx, y, return_metrics=False):
+        # print("============================================")
+        # print("fx.shape: ", fx.shape)
+        # print("y.shape: ", y.shape)
+        # print("============================================")
         lpips_loss = compute_loss_over_list(self.lpips(fx), self.lpips(y),
             batch_mse, list_reduction="batch")
         mse_loss = batch_mse(fx.view(fx.shape[0], -1), y.view(y.shape[0], -1))
         result = lpips_loss + self.alpha * mse_loss
-
         if return_metrics:
             return lpips_loss, mse_loss, result
         else:
@@ -125,10 +129,8 @@ class UnconditionalIMLELoss(nn.Module):
     alpha   -- amount of weight on MSE loss in the LPIPSAndImageFeats feature
                 extractor
     """
-    def __init__(self, alpha=.1):
+    def __init__(self):
         super(UnconditionalIMLELoss, self).__init__()
-        self.alpha = torch.tensor(alpha)
-        self.phi = LPIPSAndImageFeats(alpha=alpha)
     
     def forward(self, fz, y, reduction):
         """Returns unconditional 
@@ -138,11 +140,10 @@ class UnconditionalIMLELoss(nn.Module):
         y           -- BS_2xCxHxW tensor giving target images
         reduction   -- The reduction for the loss with several modes, see below
         """
-        fz_feats = self.phi(fz).unsqueeze(0)
-        # print("y, type(y): ", y.shape, type(y))
-        y_feats = self.phi(y).unsqueeze(0)
-        # print("fz_feats", fz_feats.shape)
-        # print("y_feats", y_feats.shape)
+        m = nn.Flatten()
+        fz_feats = m(fz).unsqueeze(0)
+        y_feats = m(y).unsqueeze(0)
+        
         if reduction == "none":
             # Returns a BS_1xBS_2 tensor in which the [ij] element is the
             # squared distance from the [ith] target to the [jth] generated
@@ -150,16 +151,14 @@ class UnconditionalIMLELoss(nn.Module):
             # min/argmin over the axis one in this tensor to find the nearest
             # neighbors of a target (real) image and the associated squared
             # distances.
-            temp = torch.cdist(y_feats, fz_feats)
-            # print("cdist.shape", temp.shape)
-            return torch.square(torch.cdist(y_feats, fz_feats)).squeeze(0)
+            return torch.mean(torch.square(torch.cdist(y_feats, fz_feats)), axis=1).squeeze(0)
         elif reduction == "batch":
             # Returns a BS_1-D tensor in which the [ith] element is the square
             # distance between [ith] generated image and the [ith] target (real)
             # image. This requires the number of generated and real images to be
             # equal. This is the reduction is most useful for validation, when
             # we wish to know pairwise squared distances.
-            return torch.mean(torch.square((y_feats - fz_feats)), axis=1).squeeze(0)
+            return torch.mean(torch.square((y_feats - fz_feats)), axis=2).squeeze(0)
         elif reduction == "mean":
             # Returns a single-element tensor in giving the mean of the distance
             # between [ith] generated image and the [ith] target (real) image.

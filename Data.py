@@ -20,10 +20,9 @@ from torchvision.datasets import ImageFolder, CIFAR10
 from torchvision.datasets.folder import default_loader
 from torchvision import transforms
 
-from Corruptions import *
 from utils.Utils import *
 from Augmentations import *
-
+import glob
 def is_valid_data(data_str):
     """Returns [data_str] if it is a valid data string, or False otherwise."""
     if os.path.dirname(data_str) in datasets:
@@ -76,17 +75,6 @@ dataset2metadata = {
     "camnet3": {"splits": ["train", "val"],
         "res": [16, 32, 64, 128, 256],
         "same_distribution_splits": True},
-    "strawberry": {"splits": ["train", "val"],
-        "res": [16, 32, 64, 128, 256],
-        "same_distribution_splits": True},
-    "cifar10": {"splits": ["train", "test"],
-        "res": [32]},
-    "cub": {"splits": ["train", "val", "test"],
-        "res": [32, 64, 128, 256],
-        "same_distribution_splits": True},
-    "miniImagenet": {"splits": ["train", "val", "test"],
-        "res": [32, 64, 128, 256],
-        "same_distribution_splits": False},
 }
 dataset2metadata = {f"{d}{s}": v for d,v in dataset2metadata.items()
     for s in data_suffixes}
@@ -113,6 +101,76 @@ def seed_kwargs(seed=0):
 # Functionality for loading datasets
 ################################################################################
 def get_imagefolder_data(*datasets, res=32, data_path=data_dir):
+    """Returns a tranform-free dataset for each path in [*datasets].
+    Args:
+    datasets            -- list of strings that can be interpreted as a dataset,
+                            or a path to a folder that can be interpreted as a
+                            PreAugmentedDataset
+    res                 -- list of resolutions or a list resolution interpreted
+                            as a single-item list
+    data_path           -- path to where datasets are found
+    Returns:
+    Roughly, [[d(p, r) for r in res] for p in datasets], where [d(.,.)] maps
+    a string identifying a folder of data and a resolution to a PyTorch dataset
+    over the data. If [res] contains only one item, the sublist is flattened.
+    """
+    ignored_data_strs = ["cifar10/train", "cifar10/test", "cv"]
+
+    def contains_augs(data_str):
+        """Returns if any images in [data_str] are augmentations."""
+        for label in os.listdir(data_str):
+            for image in os.listdir(f"{data_str}/{label}"):
+                if "_aug" in image:
+                    return True
+        return False
+
+    def data_str_with_resolution(data_str, res):
+        """Returns [data_str] at resolution [res].
+        Args:
+        data_str -- a path to something that could be turned into an ImageFolder
+        res     -- the desired resolution
+        """
+        if (data_str in ignored_data_strs
+            or has_resolution(data_str)
+            or os.path.exists(data_str)):
+            return data_str
+        else:
+            dataset = data_str.strip("/")
+            idx = data_str.rindex("/")
+            return data_str[:idx] + f"_{res}x{res}" + data_str[idx:]
+
+    def data_str_to_dataset(data_str):
+        """Returns the dataset that can be built with [data_str].
+        Args:
+        data_str    -- One of 'cv', 'cifar10/train', 'cifar10/test', or a path
+                        to a folder over which an ImageFolder can be constructed
+        """
+        if data_str == "cifar10/train":
+            return CIFAR10(root=data_path, train=True, download=True)
+        elif data_str == "cifar10/test":
+            return CIFAR10(root=data_path, train=False, download=True)
+        elif data_str == "cv":
+            return "cv"
+        else:
+            if os.path.exists(data_str):
+                data_str = data_str
+            elif os.path.exists(f"{data_path}/{data_str}"):
+                data_str = f"{data_path}/{data_str}"
+            else:
+                raise ValueError(f"Couldn't find a folder for data string {data_str}")
+
+            if contains_augs(data_str):
+                return PreAugmentedDataset(data_str, verbose=False)
+            else:
+                return ImageFolder(data_str)
+
+    res = [res] if isinstance(res, int) else res
+    datasets = [[data_str_with_resolution(d, r) for r in res] for d in datasets]
+    datasets = [[data_str_to_dataset(d) for d in d_] for d_ in datasets]
+    result = tuple([d[0] if len(d) == 1 else d for d in datasets])
+    return result[0] if len(result) == 1 else result
+
+def get_imagefolder_IMLE_data(*datasets, res=32, data_path=data_dir):
     """Returns a tranform-free dataset for each path in [*datasets].
 
     Args:
@@ -178,13 +236,13 @@ def get_imagefolder_data(*datasets, res=32, data_path=data_dir):
             if contains_augs(data_str):
                 return PreAugmentedDataset(data_str, verbose=False)
             else:
-                return ImageFolder(data_str)
+                return data_str
 
     res = [res] if isinstance(res, int) else res
     datasets = [[data_str_with_resolution(d, r) for r in res] for d in datasets]
     datasets = [[data_str_to_dataset(d) for d in d_] for d_ in datasets]
     result = tuple([d[0] if len(d) == 1 else d for d in datasets])
-    return result[0] if len(result) == 1 else result
+    return (result[0], result[1]) if len(result) == 1 else result
 
 ################################################################################
 # Datasets
@@ -392,6 +450,81 @@ class GeneratorDataset(Dataset):
         return images[0], images[1:]
 
     def __repr__(self): return f"GeneratorDataset\n\tshapes {self.shapes}"
+
+    def to_val_dataset(self): return self
+
+class IMLEDataset(Dataset):
+    """A dataset for returning data for generative modeling. Returns data in as
+
+        model_input, [model_output_1, ... model_output_n]
+
+    where [model_input] is half the resolution of [model_output_1], and
+    [model_output_i] is half the resolution of [model_output_i+1]. All returned
+    images are CxHxW.
+
+    **Apply corruptions at the minibatch level in the training loop directly.**
+
+    Args:
+    datasets    -- list of ImageFolders containing training data at sequentially
+                    doubling or the same resolutions
+    transform   -- transformation applied deterministically to both input and
+                    target images
+    """
+    def __init__(self, datasets, transform=lambda x: x, validate=False):
+
+        img_name = datasets + '/n02279972/*'
+        images = [image for image in glob.glob(img_name)]
+        
+        self.datasets = images
+        self.transform = transforms.Compose([
+                                                transforms.RandomHorizontalFlip(),
+                                                transforms.ToTensor(),
+                                            ])
+
+        ########################################################################
+        # Validate the sequence of datasets. The H and W dimensions of
+        ########################################################################
+        if validate:
+            tqdm.write("----- Validating GeneratorDataset -----")
+            if not all([len(d) == len(self.datasets[0]) for d in self.datasets]):
+                raise ValueError(f"All input datasets must have the same shape, but shapes were {[len(d) for d in self.datasets]}")
+
+            shapes = [d[0][0].size for d in self.datasets]
+            if len(self.datasets) > 2:
+                for s1,s2 in zip(shapes[:-1], shapes[1:]):
+                    if not s1[1] == s2[1] / 2 and  s1[2] == s2[2] / 2:
+                        raise ValueError(f"Got sequential resolutions of {s1} and {s2}")
+            else:
+                tqdm.write(f"Shape sequence is {shapes}. Ensure that the generative model is correctly configred to use these.")
+
+            self.shapes = [s[0] for s in shapes]
+            tqdm.write(f"Validated source datasets: lengths {[len(d) for d in self.datasets]} | shape sequence {shapes}")
+
+    def __len__(self): return len(self.datasets)
+
+    def __getitem__(self, idx):
+        # images = [d[idx][0] for d in self.datasets]
+        # images = self.transform(images)
+        # return images[0]
+        from PIL import Image
+
+        # read the image:
+        image_name = self.datasets[idx]
+        img = Image.open(image_name).convert('RGB')
+
+        # apply the transforms on the image
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if img.shape[0] >= 4:
+            # ignore the alpha channel
+            # in the image if it exists
+            img = img[:3, :, :]
+
+        # return the image:
+        return img
+
+    # def __repr__(self): return f"GeneratorDataset\n\tshapes {self.shapes}"
 
     def to_val_dataset(self): return self
 
