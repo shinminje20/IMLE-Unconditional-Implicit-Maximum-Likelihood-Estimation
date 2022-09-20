@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 import Losses as Losses
-from Blocks import (DiscriminatorBlock, DiscriminatorTop,
+from Blocks import (DiscriminatorBlock,
                            GSynthesisBlock, InputBlock)
 from CustomLayers import (EqualizedConv2d, EqualizedLinear,
                                  PixelNormLayer, Truncation)
