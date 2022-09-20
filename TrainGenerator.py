@@ -263,7 +263,7 @@ if __name__ == "__main__":
     cur_step = 0    
 
 
-    # start depth iteration
+    # start depth iteration 0 = 4x4, 1 = 8 x 8, and so on
     for current_depth in tqdm(range(start_depth, depth), 
                                 desc="Depths",
                                 dynamic_ncols=True):
